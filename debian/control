@@ -1,0 +1,23 @@
+Source: fsleyes
+Maintainer: NeuroDebian Team <team@neuro.debian.net>
+Uploaders: Michael Hanke <mih@debian.org>
+Section: python
+Priority: optional
+Build-Depends: debhelper (>= 9),
+               dh-python,
+               python-all,
+               python-setuptools,
+Standards-Version: 3.9.8
+X-Python-Version: >= 2.7
+
+Package: fsleyes
+Architecture: all
+Section: science
+Depends: python-fsl,
+         python-props,
+         python-wxgtk3.0,
+         ${misc:Depends},
+         ${python:Depends},
+Provides: ${python:Provides}
+Description: FSL image viewer
+ Feature-rich viewer for volumetric (medical) images.

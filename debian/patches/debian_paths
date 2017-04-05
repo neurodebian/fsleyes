@@ -1,0 +1,22 @@
+--- a/fsleyes/__init__.py
++++ b/fsleyes/__init__.py
+@@ -215,7 +215,8 @@
+ """
+ 
+ 
+-assetDir = op.join(op.dirname(__file__), '..')
++#assetDir = op.join(op.dirname(__file__), '..')
++assetDir = '/usr/share/fsleyes'
+ """Base directory which contains all *FSLeyes* assets/resources (e.g. icon
+ files). This is set in the :func:`initialise` function.
+ """
+@@ -272,7 +273,8 @@
+     else:
+         assetDir = op.join(op.dirname(__file__), '..')
+ 
+-    assetDir = op.abspath(assetDir)
++    #assetDir = op.abspath(assetDir)
++    assetDir = '/usr/share/fsleyes'
+ 
+     if not op.exists(assetDir):
+         raise RuntimeError('Could not find FSLeyes asset directory! '
