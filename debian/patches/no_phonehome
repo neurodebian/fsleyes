@@ -1,0 +1,64 @@
+diff --git a/fsleyes/main.py b/fsleyes/main.py
+index 477f2dd..822f036 100644
+--- a/fsleyes/main.py
++++ b/fsleyes/main.py
+@@ -220,10 +220,11 @@ def main(args=None):
+             wx.CallAfter(fslDirWarning, frame)
+ 
+         # Check for updates
+-        if not namespace[0].skipupdatecheck:
+-            import fsleyes.actions.updatecheck as updatecheck
+-            wx.CallAfter(updatecheck.UpdateCheckAction(),
+-                         showUpToDateMessage=False)
++        # Debian: needs to be done manually via menu
++        #if not namespace[0].skipupdatecheck:
++        #    import fsleyes.actions.updatecheck as updatecheck
++        #    wx.CallAfter(updatecheck.UpdateCheckAction(),
++        #                 showUpToDateMessage=False)
+ 
+     # Note: If no wx.Frame is created, the
+     # wx.MainLoop call will exit immediately,
+diff --git a/fsleyes/parseargs.py b/fsleyes/parseargs.py
+index 20e158f..1a46e4e 100644
+--- a/fsleyes/parseargs.py
++++ b/fsleyes/parseargs.py
+@@ -301,7 +301,7 @@ OPTIONS = td.TypeDict({
+                        'verbose',
+                        'version',
+                        'skipfslcheck',
+-                       'skipupdatecheck',
++                       #'skipupdatecheck',
+                        'noisy',
+                        'memory',
+                        'glversion',
+@@ -549,7 +549,7 @@ ARGUMENTS = td.TypeDict({
+     'Main.verbose'          : ('v',      'verbose',          False),
+     'Main.version'          : ('V',      'version',          False),
+     'Main.skipfslcheck'     : ('S',      'skipfslcheck',     False),
+-    'Main.skipupdatecheck'  : ('U',      'skipupdatecheck',  False),
++    #'Main.skipupdatecheck'  : ('U',      'skipupdatecheck',  False),
+     'Main.noisy'            : ('n',      'noisy',            False),
+     'Main.memory'           : ('m',      'memory',           False),
+     'Main.glversion'        : ('gl',     'glversion',        True),
+@@ -704,7 +704,7 @@ HELP = td.TypeDict({
+     'Main.verbose'         : 'Verbose output (can be used up to 3 times)',
+     'Main.version'         : 'Print the current version and exit',
+     'Main.skipfslcheck'    : 'Skip $FSLDIR check/warning',
+-    'Main.skipupdatecheck' : 'Do not check for FSLeyes updates on startup',
++    #'Main.skipupdatecheck' : 'Do not check for FSLeyes updates on startup',
+     'Main.noisy'           : 'Make the specified module noisy',
+     'Main.memory'          : 'Output memory events (implied if -v is set)',
+     'Main.glversion'       : 'Desired (major, minor) OpenGL version',
+@@ -1226,9 +1226,9 @@ def _configMainParser(mainParser):
+     mainParser.add_argument(*mainArgs['skipfslcheck'],
+                             action='store_true',
+                             help=mainHelp['skipfslcheck'])
+-    mainParser.add_argument(*mainArgs['skipupdatecheck'],
+-                            action='store_true',
+-                            help=mainHelp['skipupdatecheck']) 
++    #mainParser.add_argument(*mainArgs['skipupdatecheck'],
++    #                        action='store_true',
++    #                        help=mainHelp['skipupdatecheck']) 
+ 
+     # Debug messages are stripped from frozen
+     # versions of FSLeyes, so there's no point
