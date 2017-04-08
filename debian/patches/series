@@ -1,3 +1,3 @@
-no_accelerate
+trim_runtime_deps
 no_phonehome
 debian_paths

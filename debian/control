@@ -16,6 +16,11 @@ Section: science
 Depends: python-fsl,
          python-props,
          python-wxgtk3.0,
+         python-six,
+         python-scipy,
+         python-matplotlib,
+         python-numpy,
+         python-opengl (>= 3.1~),
          ${misc:Depends},
          ${python:Depends},
 Provides: ${python:Provides}
