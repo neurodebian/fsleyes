@@ -26,10 +26,10 @@ clean::
 # make orig tarball from repository content
 get-orig-source:
 	# orig tarball, turn directory into something nicer
-	git archive --format=tar --prefix=$(srcpkg)-$(gitver)/ HEAD | \
-		gzip -9 > $(srcpkg)_$(gitver).orig.tar.gz
-#	git archive --format=tar --prefix=$(srcpkg)-$(upstreamver)/ HEAD | \
-#		gzip -9 > $(srcpkg)_$(upstreamver).orig.tar.gz
+#	git archive --format=tar --prefix=$(srcpkg)-$(gitver)/ HEAD | \
+#		gzip -9 > $(srcpkg)_$(gitver).orig.tar.gz
+	git archive --format=tar --prefix=$(srcpkg)-$(upstreamver)/ HEAD | \
+		gzip -9 > $(srcpkg)_$(upstreamver).orig.tar.gz
 
 # check that DSC patches still apply
 maint-check-dsc-patches:
