@@ -1,0 +1,35 @@
+--- a/setup.py
++++ b/setup.py
+@@ -787,8 +787,8 @@
+         readme = f.read()
+ 
+     deps             = get_fsleyes_deps()
+-    install_requires = deps[0]
+-    dependency_links = deps[1]
++    install_requires = []  #  deps[0]
++    dependency_links = []  #  deps[1]
+     
+     if platform == 'darwin': setup_requires = ['py2app']
+     else:                    setup_requires = ['pyinstaller']
+@@ -812,6 +812,12 @@
+             # 'Programming Language :: Python :: 3.5',
+             'Topic :: Software Development :: Libraries :: Python Modules'],
+
++        # keep generating the entrypoint scripts
++        entry_points={
++            'gui_scripts' : [
++                'FSLeyes = fsleyes.main:main',
++            ]},
++
+         packages=packages,
+         install_requires=install_requires,
+         dependency_links=dependency_links,
+@@ -826,7 +831,7 @@
+             'apidoc'               : apidoc,
+         },
+ 
+-        setup_requires=setup_requires,
++        setup_requires=[], #setup_requires,
+     )
+ 
+ 
