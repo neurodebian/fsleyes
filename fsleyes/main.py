@@ -77,6 +77,27 @@ class FSLeyesApp(wx.App):
         self.MacOpenFiles([filename])
 
 
+    def MacOpenURL(self, url):
+        """On OSX, support opening files via a ``fsleyes://`` url. """
+
+        if self.__overlayList is None:
+            return
+
+        import fsl.utils.status                 as status
+        import fsleyes.strings                  as strings
+        import fsleyes.parseargs                as parseargs
+        import fsleyes.actions.applycommandline as applycommandline
+
+        errTitle = strings.titles[  self, 'openURLError']
+        errMsg   = strings.messages[self, 'openURLError']
+
+        with status.reportIfError(errTitle, errMsg):
+            applycommandline.applyCommandLineArgs(
+                self.__overlayList,
+                self.__displayCtx,
+                parseargs.fsleyesUrlToArgs(url))
+
+
     def MacOpenFiles(self, filenames):
         """On OSX, support opening files via context menu, and files dropped
         on the application icon.
@@ -223,7 +244,8 @@ def main(args=None):
         if not namespace[0].skipupdatecheck:
             import fsleyes.actions.updatecheck as updatecheck
             wx.CallAfter(updatecheck.UpdateCheckAction(),
-                         showUpToDateMessage=False)
+                         showUpToDateMessage=False,
+                         showErrorMessage=False)
 
     # Note: If no wx.Frame is created, the
     # wx.MainLoop call will exit immediately,
@@ -243,15 +265,26 @@ def hacksAndWorkarounds():
     Must be called after :func:`fsleyes.initialise`.
     """
 
-    # PyInstaller <= 3.2 forces matplotlib to use a
+    # PyInstaller 3.2.1 forces matplotlib to use a
     # temporary directory for its settings and font
     # cache, and then deletes the directory on exit.
     # This is silly, because the font cache can take
-    # a long time to create. So we'll tell matplotlib
-    # to use a settingsd directory located in the
-    # FSLeyes app dir.
+    # a long time to create.  Clearing the environment
+    # variable should cause matplotlib to use
+    # $HOME/.matplotlib (or, failing that, a temporary
+    # directory).
+    #
+    # https://matplotlib.org/faq/environment_variables_faq.html#\
+    #   envvar-MPLCONFIGDIR
+    #
+    # https://github.com/pyinstaller/pyinstaller/blob/v3.2.1/\
+    #   PyInstaller/loader/rthooks/pyi_rth_mplconfig.py
+    #
+    # n.b. This will cause issues if building FSLeyes
+    #      with the pyinstaller '--onefile' option, as
+    #      discussed in the above pyinstaller file.
     if fslplatform.frozen:
-        os.environ['MPLCONFIGDIR'] = op.join(fsleyes.assetDir, 'mpl-data')
+       os.environ.pop('MPLCONFIGDIR', None)
 
     # OSX sometimes sets the local environment
     # variables to non-standard values, which

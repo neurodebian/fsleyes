@@ -163,14 +163,16 @@ To make this new propery settable via the command line, you need to:
 
 from __future__ import print_function
 
-import os.path   as op
-import itertools as it
-import              sys
-import              types
-import              logging
-import              textwrap
-import              argparse
-import              collections
+import os.path          as op
+import itertools        as it
+import                     sys
+import                     types
+import                     logging
+import                     textwrap
+import                     argparse
+import                     collections
+import six.moves.urllib as urllib
+import numpy            as np
 
 import props
 
@@ -203,7 +205,7 @@ def _get_option_tuples(self, option_string):
 
     
     .. note:: This is unnecessary in python 3.5 and above, due to the addition
-              of tge ``allow_abbrev`` option.
+              of the ``allow_abbrev`` option.
 
 
     See http://stackoverflow.com/questions/33900846/\
@@ -470,7 +472,7 @@ GROUPNAMES = td.TypeDict({
 })
 """Command line arguments are grouped according to the class to which
 they are applied (see the :data:`ARGUMENTS` dictionary). This dictionary
-defines descriptions for ecah command line group.
+defines descriptions for each command line group.
 """
 
 
@@ -780,7 +782,10 @@ HELP = td.TypeDict({
                                         'settings.',
     'ColourMapOpts.clippingRange'     : 'Clipping range. Setting this will '
                                         'override the low display range '
-                                        '(unless low ranges are unlinked).',
+                                        '(unless low ranges are unlinked).'
+                                        'For volume overlays only: append '
+                                        'a "%%" to the high value to clip by '
+                                        'percentile.',
     'ColourMapOpts.invertClipping'    : 'Invert clipping',
     'ColourMapOpts.cmap'              : 'Colour map',
     'ColourMapOpts.negativeCmap'      : 'Colour map for negative values '
@@ -920,7 +925,6 @@ def getExtra(target, propName, default=None):
     # to grab the names of all existing LUTs, and then
     # using them as the CLI options.
     lutSettings = {
-
         'choices'       : colourmaps.scanLookupTables(),
         'useAlts'       : False,
         'metavar'       : 'LUT',
@@ -935,7 +939,7 @@ def getExtra(target, propName, default=None):
     }
 
     # shOrder can be up to a maximum of 16,
-    # but will be limited by the image itselt
+    # but will be limited by the image itself
     shOrderSettings = {
         'choices' : range(17),
         'metavar' : 'ORDER',
@@ -950,88 +954,65 @@ def getExtra(target, propName, default=None):
     # property, but needs to accept
     # any value on the command line
     vertexDataSettings = {
-        
         'metavar' : 'FILE',
         'choices' : None,
         'useAlts' : False,
     }
 
+    # VolumeOpts.clippingRange is manually
+    # parsed (see TRANSFORMS[VolumeOpts, 'clippingRange'])
+    # so we keep it as a string
+    clippingRangeSettings = {
+        'atype' : str,
+    }
 
     allSettings = {
-        ('Display',                 'overlayType')  : overlayTypeSettings,
-        (fsldisplay.Display,        'overlayType')  : overlayTypeSettings,
-        ('LabelOpts',               'lut')          : lutSettings,
-        (fsldisplay.LabelOpts,      'lut')          : lutSettings,
-        ('MeshOpts',                'lut')          : lutSettings,
-        (fsldisplay.MeshOpts,       'lut')          : lutSettings,
-        ('GiftiOpts',               'lut')          : lutSettings,
-        (fsldisplay.GiftiOpts,      'lut')          : lutSettings, 
-        ('ColourMapOpts',           'cmap')         : cmapSettings,
-        (fsldisplay.ColourMapOpts,  'cmap')         : cmapSettings,
-        ('ColourMapOpts',           'negativeCmap') : cmapSettings,
-        (fsldisplay.ColourMapOpts,  'negativeCmap') : cmapSettings,
-        ('MeshOpts',                'cmap')         : cmapSettings,
-        (fsldisplay.MeshOpts,       'cmap')         : cmapSettings,
-        ('GiftiOpts',               'negativeCmap') : cmapSettings,
-        (fsldisplay.GiftiOpts,      'negativeCmap') : cmapSettings,
-        ('GiftiOpts',               'cmap')         : cmapSettings,
-        (fsldisplay.GiftiOpts,      'cmap')         : cmapSettings,
-        ('MeshOpts',                'negativeCmap') : cmapSettings,
-        (fsldisplay.MeshOpts,       'negativeCmap') : cmapSettings, 
-        ('VolumeOpts',              'cmap')         : cmapSettings,
-        (fsldisplay.VolumeOpts,     'cmap')         : cmapSettings,
-        ('VolumeOpts',              'negativeCmap') : cmapSettings,
-        (fsldisplay.VolumeOpts,     'negativeCmap') : cmapSettings,
-        ('LineVectorOpts',          'cmap')         : cmapSettings,
-        (fsldisplay.LineVectorOpts, 'cmap')         : cmapSettings,
-        ('RGBVectorOpts',           'cmap')         : cmapSettings,
-        (fsldisplay.RGBVectorOpts,  'cmap')         : cmapSettings,
-        ('TensorOpts',              'cmap')         : cmapSettings,
-        (fsldisplay.TensorOpts,     'cmap')         : cmapSettings,
-        ('SHOpts',                  'cmap')         : cmapSettings,
-        (fsldisplay.SHOpts,         'cmap')         : cmapSettings,
-        ('SHOpts',                  'shOrder')      : shOrderSettings,
-        (fsldisplay.SHOpts,         'shOrder')      : shOrderSettings,
-        ('SceneOpts',               'bgColour')     : colourSettings,
-        (fsldisplay.SceneOpts,      'bgColour')     : colourSettings,
-        ('SceneOpts',               'cursorColour') : colourSettings,
-        (fsldisplay.SceneOpts,      'cursorColour') : colourSettings,
-        ('MaskOpts',                'colour')       : colourSettings,
-        (fsldisplay.MaskOpts,       'colour')       : colourSettings,
-        ('LineVectorOpts',          'xColour')      : colourSettings,
-        (fsldisplay.LineVectorOpts, 'xColour')      : colourSettings,
-        ('LineVectorOpts',          'yColour')      : colourSettings,
-        (fsldisplay.LineVectorOpts, 'yColour')      : colourSettings,
-        ('LineVectorOpts',          'zColour')      : colourSettings,
-        (fsldisplay.LineVectorOpts, 'zColour')      : colourSettings,
-        ('RGBVectorOpts',           'xColour')      : colourSettings,
-        (fsldisplay.RGBVectorOpts,  'xColour')      : colourSettings,
-        ('RGBVectorOpts',           'yColour')      : colourSettings,
-        (fsldisplay.RGBVectorOpts,  'yColour')      : colourSettings,
-        ('RGBVectorOpts',           'zColour')      : colourSettings,
-        (fsldisplay.RGBVectorOpts,  'zColour')      : colourSettings,
-        ('TensorOpts',              'xColour')      : colourSettings,
-        (fsldisplay.TensorOpts,     'xColour')      : colourSettings,
-        ('TensorOpts',              'yColour')      : colourSettings,
-        (fsldisplay.TensorOpts,     'yColour')      : colourSettings,
-        ('TensorOpts',              'zColour')      : colourSettings,
-        (fsldisplay.TensorOpts,     'zColour')      : colourSettings,
-        ('SHOpts',                  'xColour')      : colourSettings,
-        (fsldisplay.SHOpts,         'xColour')      : colourSettings,
-        ('SHOpts',                  'yColour')      : colourSettings,
-        (fsldisplay.SHOpts,         'yColour')      : colourSettings,
-        ('SHOpts',                  'zColour')      : colourSettings,
-        (fsldisplay.SHOpts,         'zColour')      : colourSettings,
-        ('MeshOpts',                'colour')       : colourSettings,
-        (fsldisplay.MeshOpts,       'colour')       : colourSettings,
-        ('GiftiOpts',               'colour')       : colourSettings,
-        (fsldisplay.GiftiOpts,      'colour')       : colourSettings,
-        ('MeshOpts',                'vertexData')   : vertexDataSettings,
-        (fsldisplay.MeshOpts,       'vertexData')   : vertexDataSettings,
-        ('GiftiOpts',               'vertexData')   : vertexDataSettings,
-        (fsldisplay.GiftiOpts,      'vertexData')   : vertexDataSettings,
-
+        (fsldisplay.Display,        'overlayType')   : overlayTypeSettings,
+        (fsldisplay.LabelOpts,      'lut')           : lutSettings,
+        (fsldisplay.MeshOpts,       'lut')           : lutSettings,
+        (fsldisplay.GiftiOpts,      'lut')           : lutSettings, 
+        (fsldisplay.ColourMapOpts,  'cmap')          : cmapSettings,
+        (fsldisplay.ColourMapOpts,  'negativeCmap')  : cmapSettings,
+        (fsldisplay.MeshOpts,       'cmap')          : cmapSettings,
+        (fsldisplay.GiftiOpts,      'negativeCmap')  : cmapSettings,
+        (fsldisplay.GiftiOpts,      'cmap')          : cmapSettings,
+        (fsldisplay.MeshOpts,       'negativeCmap')  : cmapSettings, 
+        (fsldisplay.VolumeOpts,     'cmap')          : cmapSettings,
+        (fsldisplay.VolumeOpts,     'clippingRange') : clippingRangeSettings, 
+        (fsldisplay.VolumeOpts,     'negativeCmap')  : cmapSettings,
+        (fsldisplay.LineVectorOpts, 'cmap')          : cmapSettings,
+        (fsldisplay.RGBVectorOpts,  'cmap')          : cmapSettings,
+        (fsldisplay.TensorOpts,     'cmap')          : cmapSettings,
+        (fsldisplay.SHOpts,         'cmap')          : cmapSettings,
+        (fsldisplay.SHOpts,         'shOrder')       : shOrderSettings,
+        (fsldisplay.SceneOpts,      'bgColour')      : colourSettings,
+        (fsldisplay.SceneOpts,      'cursorColour')  : colourSettings,
+        (fsldisplay.MaskOpts,       'colour')        : colourSettings,
+        (fsldisplay.LineVectorOpts, 'xColour')       : colourSettings,
+        (fsldisplay.LineVectorOpts, 'yColour')       : colourSettings,
+        (fsldisplay.LineVectorOpts, 'zColour')       : colourSettings,
+        (fsldisplay.RGBVectorOpts,  'xColour')       : colourSettings,
+        (fsldisplay.RGBVectorOpts,  'yColour')       : colourSettings,
+        (fsldisplay.RGBVectorOpts,  'zColour')       : colourSettings,
+        (fsldisplay.TensorOpts,     'xColour')       : colourSettings,
+        (fsldisplay.TensorOpts,     'yColour')       : colourSettings,
+        (fsldisplay.TensorOpts,     'zColour')       : colourSettings,
+        (fsldisplay.SHOpts,         'xColour')       : colourSettings,
+        (fsldisplay.SHOpts,         'yColour')       : colourSettings,
+        (fsldisplay.SHOpts,         'zColour')       : colourSettings,
+        (fsldisplay.MeshOpts,       'colour')        : colourSettings,
+        (fsldisplay.GiftiOpts,      'colour')        : colourSettings,
+        (fsldisplay.MeshOpts,       'vertexData')    : vertexDataSettings,
+        (fsldisplay.GiftiOpts,      'vertexData')    : vertexDataSettings,
     }
+
+    # Add (str, propname) versions 
+    # of all keys so both class and
+    # string lookups work
+    strSettings = {(type(k[0]).__name__, k[1]) : v
+                   for k, v in allSettings.items()}
+    
+    allSettings.update(strSettings)
 
     return allSettings.get((target, propName), None)
 
@@ -1057,13 +1038,31 @@ been loaded, so we need to figure out what to do.
 # Transform functions for properties where the
 # value passed in on the command line needs to
 # be manipulated before the property value is
-# set
+# set. These are passed to the props.applyArguments
+# and props.generateArguments functions.
 #
-# TODO If/when you have a need for more
-# complicated property transformations (i.e.
-# non-reversible ones), you'll need to have
-# an inverse transforms dictionary
-def _imageTrans(i):
+# Transformations for overlay properties
+# (Display/DisplayOpts) are passed the property
+# value, and the overlay to which the property
+# applies.
+#
+# TODO All of these functions are called both
+#      when parsing command line arguments, and
+#      when generating them from an in-memory
+#      object. If/when you have a need for more
+#      complicated property transformations (i.e.
+#      non-reversible ones), you'll need to have
+#      an inverse transforms dictionary.
+#
+#      Currently, the overlay-specific transform
+#      functions can tell the direction by
+#      checking whether overlay == None - if this
+#      is True, we are generating arguments.
+
+# When generating CLI arguments, turn Image
+# instances into their file names. And a few
+# other special cases.
+def _imageTrans(i, overlay=None):
     
     stri = str(i).lower()
     
@@ -1076,44 +1075,83 @@ def _imageTrans(i):
     else:                  return i.dataSource
 
 
-def _lutTrans(l):
+# When generating CLI arguments, turn a
+# LookupTable instance into its name
+def _lutTrans(l, overlay=None):
     if isinstance(l, colourmaps.LookupTable): return l.key
     else:                                     return l
 
+
+# VolumeOpts.clippingRange can be
+# specified as a percentile by
+# appending '%' to the high range
+# value.
+def _clippingRangeTrans(crange, overlay=None):
+
+    if overlay is None:
+        return crange
+
+    crange = list(crange)
+
+    if crange[1][-1] == '%':
+        crange[1] = crange[1][:-1]
+        crange    = [float(r) for r in crange] 
+        crange    = np.nanpercentile(overlay[:], crange)
+    else:
+        crange = [float(r) for r in crange] 
+
+    return crange
+
+
+# The command line interface
+# for some boolean properties
+# need the property value to be
+# inverted.
+def _boolTrans(b, overlay=None):
+    return not b
+
+
+# The props.addParserArguments function allows
+# us to specify 'extra' parameters (above) to
+# specify that we expect RGB, not RGBA colours.
+# But the props.generateArguments does not
+# accept 'extra' parameters. It accepts
+# transform functions though, so we hackily
+# truncate any RGBA colours via these transform
+# functions.
+def _colourTrans(c, overlay=None):
+    return c[:3]
+
     
 TRANSFORMS = td.TypeDict({
-    'SceneOpts.showCursor'        : lambda b : not b,
-    'OrthoOpts.showXCanvas'       : lambda b : not b,
-    'OrthoOpts.showYCanvas'       : lambda b : not b,
-    'OrthoOpts.showZCanvas'       : lambda b : not b,
-    'OrthoOpts.showLabels'        : lambda b : not b,
-    'Display.enabled'             : lambda b : not b,
-    'ColourMapOpts.linkLowRanges' : lambda b : not b,
-    'LineVectorOpts.unitLength'   : lambda b : not b, 
-    'TensorOpts.lighting'         : lambda b : not b,
+    'SceneOpts.showCursor'        : _boolTrans,
+    'OrthoOpts.showXCanvas'       : _boolTrans,
+    'OrthoOpts.showYCanvas'       : _boolTrans,
+    'OrthoOpts.showZCanvas'       : _boolTrans,
+    'OrthoOpts.showLabels'        : _boolTrans,
+    'Display.enabled'             : _boolTrans,
+    'ColourMapOpts.linkLowRanges' : _boolTrans,
+    'LineVectorOpts.unitLength'   : _boolTrans,
+    'TensorOpts.lighting'         : _boolTrans,
     'LabelOpts.lut'               : _lutTrans,
     'MeshOpts.lut'                : _lutTrans,
     # 'SHOpts.lighting'            : lambda b : not b,
 
-    # The props.addParserArguments function allows
-    # us to specify 'extra' parameters (above) to
-    # specify that we expect RGB, not RGBA colours.
-    # But the props.generateArguments does not
-    # accept 'extra' parameters. It accepts
-    # transform functions though, so we hackily
-    # truncate any RGBA colours via these transform
-    # functions.
-    'SceneOpts.bgColour'         : lambda c : c[:3],
-    'SceneOpts.cursorColour'     : lambda c : c[:3],
-    'MeshOpts.colour'            : lambda c : c[:3],
-    'MaskOpts.colour'            : lambda c : c[:3],
-    'VectorOpts.xColour'         : lambda c : c[:3],
-    'VectorOpts.yColour'         : lambda c : c[:3],
-    'VectorOpts.zColour'         : lambda c : c[:3],
+    'VolumeOpts.clippingRange'    : _clippingRangeTrans,
+
+    'SceneOpts.bgColour'         : _colourTrans,
+    'SceneOpts.cursorColour'     : _colourTrans,
+    'MeshOpts.colour'            : _colourTrans,
+    'MaskOpts.colour'            : _colourTrans,
+    'VectorOpts.xColour'         : _colourTrans,
+    'VectorOpts.yColour'         : _colourTrans,
+    'VectorOpts.zColour'         : _colourTrans,
 })
 """This dictionary defines any transformations for command line options
 where the value passed on the command line cannot be directly converted
-into the corresponding property value.
+into the corresponding property value. See the
+:func:`props.applyArguments` and :func:`props.generateArguments`
+functions.
 """
 
 # All of the file options need special treatment
@@ -1545,14 +1583,14 @@ def parseArgs(mainParser,
     #
     # TODO This procedure does not support
     #      options which may expect more than
-    #      one which may look like a file.
-    #      You could fix this by changing
-    #      the boolean expects flag in the
-    #      ARGUMENTS dict to be the number
-    #      of expected arguments (and then
-    #      skipping over arguments as needed
-    #      in the loop below). But this
-    #      approach would not be able to
+    #      one argument which may look like a 
+    #      file. You could fix this by 
+    #      changing the boolean expects flag 
+    #      in the ARGUMENTS dict to be the 
+    #      number of expected arguments (and 
+    #      then skipping over arguments as 
+    #      needed in the loop below). But 
+    #      this approach would not be able to
     #      handle options which accept a
     #      variable number of arguments.
     #      This is probably an acceptable
@@ -1572,6 +1610,14 @@ def parseArgs(mainParser,
 
     log.debug('Identifying overlay paths (ignoring: {})'.format(
         list(mainExpectsArgs) + list(ovlExpectsArgs)))
+
+    # Expand any fsleyes:// arguments
+    copy = []
+    for i, arg in enumerate(argv):
+        if arg.startswith('fsleyes://'): copy.extend(fsleyesUrlToArgs(arg))
+        else:                            copy.append(arg)
+
+    argv = copy
 
     # Compile a list of arguments which
     # look like overlay file names
@@ -1932,7 +1978,7 @@ def _printFullHelp(mainParser):
     print(helpText) 
 
 
-def _applyArgs(args, target, propNames=None):
+def _applyArgs(args, target, propNames=None, **kwargs):
     """Applies the given command line arguments to the given target object."""
 
     if propNames is None:
@@ -1954,7 +2000,8 @@ def _applyArgs(args, target, propNames=None):
                          args,
                          propNames=propNames,
                          xformFuncs=xforms,
-                         longArgs=longArgs)
+                         longArgs=longArgs,
+                         **kwargs)
 
 
 def _generateArgs(source, propNames=None):
@@ -1975,7 +2022,6 @@ def _generateArgs(source, propNames=None):
                            fsldisplay.SHOpts)):
         try:    propNames.remove('volume')
         except: pass
-    
         
     longArgs  = {name : ARGUMENTS[source, name][1] for name in propNames}
     xforms    = {}
@@ -2379,18 +2425,21 @@ def applyOverlayArgs(args, overlayList, displayCtx, **kwargs):
                     opts.orientFlip = not opts.orientFlip
                     setattr(optArgs, 'orientFlip', opts.orientFlip)
 
-            # 
+            # Load vertex data files specified
+            # for mesh overlays
             if isinstance(opts, fsldisplay.MeshOpts) and \
                optArgs.vertexData is not None:
-                
                 loadvertexdata.loadVertexData(overlay,
                                               displayCtx,
                                               optArgs.vertexData)
 
             # After handling the special cases
             # above, we can apply the CLI
-            # options to the Opts instance
-            _applyArgs(optArgs, opts)
+            # options to the Opts instance. The
+            # overlay is passed through to any
+            # transform functions (see the
+            # TRANSFORMS dict)
+            _applyArgs(optArgs, opts, overlay=overlay)
 
     paths = [o.overlay for o in args.overlays]
 
@@ -2424,3 +2473,17 @@ def _findOrLoad(overlayList, overlayFile, overlayType, relatedTo=None):
             overlayList.append(overlay)
 
     return overlay
+
+
+def fsleyesUrlToArgs(url):
+    """Parses a ``fsleyes://`` url and returns a list of equivalent command
+    line arguments.
+    """
+
+    if not url.startswith('fsleyes://'):
+        raise ValueError('Not a fsleyes url: {}'.format(url))
+
+    url = url[10:]
+    url = str(urllib.parse.unquote(url))
+
+    return url.split()

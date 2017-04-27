@@ -64,6 +64,8 @@ messages = TypeDict({
                                             'cleared! Are you sure you want '
                                             'to continue?',
 
+    'FSLeyesApp.openURLError' : 'An error occurred loading the URL.',
+
     'SliceCanvas.globjectError'  :
     'An error occurred initialising the display for {}',
 
@@ -124,10 +126,8 @@ messages = TypeDict({
     'CanvasPanel.screenshot.notSaved'   : 'Overlay {} needs saving before a '
                                           'screenshot can be taken.',
     'CanvasPanel.screenshot.pleaseWait' : 'Saving screenshot to {}...',
-    'CanvasPanel.screenshot.error'      : 'Sorry, there was an error '
-                                          'saving the screenshot. Try '
-                                          'calling render directly with '
-                                          'this command: \n{}',
+    'CanvasPanel.screenshot.error'      : 'An error occurred saving the '
+                                          'screenshot.',
 
     'CanvasPanel.showCommandLineArgs.title'   : 'Scene parameters',
     'CanvasPanel.showCommandLineArgs.message' : 'Use these parameters on the '
@@ -236,7 +236,7 @@ messages = TypeDict({
                                             'as the first column?',
 
     'LoadAtlasAction.error'       :
-    'An error occurred loading the atlas specification {}\n\nDetails: {}',
+    'An error occurred loading the atlas specification {}.',
 
     'ClearSettingsAction.confirm'       :
     'Are you sure you want to clear all FSLeyes settings? All preferences, '
@@ -247,10 +247,10 @@ messages = TypeDict({
     'Calculating correlation values for seed voxel [{}, {}, {}] ...',
 
     'EditTransformPanel.saveFlirt.error' :
-    'An error occurred saving the FLIRT matrix.\n\nDetails: {}',
+    'An error occurred saving the FLIRT matrix.',
 
     'SaveFlirtXfmAction.error' :
-    'An error occurred saving the FLIRT matrix.\n\nDetails: {}', 
+    'An error occurred saving the FLIRT matrix.', 
 
     'FlirtFileDialog.matFile'    : 'Select FLIRT transformation matrix file',
     'FlirtFileDialog.refFile'    : 'Select FLIRT reference image',
@@ -259,7 +259,7 @@ messages = TypeDict({
     'LoadVertexDataAction.loadVertexData' :
     'Select a vertex data file for {}',
     'LoadVertexDataAction.error' :
-    'An error occurred while loading the vertex data for {}\n\nDetails: {}',
+    'An error occurred while loading the vertex data for {}',
 
     'UpdateCheckAction.newVersionAvailable' :
     'A new version of FSLeyes is available. This version of FSLeyes is {}, '
@@ -288,7 +288,8 @@ titles = TypeDict({
 
     'FSLeyesFrame.saveLayout'      : 'Save layout',
     'FSLeyesFrame.unsavedOverlays' : 'Unsaved images',
- 
+
+    'FSLeyesApp.openURLError' : 'Error loading URL',
     
     'OrthoPanel'         : 'Ortho View',
     'LightBoxPanel'      : 'Lightbox View',
@@ -374,6 +375,10 @@ titles = TypeDict({
 
     'LoadAtlasAction.fileDialog'  : 'Load XML atlas specification',
     'LoadAtlasAction.error'       : 'Error loading atlas specification',
+
+    'LoadVertexDataAction.error' : 'Error loading vertex data',
+
+    'SaveFlirtXfmAction.error' : 'Error saving theFLIRT matrix', 
 
     'ClearSettingsAction.confirm' : 'Clear all settings?',
 
@@ -1268,7 +1273,7 @@ about = {
     'title'      : 'About FSLeyes',
     'author'     : 'Paul McCarthy',
     'email'      : 'paulmc@fmrib.ox.ac.uk',
-    'company'    : u'\u00A9 FMRIB Centre, Oxford, UK',
+    'company'    : 'FMRIB Centre, Oxford, UK',
     'version'    : 'FSLeyes version: {}',
     'vcsVersion' : 'Internal version: {}',
     'glVersion'  : 'OpenGL version: {}',
@@ -1298,6 +1303,10 @@ about = {
      - wxPython [{}] (http://www.wxpython.org)
     
     Some of the icons used in FSLeyes are derived from the Freeline icon set, by Enes Dal, available at https://www.iconfinder.com/Enesdal, and released under the Creative Commons (Attribution 3.0 Unported) license.
+
+    FSLeyes is released under Version 2.0 of the Apache Software License.
+
+    Copyright 2016-2017 University of Oxford, Oxford, UK.
     """).strip(),
 
     # This is a list of all the libraries listed
