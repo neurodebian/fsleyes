@@ -1,4 +1,11 @@
-fsleyes (0.10.1-1) UNRELEASED; urgency=low
+fsleyes (0.10.1-2) neurodebian; urgency=medium
+
+  * Added missing dependency to python-jinja2. Thanks to Chris Adamson for
+    the report.
+
+ -- Michael Hanke <mih@debian.org>  Tue, 02 May 2017 07:06:12 +0200
+
+fsleyes (0.10.1-1) neurodebian; urgency=low
 
   * Initial release.
 
