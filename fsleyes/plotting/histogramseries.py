@@ -6,17 +6,24 @@
 #
 """This module provides the :class:`HistogramSeries` class, used by the
 :class:`.HistogramPanel` for plotting histogram data.
+
+Two standalone functions are also defined in this module:
+
+  .. autosummary::
+     :nosignatures:
+
+     histogram
+     autoBin
 """
 
 import logging
 
 import numpy as np
 
-import props
-
-import fsl.utils.status as status
-import fsl.utils.async  as async
-from . import              dataseries
+import fsl.utils.cache              as cache
+import fsleyes_widgets.utils.status as status
+import fsleyes_props                as props
+from . import                          dataseries
 
 
 log = logging.getLogger(__name__)
@@ -27,20 +34,20 @@ class HistogramSeries(dataseries.DataSeries):
     overlay.
     """
 
-    
+
     nbins = props.Int(minval=10, maxval=500, default=100, clamped=True)
     """Number of bins to use in the histogram. This value is overridden
     by the :attr:`autoBin` setting.
     """
 
-    
+
     autoBin = props.Boolean(default=True)
     """If ``True``, the number of bins used for each :class:`HistogramSeries`
     is calculated automatically. Otherwise, :attr:`HistogramSeries.nbins` bins
     are used.
     """
 
-    
+
     ignoreZeros = props.Boolean(default=True)
     """If ``True``, zeros are excluded from the calculated histogram. """
 
@@ -50,18 +57,8 @@ class HistogramSeries(dataseries.DataSeries):
     included in the histogram end bins.
     """
 
-    
-    volume = props.Int(minval=0, maxval=0, clamped=True)
-    """If the :class:`.Image` overlay associated with this ``HistogramSeries`` 
-    is 4D, this settings specifies the index of the volume that the histogram
-    is calculated upon.
 
-    .. note:: Calculating the histogram over an entire 4D :class:`.Image` is
-              not yet supported.
-    """
-
-    
-    dataRange = props.Bounds(ndims=1)
+    dataRange = props.Bounds(ndims=1, clamped=False)
     """Specifies the range of data which should be included in the histogram.
     See the :attr:`includeOutliers` property.
     """
@@ -75,7 +72,7 @@ class HistogramSeries(dataseries.DataSeries):
     interaction.
     """
 
-    
+
     showOverlayRange = props.Bounds(ndims=1)
     """Data range to display with the :attr:`.showOverlay` mask. """
 
@@ -85,22 +82,21 @@ class HistogramSeries(dataseries.DataSeries):
 
         :arg overlay:     The :class:`.Image` overlay to calculate a histogram
                           for.
-        
+
         :arg displayCtx:  The :class:`.DisplayContext` instance.
-        
+
         :arg overlayList: The :class:`.OverlayList` instance.
         """
 
-        log.debug('New HistogramSeries instance for {} '.format(overlay.name)) 
+        log.debug('New HistogramSeries instance for {} '.format(overlay.name))
 
         dataseries.DataSeries.__init__(self, overlay)
 
         self.__name        = '{}_{}'.format(type(self).__name__, id(self))
         self.__displayCtx  = displayCtx
         self.__overlayList = overlayList
-
-        opts = displayCtx.getOpts(overlay)
-        self.bindProps('volume', opts)
+        self.__display     = displayCtx.getDisplay(overlay)
+        self.__opts        = displayCtx.getOpts(overlay)
 
         self.__nvals              = 0
         self.__finiteData         = np.array([])
@@ -109,39 +105,56 @@ class HistogramSeries(dataseries.DataSeries):
         self.__nonZeroData        = np.array([])
         self.__clippedFiniteData  = np.array([])
         self.__clippedNonZeroData = np.array([])
-        self.__initProperties()
+        self.__volCache           = cache.Cache(maxsize=10)
+        self.__histCache          = cache.Cache(maxsize=100)
 
-        self.addListener('volume',
-                         self.__name,
-                         self.__volumeChanged)
-        self.addListener('dataRange',
-                         self.__name,
-                         self.__dataRangeChanged)
-        self.addListener('nbins',
-                         self.__name,
-                         self.__histPropsChanged)
-        self.addListener('autoBin',
-                         self.__name,
-                         self.__histPropsChanged) 
-        self.addListener('ignoreZeros',
-                         self.__name,
-                         self.__histPropsChanged)
-        self.addListener('includeOutliers',
-                         self.__name,
-                         self.__histPropsChanged)
+        self.__display.addListener('overlayType',
+                                   self.__name,
+                                   self.__overlayTypeChanged)
+        self.__opts   .addListener('volume',
+                                   self.__name,
+                                   self.__volumeChanged)
+        self          .addListener('dataRange',
+                                   self.__name,
+                                   self.__dataRangeChanged)
+        self          .addListener('nbins',
+                                   self.__name,
+                                   self.__histPropsChanged)
+        self          .addListener('autoBin',
+                                   self.__name,
+                                   self.__histPropsChanged)
+        self          .addListener('ignoreZeros',
+                                   self.__name,
+                                   self.__histPropsChanged)
+        self          .addListener('includeOutliers',
+                                   self.__name,
+                                   self.__histPropsChanged)
 
-        
+        # volumeChanged performs initial histogram-
+        # related calculations for the current volume
+        # (whether it is 3D or 4D)
+        self.__volumeChanged()
+
+
     def destroy(self):
         """This needs to be called when this ``HistogramSeries`` instance
         is no longer being used.
         """
 
-        self.removeListener('nbins',           self.__name)
-        self.removeListener('ignoreZeros',     self.__name)
-        self.removeListener('includeOutliers', self.__name)
-        self.removeListener('volume',          self.__name)
-        self.removeListener('dataRange',       self.__name)
-        self.removeListener('nbins',           self.__name)
+        self.__display.removeListener('overlayType',     self.__name)
+        self.__opts   .removeListener('volume',          self.__name)
+        self          .removeListener('nbins',           self.__name)
+        self          .removeListener('ignoreZeros',     self.__name)
+        self          .removeListener('includeOutliers', self.__name)
+        self          .removeListener('dataRange',       self.__name)
+        self          .removeListener('nbins',           self.__name)
+
+        self.__volCache .clear()
+        self.__histCache.clear()
+        self.__volCache  = None
+        self.__histCache = None
+        self.__opts      = None
+        self.__display   = None
 
 
     def redrawProperties(self):
@@ -157,7 +170,7 @@ class HistogramSeries(dataseries.DataSeries):
 
         return propNames
 
-            
+
     def getData(self):
         """Overrides :meth:`.DataSeries.getData`.
 
@@ -188,116 +201,82 @@ class HistogramSeries(dataseries.DataSeries):
         """
         return self.__nvals
 
-        
-    def __initProperties(self):
-        """Called by :meth:`__init__`. Calculates and caches some things which
-        are needed for the histogram calculation.
 
-        .. note:: The work performed by this method is done on a separate
-                  thread, via the :mod:`.async` module. If you want to be
-                  notified when the work is complete, register a listener on
-                  the :attr:`dataRange` property (via
-                  :meth:`.HasProperties.addListener`).
+    def __overlayTypeChanged(self, *a):
+        """Called when the :attr:`.Display.overlayType` changes. When this
+        happens, the :class:`.DisplayOpts` instance associated with the
+        overlay gets destroyed and recreated. This method de-registers
+        and re-registers property listeners as needed.
         """
+        oldOpts     = self.__opts
+        newOpts     = self.__displayCtx.getOpts(self.overlay)
+        self.__opts = newOpts
 
-        log.debug('Performining initial histogram '
-                  'calculations for overlay {}'.format(
-                      self.overlay.name))
+        oldOpts.removeListener('volume', self.__name)
+        newOpts.addListener(   'volume', self.__name, self.__volumeChanged)
 
-        status.update('Performing initial histogram calculation '
-                      'for overlay {}...'.format(self.overlay.name)) 
 
-        def init():
-
-            data    = self.overlay[:]
-            finData = data[np.isfinite(data)]
-            nzData  = finData[finData != 0]
- 
-            dmin    = finData.min()
-            dmax    = finData.max()
-            dist    = (dmax - dmin) / 10000.0
-
-            with props.suppress(self, 'showOverlayRange'), \
-                 props.suppress(self, 'dataRange'), \
-                 props.suppress(self, 'nbins'):
-
-                self.dataRange.xmin = dmin
-                self.dataRange.xmax = dmax + dist
-                self.dataRange.xlo  = dmin
-                self.dataRange.xhi  = dmax + dist
-                
-                self.nbins = self.__autoBin(nzData, self.dataRange.x)
-
-            if not self.overlay.is4DImage():
-
-                self.__finiteData  = finData
-                self.__nonZeroData = nzData
-                self.__dataRangeChanged(callHistPropsChanged=False)
-
-            else:
-                self.__volumeChanged(callHistPropsChanged=False)
-
-            self.__histPropsChanged()
-
-        def onFinish():
-            self.propNotify('dataRange')
-
-        async.run(init, onFinish=onFinish)
-
-        
-    def __volumeChanged(
-            self,
-            ctx=None,
-            value=None,
-            valid=None,
-            name=None,
-            callHistPropsChanged=True):
+    def __volumeChanged(self, *args, **kwargs):
         """Called when the :attr:`volume` property changes, and also by the
-        :meth:`__initProperties` method.
+        :meth:`__init__` method.
 
         Re-calculates some things for the new overlay volume.
-
-        :arg callHistPropsChanged: If ``True`` (the default), the
-                                   :meth:`__histPropsChanged` method will be
-                                   called.
-
-        All other arguments are ignored, but are passed in when this method is
-        called due to a property change (see the
-        :meth:`.HasProperties.addListener` method).        
         """
 
-        if self.overlay.is4DImage(): data = self.overlay[..., self.volume]
-        else:                        data = self.overlay[:]
+        opts    = self.__opts
+        overlay = self.overlay
 
-        data = data[np.isfinite(data)]
+        # We cache the following for each volume
+        # so they don't need to be recalculated:
+        #  - finite data
+        #  - non-zero data
+        #  - finite minimum
+        #  - finite maximum
+        #
+        # The cache size is restricted (see its
+        # creation in __init__) so we don't blow
+        # out RAM
+        volkey   = (opts.volumeDim, opts.volume)
+        volprops = self.__volCache.get(volkey, None)
 
-        self.__finiteData  = data
-        self.__nonZeroData = data[data != 0]
+        if volprops is None:
+            log.debug('Volume changed {} - extracting '
+                      'finite/non-zero data'.format(volkey))
+            finData = overlay[opts.index()]
+            finData = finData[np.isfinite(finData)]
+            nzData  = finData[finData != 0]
+            dmin    = finData.min()
+            dmax    = finData.max()
+            self.__volCache.put(volkey, (finData, nzData, dmin, dmax))
+        else:
+            log.debug('Volume changed {} - got finite/'
+                      'non-zero data from cache'.format(volkey))
+            finData, nzData, dmin, dmax = volprops
 
-        self.__dataRangeChanged(callHistPropsChanged=False)
+        dist = (dmax - dmin) / 10000.0
 
-        if callHistPropsChanged:
-            self.__histPropsChanged()
+        with props.suppressAll(self):
+
+            self.dataRange.xmin = dmin
+            self.dataRange.xmax = dmax + dist
+            self.dataRange.xlo  = dmin
+            self.dataRange.xhi  = dmax + dist
+            self.nbins          = autoBin(nzData, self.dataRange.x)
+
+            self.__finiteData  = finData
+            self.__nonZeroData = nzData
+
+            self.__dataRangeChanged()
+
+        with props.skip(self, 'dataRange', self.__name):
+            self.propNotify('dataRange')
 
 
-    def __dataRangeChanged(
-            self,
-            ctx=None,
-            value=None,
-            valid=None,
-            name=None,
-            callHistPropsChanged=True):
+    def __dataRangeChanged(self, *args, **kwargs):
         """Called when the :attr:`dataRange` property changes, and also by the
         :meth:`__initProperties` and :meth:`__volumeChanged` methods.
-
-        :arg callHistPropsChanged: If ``True`` (the default), the
-                                   :meth:`__histPropsChanged` method will be
-                                   called.
-
-        All other arguments are ignored, but are passed in when this method is
-        called due to a property change (see the
-        :meth:`.HasProperties.addListener` method).
         """
+
         finData = self.__finiteData
         nzData  = self.__nonZeroData
 
@@ -317,17 +296,16 @@ class HistogramSeries(dataseries.DataSeries):
             self.showOverlayRange.xmin = dlo - dist
             self.showOverlayRange.xmax = dhi + dist
 
-            if needsInit:
+            if needsInit or not self.showOverlay:
                 self.showOverlayRange.xlo = dlo
                 self.showOverlayRange.xhi = dhi
             else:
                 self.showOverlayRange.xlo = max(dlo, self.showOverlayRange.xlo)
                 self.showOverlayRange.xhi = min(dhi, self.showOverlayRange.xhi)
 
-        if callHistPropsChanged:
-            self.__histPropsChanged()
+        self.__histPropsChanged()
 
-            
+
     def __histPropsChanged(self, *a):
         """Called internally, and when any histogram settings change.
         Re-calculates the histogram data.
@@ -350,10 +328,10 @@ class HistogramSeries(dataseries.DataSeries):
             else:                    data = self.__clippedNonZeroData
         else:
             if self.includeOutliers: data = self.__finiteData
-            else:                    data = self.__clippedFiniteData 
-        
+            else:                    data = self.__clippedFiniteData
+
         if self.autoBin:
-            nbins = self.__autoBin(data, self.dataRange.x)
+            nbins = autoBin(data, self.dataRange.x)
 
             if self.hasListener('nbins', self.__name):
                 self.disableListener('nbins', self.__name)
@@ -361,22 +339,33 @@ class HistogramSeries(dataseries.DataSeries):
             if self.hasListener('nbins', self.__name):
                 self.enableListener('nbins', self.__name)
 
-        # Calculate bin edges
-        bins = np.linspace(self.dataRange.xlo,
-                           self.dataRange.xhi,
-                           self.nbins + 1)
+        # We cache calculated bins and counts
+        # for each combination of parameters,
+        # as histogram calculation can take
+        # time.
+        hrange  = (self.dataRange.xlo,  self.dataRange.xhi)
+        drange  = (self.dataRange.xmin, self.dataRange.xmax)
+        histkey = ((self.__opts.volumeDim, self.__opts.volume),
+                   self.includeOutliers,
+                   hrange,
+                   drange,
+                   self.nbins)
+        cached  = self.__histCache.get(histkey, None)
 
-        if self.includeOutliers:
-            bins[ 0] = self.dataRange.xmin
-            bins[-1] = self.dataRange.xmax
-            
-        # Calculate the histogram
-        histX    = bins
-        histY, _ = np.histogram(data.flat, bins=bins)
-            
+        if cached is not None:
+            histX, histY, nvals = cached
+        else:
+            histX, histY, nvals = histogram(data,
+                                            self.nbins,
+                                            hrange,
+                                            drange,
+                                            self.includeOutliers,
+                                            True)
+            self.__histCache.put(histkey, (histX, histY, nvals))
+
         self.__xdata = histX
         self.__ydata = histY
-        self.__nvals = histY.sum()
+        self.__nvals = nvals
 
         status.update('Histogram for {} calculated.'.format(
             self.overlay.name))
@@ -388,34 +377,91 @@ class HistogramSeries(dataseries.DataSeries):
                       self.__nvals,
                       self.nbins))
 
-        
-    def __autoBin(self, data, dataRange):
-        """Calculates the number of bins which should be used for a histogram
-        of the given data. The calculation is identical to that implemented
-        in the original FSLView.
 
-        :arg data:      The data that the histogram is to be calculated on.
+def histogram(data,
+              nbins,
+              histRange,
+              dataRange,
+              includeOutliers=False,
+              count=True):
+    """Calculates a histogram of the given ``data``.
 
-        :arg dataRange: A tuple containing the ``(min, max)`` histogram range.
-        """
+    :arg data:            The data to calculate a histogram foe
 
-        dMin, dMax = dataRange
-        dRange     = dMax - dMin
+    :arg nbins:           Number of bins to use
 
-        binSize = np.power(10, np.ceil(np.log10(dRange) - 1) - 1)
+    :arg histRange:       Tuple containing  the ``(low, high)`` data range
+                          that the histogram is to be calculated on.
 
-        nbins = dRange / binSize
+    :arg dataRange:       Tuple containing  the ``(min, max)`` range of
+                          values in the data
 
-        while nbins < 100:
-            binSize /= 2
-            nbins    = dRange / binSize
+    :arg includeOutliers: If ``True``, the outermost bins will contain counts
+                          for values which are outside the ``histRange``.
+                          Defaults to ``False``.
 
-        if issubclass(data.dtype.type, np.integer):
-            binSize = max(1, np.ceil(binSize))
+    :arg count:           If ``True`` (the default), the raw histogram counts
+                          are returned. Otherwise they are converted into
+                          probabilities.
 
-        adjMin = np.floor(dMin / binSize) * binSize
-        adjMax = np.ceil( dMax / binSize) * binSize
+    :returns:             A tuple containing:
+                            - The ``x`` histogram data (bin edges)
+                            - The ``y`` histogram data
+                            - The total number of values that were used
+                              in the histogram calculation
+    """
 
-        nbins = int((adjMax - adjMin) / binSize) + 1
+    hlo, hhi = histRange
+    dlo, dhi = dataRange
 
-        return nbins
+    # Calculate bin edges
+    bins = np.linspace(hlo, hhi, nbins + 1)
+
+    if includeOutliers:
+        bins[ 0] = dlo
+        bins[-1] = dhi
+
+    # Calculate the histogram
+    histX    = bins
+    histY, _ = np.histogram(data.flat, bins=bins)
+    nvals    = histY.sum()
+
+    if not count:
+        histY = histY / nvals
+
+    return histX, histY, nvals
+
+
+def autoBin(data, dataRange):
+    """Calculates the number of bins which should be used for a histogram
+    of the given data. The calculation is identical to that implemented
+    in the original FSLView.
+
+    :arg data:      The data that the histogram is to be calculated on.
+
+    :arg dataRange: A tuple containing the ``(min, max)`` histogram range.
+    """
+
+    dMin, dMax = dataRange
+    dRange     = dMax - dMin
+
+    if np.isclose(dRange, 0):
+        return 1
+
+    binSize = np.power(10, np.ceil(np.log10(dRange) - 1) - 1)
+
+    nbins = dRange / binSize
+
+    while nbins < 100:
+        binSize /= 2
+        nbins    = dRange / binSize
+
+    if issubclass(data.dtype.type, np.integer):
+        binSize = max(1, np.ceil(binSize))
+
+    adjMin = np.floor(dMin / binSize) * binSize
+    adjMax = np.ceil( dMax / binSize) * binSize
+
+    nbins = int((adjMax - adjMin) / binSize) + 1
+
+    return nbins

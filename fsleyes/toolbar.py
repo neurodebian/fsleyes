@@ -32,14 +32,14 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
 
       .. autosummary::
          :nosignatures:
-    
+
          AddTool
          InsertTool
          InsertTools
          SetTools
          MakeLabelledTool
-    
-    
+
+
     When the horizontal size of a ``FSLeyesToolBar`` becomes too small to
     display all of its tools, the toolbar is compressed: some tools are
     hidden, and buttons are displayed on each end of the toolbar, allowing the
@@ -66,19 +66,19 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         """Create a ``FSLeyesToolBar``.
 
         :arg parent:      The :mod:`wx` parent object.
-        
+
         :arg overlayList: The :class:`.OverlayList`, containing all overlays
                           being displayed.
-        
+
         :arg displayCtx:  A :class:`.DisplayContext`, which defines how the
                           overlays are to be displayed.
 
         :arg frame:       The :class:`.FSLeyesFrame` object.
-        
+
         :arg height:      Desired toolbar height in pixels. This value is used
                           to look up appropriately sized left/right arrow
                           icons.
-                          
+
         :arg actionz:     A dictionary of actions passed through to the
                           :meth:`.ActionProvider.__init__`.
 
@@ -88,7 +88,7 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
 
         if orient not in (wx.HORIZONTAL, wx.VERTICAL):
             raise ValueError('Invalid orientation: {}'.format(orient))
-        
+
         fslpanel.FSLeyesPanel.__init__(self,
                                        parent,
                                        overlayList,
@@ -106,24 +106,23 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         font = self.GetFont()
         self.SetFont(font.Smaller())
 
-        # BU_NOTEXT causes segfault under OSX
-        if wx.Platform == '__WXMAC__': style = wx.BU_EXACTFIT 
-        else:                          style = wx.BU_EXACTFIT | wx.BU_NOTEXT
+        style = wx.BU_EXACTFIT | wx.BU_NOTEXT
 
         if orient == wx.HORIZONTAL:
             lBmp = icons.loadBitmap('thinLeftArrow{}' .format(height))
             rBmp = icons.loadBitmap('thinRightArrow{}'.format(height))
         else:
             lBmp = icons.loadBitmap('thinUpArrow{}'  .format(height))
-            rBmp = icons.loadBitmap('thinDownArrow{}'.format(height)) 
+            rBmp = icons.loadBitmap('thinDownArrow{}'.format(height))
+
         self.__leftButton  = wx.Button(self, style=style)
         self.__rightButton = wx.Button(self, style=style)
 
-        self.__leftButton.SetBitmap(lBmp)
-        self.__rightButton.SetBitmap(rBmp)
+        self.__leftButton .SetBitmapLabel(lBmp)
+        self.__rightButton.SetBitmapLabel(rBmp)
 
         self.__sizer = wx.BoxSizer(orient)
-        self.SetSizer(self.__sizer) 
+        self.SetSizer(self.__sizer)
 
         self.__leftButton .Bind(wx.EVT_BUTTON,     self.__onLeftButton)
         self.__rightButton.Bind(wx.EVT_BUTTON,     self.__onRightButton)
@@ -137,7 +136,7 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         ``wx.HORIZONTAL`` or ``wx.VERTICAL``.
         """
         return self.__orient
-        
+
 
     def MakeLabelledTool(self,
                          tool,
@@ -152,14 +151,14 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
             toolbar.AddTool(labelledTool)
 
         :arg tool:      A :mod:`wx` control.
-        
+
         :arg labelText: A label for the tool.
-        
+
         :arg labelSide: Which side of the tool to put the label - ``wx.TOP``,
                         ``wx.BOTTOM``, ``wx.LEFT``, or ``wx.RIGHT``.
 
         :arg expand:    Defaults to ``False``. If ``True``, the widget and
-                        label will be set up so they expand to fit all 
+                        label will be set up so they expand to fit all
                         available space
         """
 
@@ -184,7 +183,7 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         else:
             sizerArgs = {
                 'flag' : wx.ALIGN_CENTRE,
-            } 
+            }
 
         if labelSide in (wx.TOP, wx.LEFT):
             sizer.Add(label, **sizerArgs)
@@ -206,7 +205,7 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         for t in self.__tools:
             t.Enable(*args, **kwargs)
 
-            
+
     def GetTools(self):
         """Returns a list containing all tools in this ``FSLeyesToolBar``. """
         return self.__tools[:]
@@ -226,18 +225,18 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         """Inserts a :class:`.ToolBarDivider` into the toolbar at the
         specified ``index``.
         """
-        
+
         if   self.__orient == wx.VERTICAL:   orient = wx.HORIZONTAL
         elif self.__orient == wx.HORIZONTAL: orient = wx.VERTICAL
-        
-        self.InsertTool(ToolBarDivider(self, self.__height, orient), index) 
+
+        self.InsertTool(ToolBarDivider(self, self.__height, orient), index)
 
 
     def AddTool(self, tool):
         """Adds the given tool to this ``FSLeyesToolBar``. """
         self.InsertTool(tool)
 
-        
+
     def InsertTools(self, tools, index=None):
         """Inserts the given sequence of tools into this ``FSLeyesToolBar``,
         at the specified index.
@@ -268,12 +267,12 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         self.ClearTools(destroy, postevent=False)
 
         for tool in tools:
-            self.InsertTool(tool, postevent=False)
+            self.InsertTool(tool, postevent=False, redraw=False)
 
         wx.PostEvent(self, ToolBarEvent())
-        
 
-    def InsertTool(self, tool, index=None, postevent=True):
+
+    def InsertTool(self, tool, index=None, postevent=True, redraw=True):
         """Inserts the given tool into this ``FSLeyesToolBar``, at the
         specified index.
 
@@ -283,6 +282,9 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
 
         :arg postevent: If ``True``, a :data:`ToolBarEvent` will be generated.
                         Pass ``False`` to suppress this event.
+
+        :arg redraw:    If ``True``, the toolbar is redrawn. Pass ``False``
+                        to suppress this behaviour.
         """
 
         if index is None:
@@ -296,11 +298,13 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         self.__tools.insert(index, tool)
 
         self.InvalidateBestSize()
-        self.__drawToolBar()
+
+        if redraw:
+            self.__drawToolBar()
 
         if postevent:
             wx.PostEvent(self, ToolBarEvent())
-            
+
 
     def DoGetBestSize(self):
         """Calculates and returns the best size for this toolbar, simply the
@@ -321,7 +325,7 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         minHeight = 0
 
         for tool in self.__tools:
-            
+
             tw, th = tool.GetBestSize().Get()
             if tw > minWidth:  minWidth  = tw
             if th > minHeight: minHeight = th
@@ -352,8 +356,8 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         self.CacheBestSize(size)
 
         return size
-        
-    
+
+
     def ClearTools(
             self,
             destroy=False,
@@ -364,17 +368,17 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         ``FSLeyesToolBar``.
 
         :arg destroy:   If ``True``, the removed tools are destroyed.
-        
+
         :arg startIdx:  Start index of tools to remove. If not provided,
                         defaults to 0.
-        
+
         :arg endIdx:    End index of tools to remove (exclusive). If not
                         provided, defaults to :meth:`GetToolCount()`.
-        
+
         :arg postevent: If ``True``, a :data:`ToolBarEvent` will be
                         generated. Set to ``False`` to suppress the event.
         """
- 
+
         if len(self.__tools) == 0:
             return
 
@@ -385,7 +389,7 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
             tool = self.__tools[i]
 
             self.__sizer.Detach(tool)
-            
+
             if destroy:
                 tool.Destroy()
 
@@ -396,7 +400,7 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
 
         if postevent:
             wx.PostEvent(self, ToolBarEvent())
-        
+
 
     def __onMouseWheel(self, ev):
         """Called when the mouse wheel is rotated on this ``FSLeyesToolBar``.
@@ -422,17 +426,17 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
             self.__index = 0
 
         log.debug('Left button pushed - setting start '
-                  'tool index to {}'.format(self.__index)) 
+                  'tool index to {}'.format(self.__index))
 
         self.__drawToolBar()
 
-        
+
     def __onRightButton(self, ev=None):
         """Called when the right toolbar button is pressed.
 
         If the toolbar is compressed, it is scrolled to the right.
         """
-        
+
         self.__index += 1
 
         if self.__index + self.__numVisible >= len(self.__tools):
@@ -459,31 +463,31 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
         sizer.Clear()
 
         if orient == wx.HORIZONTAL:
-        
+
             availSpace = self.GetSize().GetWidth()
             reqdSpace  = [tool.GetBestSize().GetWidth() for tool in tools]
             leftSpace  = self.__leftButton .GetBestSize().GetWidth()
             rightSpace = self.__rightButton.GetBestSize().GetWidth()
-            
+
         else:
-        
+
             availSpace = self.GetSize().GetHeight()
             reqdSpace  = [tool.GetBestSize().GetHeight() for tool in tools]
             leftSpace  = self.__leftButton .GetBestSize().GetHeight()
-            rightSpace = self.__rightButton.GetBestSize().GetHeight() 
+            rightSpace = self.__rightButton.GetBestSize().GetHeight()
 
         if availSpace >= sum(reqdSpace):
 
             log.debug('{}: All tools fit ({} >= {})'.format(
                 type(self).__name__, availSpace, sum(reqdSpace)))
-            
+
             self.__index      = 0
             self.__numVisible = len(tools)
-            
+
             self.__leftButton .Enable(False)
             self.__rightButton.Enable(False)
             self.__leftButton .Show(  False)
-            self.__rightButton.Show(  False) 
+            self.__rightButton.Show(  False)
 
             for tool in tools:
                 tool.Show(True)
@@ -498,7 +502,7 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
                 lastIdx = len(tools)
             else:
                 lastIdx = biggerIdxs[0] + self.__index
-            
+
             self.__numVisible = lastIdx - self.__index
 
             log.debug('{}: {} tools fit ({} - {})'.format(
@@ -517,15 +521,9 @@ class FSLeyesToolBar(fslpanel.FSLeyesPanel):
                     tools[i].Show(False)
 
         if self.__numVisible > 0:
-            sizer.Insert(self.__numVisible, (0, 0),
-                         flag=wx.EXPAND,
-                         proportion=1)
-            sizer.Insert(self.__numVisible + 1,
-                         self.__rightButton,
-                         flag=wx.EXPAND)
-            sizer.Insert(0,
-                         self.__leftButton,
-                         flag=wx.EXPAND)
+            sizer.Add(      (0, 0),             flag=wx.EXPAND, proportion=1)
+            sizer.Add(      self.__rightButton, flag=wx.EXPAND)
+            sizer.Insert(0, self.__leftButton,  flag=wx.EXPAND)
 
         self.Layout()
 

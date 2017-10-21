@@ -5,7 +5,7 @@
 # Author: Paul McCarthy <pauldmccarthy@gmail.com>
 #
 """The ``displaycontext`` package contains classes which define the display
-options for pretty much everything in *FSLeyes*.  
+options for pretty much everything in *FSLeyes*.
 
 
 .. note:: Before perusing this package, you should read the high level
@@ -46,7 +46,7 @@ namespace. For example::
 
     # The VolumeOpts class is defined in the
     # fsleyes.displaycontext.volumeopts
-    # module, but is available in the 
+    # module, but is available in the
     # fsleyes.displaycontext namespace.
     volopts = fsldc.VolumeOpts(overlay, display, overlayList, displayCtx)
 
@@ -74,6 +74,7 @@ new one accordingly.  The following ``DisplayOpts`` sub-classes exist:
 
    ~fsleyes.displaycontext.volumeopts.NiftiOpts
    ~fsleyes.displaycontext.volumeopts.VolumeOpts
+   ~fsleyes.displaycontext.volumeopts.Volume3DOpts
    ~fsleyes.displaycontext.maskopts.MaskOpts
    ~fsleyes.displaycontext.vectoropts.VectorOpts
    ~fsleyes.displaycontext.vectoropts.RGBVectorOpts
@@ -114,9 +115,11 @@ define *scene* options:
 
    ~fsleyes.displaycontext.canvasopts.SliceCanvasOpts
    ~fsleyes.displaycontext.canvasopts.LightBoxCanvasOpts
+   ~fsleyes.displaycontext.canvasopts.Scene3DCanvasOpts
    ~fsleyes.displaycontext.sceneopts.SceneOpts
    ~fsleyes.displaycontext.orthoopts.OrthoOpts
    ~fsleyes.displaycontext.lightboxopts.LightBoxOpts
+   ~fsleyes.displaycontext.orthoopts.Scene3DOpts
 
 
 .. note:: Aside from an increase in code modularity and cleanliness, another
@@ -124,10 +127,10 @@ define *scene* options:
           the things that use them is so they can be imported, queried, and
           set without having to import the modules that use them.
 
-          For example, the :mod:`.fsleyes_parseargs` module needs to be able
+          For example, the :mod:`.parseargs` module needs to be able
           to access all of the display settings in order to print out the
           corresponding help documentation. This process would take much
-          longer if ``fsleyes_parseargs`` had to import, e.g.
+          longer if ``parseargs`` had to import, e.g.
           :class:`.OrthoPanel`, which would result in importing both :mod:`wx`
           and :mod:`.OpenGL`.
 
@@ -136,20 +139,24 @@ define *scene* options:
 """
 
 
-import itertools          as it
-import fsl.utils.typedict as td
-import fsl.data.constants as constants
+import itertools as it
+
+import fsleyes_widgets.utils.typedict as td
+import fsl.data.constants             as constants
 
 from .               import display
 from .displaycontext import DisplayContext
 from .display        import Display
+from .display        import DisplayOpts
 from .group          import OverlayGroup
 from .sceneopts      import SceneOpts
 from .orthoopts      import OrthoOpts
 from .lightboxopts   import LightBoxOpts
+from .scene3dopts    import Scene3DOpts
 from .colourmapopts  import ColourMapOpts
 from .volumeopts     import NiftiOpts
 from .volumeopts     import VolumeOpts
+from .volume3dopts   import Volume3DOpts
 from .maskopts       import MaskOpts
 from .vectoropts     import VectorOpts
 from .vectoropts     import RGBVectorOpts
@@ -173,7 +180,7 @@ OVERLAY_TYPES = td.TypeDict({
 })
 """This dictionary provides a mapping between all overlay classes,
 and the possible values that the :attr:`Display.overlayType` property
-may take for each of them. 
+may take for each of them.
 
 For each overlay class, the first entry in the corresponding overlay type
 list is used as the default overlay type.
@@ -212,7 +219,7 @@ def getOverlayTypes(overlay):
 
     import fsl.data.image as fslimage
     from . import            shopts
-    
+
     possibleTypes = list(OVERLAY_TYPES[overlay])
 
     if not isinstance(overlay, fslimage.Image):
@@ -224,7 +231,7 @@ def getOverlayTypes(overlay):
     couldBeVector = len(shape) == 4 and shape[-1] == 3
 
     # Or could it be a SH or tensor image?
-    couldBeTensor = len(shape) == 4 and shape[-1] == 6 
+    couldBeTensor = len(shape) == 4 and shape[-1] == 6
     couldBeSH     = len(shape) == 4 and shape[-1] in shopts.SH_COEFFICIENT_TYPE
 
     # Special cases:
@@ -238,10 +245,10 @@ def getOverlayTypes(overlay):
             possibleTypes.remove(   'linevector')
             possibleTypes.insert(0, 'linevector')
             possibleTypes.insert(0, 'rgbvector')
-        
+
     # Otherwise, remove the vector options
     else:
-        
+
         try:               possibleTypes.remove('rgbvector')
         except ValueError: pass
 
@@ -254,6 +261,6 @@ def getOverlayTypes(overlay):
 
     if not couldBeTensor:
         try:               possibleTypes.remove('tensor')
-        except ValueError: pass 
+        except ValueError: pass
 
     return possibleTypes

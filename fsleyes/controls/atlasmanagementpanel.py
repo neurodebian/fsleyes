@@ -13,8 +13,7 @@ import logging
 
 import wx
 
-import pwidgets.elistbox        as elistbox
-
+import fsleyes_widgets.elistbox  as elistbox
 import fsl.data.atlases          as atlases
 import fsleyes.panel             as fslpanel
 import fsleyes.actions.loadatlas as loadatlas
@@ -34,13 +33,13 @@ class AtlasManagementPanel(fslpanel.FSLeyesPanel):
         """Create an ``AtlasManagementPanel``.
 
         :arg parent:      the :mod:`wx` parent object.
-        
+
         :arg overlayList: The :class:`.OverlayList` instance.
-        
+
         :arg displayCtx:  The :class:`.DisplayContext` instance.
-        
+
         :arg frame:       The :class:`.FSLeyesFrame` instance.
-        
+
         :arg atlasPanel:  The :class:`.AtlasPanel` instance that has created
                           this ``AtlasManagementPanel``.
         """
@@ -61,7 +60,7 @@ class AtlasManagementPanel(fslpanel.FSLeyesPanel):
 
         self.__sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.__sizer.Add(self.__atlasList, flag=wx.EXPAND, proportion=1)
-        
+
         self.SetSizer(self.__sizer)
         self.SetMinSize(self.__sizer.GetMinSize())
 
@@ -79,7 +78,7 @@ class AtlasManagementPanel(fslpanel.FSLeyesPanel):
         needed. Removes some property/notification listeners, and calls
         the base class ``destroy`` method.
         """
-        
+
         fslpanel.FSLeyesPanel.destroy(self)
 
         atlases.registry.deregister(self._name, 'add')
@@ -89,7 +88,7 @@ class AtlasManagementPanel(fslpanel.FSLeyesPanel):
     def __atlasAdded(self, registry, topic, desc):
         """Called when an atlas is removed from the :class:`.AtlasRegistry`.
         Removes the corresponding atlas from the list.
-        """ 
+        """
 
         atlasID  = desc.atlasID
         allIDs   = [d.atlasID for d in registry.listAtlases()]
@@ -100,7 +99,7 @@ class AtlasManagementPanel(fslpanel.FSLeyesPanel):
                                 clientData=desc,
                                 tooltip=desc.specPath)
 
-    
+
     def __atlasRemoved(self, registry, topic, desc):
         """Called when an atlas is removed from the :class:`.AtlasRegistry`.
         Removes the corresponding atlas from the list.
@@ -114,10 +113,10 @@ class AtlasManagementPanel(fslpanel.FSLeyesPanel):
     def __onListAdd(self, ev):
         """Called when the user clicks the *Add* button on the list.
         Calls the :func:`.loadatlas.loadAtlas` function.
-        """ 
+        """
         loadatlas.loadAtlas(self.getFrame())
 
-    
+
     def __onListRemove(self, ev):
         """Called when the user clicks the *Remove* button on the list.
         Removes the corresponding atlas from the :class:`.AtlasRegistry`.

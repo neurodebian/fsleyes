@@ -27,6 +27,7 @@ shader source code:
      :nosignatures:
 
      getShaderDir
+     getShaderSuffix
      getVertexShader
      getFragmentShader
 
@@ -37,8 +38,13 @@ running simple filter shader programs, which require a 2D
 """
 
 
+# Import open from the io module, because it gives
+# us an interface compatible across python 2 and 3
+# (i.e. it allows us to specify the file encoding,
+# and thus allows shader files to contain non-ascii
+# characters).
+from io import                 open
 import os.path              as op
-
 import OpenGL.GL            as gl
 
 import                         fsleyes
@@ -52,11 +58,24 @@ ARBPShader = arbpprogram.ARBPShader
 
 
 def getShaderDir():
-    """Returns the irectory in which the ``ARB`` and ``glsl`` source files
-    can be found.  ``ARB`` files are assumed to be in a sub-directory called
-    ``gl14``, and ``glsl`` files in a sub-directory called ``gl21``.
+    """Returns the directory in which the ``ARB`` and ``glsl`` shader program
+    source files can be found. A different directory will be returned depending
+    on which OpenGL version is in use.
     """
-    return op.join(fsleyes.assetDir, 'assets', 'gl')    
+
+    if   fslgl.GL_VERSION == '2.1': subdir = 'gl21'
+    elif fslgl.GL_VERSION == '1.4': subdir = 'gl14'
+
+    return op.join(fsleyes.assetDir, 'assets', 'gl', subdir)
+
+
+def getShaderSuffix():
+    """Returns the shader program file suffix to use. A different suffix will be
+    returned depending on which OpenGL version is in use.
+    """
+
+    if   fslgl.GL_VERSION == '2.1': return 'glsl'
+    elif fslgl.GL_VERSION == '1.4': return 'prog'
 
 
 def getVertexShader(prefix):
@@ -67,7 +86,7 @@ def getVertexShader(prefix):
 
 
 def getFragmentShader(prefix):
-    """Returns the fragment shader source for the given GL type.""" 
+    """Returns the fragment shader source for the given GL type."""
     return _getShader(prefix, 'frag')
 
 
@@ -76,8 +95,10 @@ def _getShader(prefix, shaderType):
     shader type ('vert' or 'frag').
     """
     fname = _getFileName(prefix, shaderType)
-    with open(fname, 'rt') as f: src = f.read()
-    return preprocess(src)    
+    with open(fname, 'rt', encoding='utf-8') as f:
+        src = f.read()
+
+    return preprocess(src)
 
 
 def _getFileName(prefix, shaderType):
@@ -85,19 +106,14 @@ def _getFileName(prefix, shaderType):
     and shader type.
     """
 
-    if   fslgl.GL_VERSION == '2.1':
-        subdir = 'gl21'
-        suffix = 'glsl'
-    elif fslgl.GL_VERSION == '1.4':
-        subdir = 'gl14'
-        suffix = 'prog'
+    suffix = getShaderSuffix()
 
     if shaderType not in ('vert', 'frag'):
         raise RuntimeError('Invalid shader type: {}'.format(shaderType))
 
-    return op.join(getShaderDir(), subdir, '{}_{}.{}'.format(
+    return op.join(getShaderDir(), '{}_{}.{}'.format(
         prefix, shaderType, suffix))
- 
+
 
 def preprocess(src):
     """'Preprocess' the given shader source.
@@ -105,9 +121,6 @@ def preprocess(src):
     This amounts to searching for lines containing '#pragma include filename',
     and replacing those lines with the contents of the specified files.
     """
-
-    if   fslgl.GL_VERSION == '2.1': subdir = 'gl21'
-    elif fslgl.GL_VERSION == '1.4': subdir = 'gl14'
 
     lines    = src.split('\n')
     lines    = [l.strip() for l in lines]
@@ -121,15 +134,15 @@ def preprocess(src):
     for linei in pragmas:
 
         line = lines[linei].split()
-        
+
         if len(line) != 3:       continue
         if line[1] != 'include': continue
 
         includes.append((linei, line[2]))
 
     for linei, fname in includes:
-        fname = op.join(getShaderDir(), subdir, fname)
-        with open(fname, 'rt') as f:
+        fname = op.join(getShaderDir(), fname)
+        with open(fname, 'rt', encoding='utf-8') as f:
             lines[linei] = f.read()
 
     return '\n'.join(lines)
@@ -142,13 +155,13 @@ class Filter(object):
     def __init__(self, filterName):
 
         filterName = 'filter_{}'.format(filterName)
-        
+
         vertSrc = getVertexShader( 'filter')
         fragSrc = getFragmentShader(filterName)
 
         # TODO gl14
         self.__shader = GLSLShader(vertSrc, fragSrc)
-        
+
 
     def destroy(self):
         self.__shader.destroy()
@@ -166,7 +179,7 @@ class Filter(object):
               yax,
               xform=None,
               **kwargs):
-        
+
         self.__shader.load()
         self.__shader.set('texture', 0)
 
@@ -174,9 +187,9 @@ class Filter(object):
             self.__shader.set(name, value)
 
         source.drawOnBounds(zpos, xmin, xmax, ymin, ymax, xax, yax, xform)
-        
+
         self.__shader.unload()
-        
+
 
     def osApply(self, source, dest, clearDest=True, **kwargs):
 

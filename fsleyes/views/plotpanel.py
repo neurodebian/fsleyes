@@ -17,22 +17,17 @@ import collections
 
 import wx
 
-import matplotlib        as mpl
 import numpy             as np
 import scipy.interpolate as interp
-
-
-mpl.use('WxAgg')
-
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as Canvas
 
-import                                       props
-import pwidgets.elistbox                  as elistbox
 import fsl.utils.async                    as async
-import fsl.utils.settings                 as fslsettings
 from   fsl.utils.platform import platform as fslplatform
+import fsleyes_props                      as props
+import fsleyes_widgets.elistbox           as elistbox
+
 import fsleyes.strings                    as strings
 import fsleyes.actions                    as actions
 import fsleyes.overlay                    as fsloverlay
@@ -49,18 +44,18 @@ log = logging.getLogger(__name__)
 class PlotPanel(viewpanel.ViewPanel):
     """The ``PlotPanel`` class is the base class for all *FSLeyes views*
     which display some sort of 2D data plot, such as the
-    :class:`.TimeSeriesPanel`, and the :class:`.HistogramPanel`. 
+    :class:`.TimeSeriesPanel`, and the :class:`.HistogramPanel`.
     See also the :class:`OverlayPlotPanel`, which contains extra logic for
     displaying plots related to the currently selected overlay.
 
-    
+
     ``PlotPanel`` uses :mod:`matplotlib` for its plotting. The ``matplotlib``
     ``Figure``, ``Axis``, and ``Canvas`` instances can be accessed via the
     :meth:`getFigure`, :meth:`getAxis`, and :meth:`getCanvas` methods, if they
     are needed. Various display settings can be configured through
     ``PlotPanel`` properties, including :attr:`legend`, :attr:`smooth`, etc.
 
-    
+
     **Sub-class requirements**
 
     Sub-class implementations of ``PlotPanel`` must do the following:
@@ -81,7 +76,7 @@ class PlotPanel(viewpanel.ViewPanel):
       5. If necessary, override the :meth:`destroy` method, but make
          sure that the base-class implementation is called.
 
-    
+
     **Data series**
 
     A ``PlotPanel`` instance plots data contained in one or more
@@ -102,7 +97,7 @@ class PlotPanel(viewpanel.ViewPanel):
 
     **The draw queue**
 
-    
+
     The ``PlotPanel`` uses a :class:`.async.TaskThread` to asynchronously
     extract and prepare data for plotting, This is because data preparation
     may take a long time for large :class:`.Image` overlays, and the main
@@ -133,10 +128,10 @@ class PlotPanel(viewpanel.ViewPanel):
 
     artists = props.List()
     """This list contains any ``matplotlib.Artist`` instances which are
-    plotted every call to :meth:`drawArtists`. 
+    plotted every call to :meth:`drawArtists`.
     """
 
-    
+
     legend = props.Boolean(default=True)
     """If ``True``, a legend is added to the plot, with an entry for every
     ``DataSeries`` instance in the :attr:`dataSeries` list.
@@ -144,29 +139,29 @@ class PlotPanel(viewpanel.ViewPanel):
 
 
     xAutoScale = props.Boolean(default=True)
-    """If ``True``, the plot :attr:`limits` for the X axis are automatically 
+    """If ``True``, the plot :attr:`limits` for the X axis are automatically
     updated to fit all plotted data.
     """
 
-    
+
     yAutoScale = props.Boolean(default=True)
-    """If ``True``, the plot :attr:`limits` for the Y axis are automatically 
+    """If ``True``, the plot :attr:`limits` for the Y axis are automatically
     updated to fit all plotted data.
     """
 
-    
+
     xLogScale = props.Boolean(default=False)
     """Toggle a :math:`log_{10}` x axis scale. """
 
-    
+
     yLogScale = props.Boolean(default=False)
     """Toggle a :math:`log_{10}` y axis scale. """
 
-    
+
     ticks = props.Boolean(default=True)
     """Toggle axis ticks and tick labels on/off."""
 
-    
+
     grid = props.Boolean(default=True)
     """Toggle an axis grid on/off."""
 
@@ -178,40 +173,40 @@ class PlotPanel(viewpanel.ViewPanel):
     bgColour = props.Colour(default=(0.8, 0.8, 0.8))
     """Plot background colour."""
 
-    
+
     smooth = props.Boolean(default=False)
     """If ``True`` all plotted data is up-sampled, and smoothed using
     spline interpolation.
     """
 
-    
+
     xlabel = props.String()
     """A label to show on the x axis. """
 
-    
+
     ylabel = props.String()
     """A label to show on the y axis. """
 
-    
+
     limits = props.Bounds(ndims=2)
     """The x/y axis limits. If :attr:`xAutoScale` and :attr:`yAutoScale` are
     ``True``, these limit values are automatically updated on every call to
     :meth:`drawDataSeries`.
     """
 
-    
+
     def __init__(self, parent, overlayList, displayCtx, frame):
         """Create a ``PlotPanel``.
 
         :arg parent:      The :mod:`wx` parent object.
-        
+
         :arg overlayList: An :class:`.OverlayList` instance.
-        
+
         :arg displayCtx:  A :class:`.DisplayContext` instance.
-        
+
         :arg frame:       The :class:`.FSLeyesFrame` instance.
         """
-         
+
         viewpanel.ViewPanel.__init__(
             self, parent, overlayList, displayCtx, frame)
 
@@ -221,7 +216,7 @@ class PlotPanel(viewpanel.ViewPanel):
 
         figure.subplots_adjust(top=1.0, bottom=0.0, left=0.0, right=1.0)
         figure.patch.set_visible(False)
-        
+
         self.setCentrePanel(canvas)
 
         self.__figure    = figure
@@ -250,7 +245,7 @@ class PlotPanel(viewpanel.ViewPanel):
         # pending requests, as they are running
         # on separate threads and out of our
         # control (and could be blocking on I/O).
-        # 
+        #
         # Instead, we keep track of the total
         # number of pending requests. The
         # __drawDataSeries method (which does the
@@ -272,7 +267,7 @@ class PlotPanel(viewpanel.ViewPanel):
         # getDrawnDataSeries).
         self.__drawnDataSeries = collections.OrderedDict()
 
-        # Redraw whenever any property changes, 
+        # Redraw whenever any property changes,
         for propName in ['legend',
                          'xAutoScale',
                          'yAutoScale',
@@ -286,14 +281,14 @@ class PlotPanel(viewpanel.ViewPanel):
                          'xlabel',
                          'ylabel']:
             self.addListener(propName, self.__name, self.asyncDraw)
-            
+
         # custom listeners for a couple of properties
         self.addListener('dataSeries',
                          self.__name,
                          self.__dataSeriesChanged)
         self.addListener('artists',
                          self.__name,
-                         self.__artistsChanged) 
+                         self.__artistsChanged)
         self.addListener('limits',
                          self.__name,
                          self.__limitsChanged)
@@ -302,7 +297,7 @@ class PlotPanel(viewpanel.ViewPanel):
     def getFigure(self):
         """Returns the ``matplotlib`` ``Figure`` instance."""
         return self.__figure
-    
+
 
     def getAxis(self):
         """Returns the ``matplotlib`` ``Axis`` instance."""
@@ -345,20 +340,17 @@ class PlotPanel(viewpanel.ViewPanel):
 
         if not self.destroyed() and not async.inIdle(idleName):
             async.idle(self.draw, name=idleName)
-    
-        
+
+
     def destroy(self):
         """Removes some property listeners, and then calls
         :meth:`.ViewPanel.destroy`.
         """
 
-        self.__drawQueue.stop()
-        self.__drawQueue = None
-        
         self.removeListener('dataSeries', self.__name)
         self.removeListener('artists',    self.__name)
         self.removeListener('limits',     self.__name)
-        
+
         for propName in ['legend',
                          'xAutoScale',
                          'yAutoScale',
@@ -372,16 +364,22 @@ class PlotPanel(viewpanel.ViewPanel):
                          'xlabel',
                          'ylabel']:
             self.removeListener(propName, self.__name)
-            
+
         for ds in self.dataSeries:
 
             for propName in ds.redrawProperties():
                 ds.removeListener(propName, self.__name)
             ds.destroy()
 
-        self.dataSeries = []
-        self.artists    = []
-            
+        self.__drawQueue.stop()
+        self.__drawQueue       = None
+        self.__drawnDataSeries = None
+        self.dataSeries        = []
+        self.artists           = []
+        self.__figure          = None
+        self.__axis            = None
+        self.__canvas          = None
+
         viewpanel.ViewPanel.destroy(self)
 
 
@@ -389,31 +387,15 @@ class PlotPanel(viewpanel.ViewPanel):
     def screenshot(self, *a):
         """Prompts the user to select a file name, then saves a screenshot
         of the current plot.
+
+        See the :class:`.ScreenshotAction`.
         """
 
-        formats  = self.__canvas.get_supported_filetypes().items()
+        from fsleyes.actions.screenshot import ScreenshotAction
 
-        wildcard = ['{}|*.{}'.format(desc, fmt) for fmt, desc in formats]
-        wildcard = '|'.join(wildcard)
-
-        dlg = wx.FileDialog(self,
-                            message=strings.messages[self, 'screenshot'],
-                            wildcard=wildcard,
-                            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
-
-        if dlg.ShowModal() != wx.ID_OK:
-            return
-
-        path = dlg.GetPath()
-
-        try:
-            self.__figure.savefig(path)
-            
-        except Exception as e:
-            wx.MessageBox(
-                strings.messages[self, 'screenshot', 'error'].format(str(e)),
-                strings.titles[  self, 'screenshot', 'error'],
-                wx.ICON_ERROR)
+        ScreenshotAction(self.getOverlayList(),
+                         self.getDisplayContext(),
+                         self)()
 
 
     @actions.action
@@ -436,9 +418,9 @@ class PlotPanel(viewpanel.ViewPanel):
 
         See the :class:`.ExportDataSeriesAction`.
         """
-        
+
         from fsleyes.actions.exportdataseries import ExportDataSeriesAction
-        
+
         ExportDataSeriesAction(self.getOverlayList(),
                                self.getDisplayContext(),
                                self)()
@@ -470,7 +452,7 @@ class PlotPanel(viewpanel.ViewPanel):
                   ha='center', va='center',
                   transform=axis.transAxes,
                   bbox=bbox)
-        
+
         self.getCanvas().draw()
         self.Refresh()
 
@@ -482,7 +464,7 @@ class PlotPanel(viewpanel.ViewPanel):
         """
 
         return self.__drawnDataSeries[ds]
-        
+
 
     def getDrawnDataSeries(self):
         """Returns a list of tuples, each tuple containing the
@@ -511,7 +493,7 @@ class PlotPanel(viewpanel.ViewPanel):
         """Draw all ``matplotlib.Artist`` instances in the :attr:`artists`
         list, then refresh the canvas.
 
-        :arg refresh: If ``True`` (default), the canvas is refreshed. 
+        :arg refresh: If ``True`` (default), the canvas is refreshed.
         """
 
         axis   = self.getAxis()
@@ -523,7 +505,7 @@ class PlotPanel(viewpanel.ViewPanel):
             # before this task gets executed
             if not fslplatform.isWidgetAlive(self):
                 return
-            
+
             for artist in self.artists:
                 if artist not in axis.findobj(type(artist)):
                     axis.add_artist(artist)
@@ -546,7 +528,7 @@ class PlotPanel(viewpanel.ViewPanel):
 
          1. The data for each ``DataSeries`` instance is prepared on
             separate threads (using :func:`.async.run`).
-        
+
          2. A call to :func:`.async.wait` is enqueued on a
             :class:`.TaskThread`.
 
@@ -570,7 +552,7 @@ class PlotPanel(viewpanel.ViewPanel):
         :arg plotArgs:    Passed through to the :meth:`__drawDataSeries`
                           method.
 
-        
+
         .. note:: This method must only be called from the main application
                   thread (the ``wx`` event loop).
         """
@@ -584,7 +566,7 @@ class PlotPanel(viewpanel.ViewPanel):
 
         toPlot      = [ds for ds in toPlot      if ds.enabled]
         extraSeries = [ds for ds in extraSeries if ds.enabled]
-        
+
         toPlot      = extraSeries + toPlot
         preprocs    = [True] * len(extraSeries) + [False] * len(toPlot)
 
@@ -624,7 +606,7 @@ class PlotPanel(viewpanel.ViewPanel):
 
                 if not d.enabled:
                     return
-                
+
                 if p: xdata, ydata = self.prepareDataSeries(d)
                 else: xdata, ydata = d.getData()
 
@@ -657,8 +639,8 @@ class PlotPanel(viewpanel.ViewPanel):
                                  refresh,
                                  taskName='{}.wait'.format(id(self)),
                                  wait_direct=True,
-                                 **plotArgs) 
-        
+                                 **plotArgs)
+
 
     def __drawDataSeries(
             self,
@@ -675,16 +657,16 @@ class PlotPanel(viewpanel.ViewPanel):
         associated with the given ``dataSeries``.
 
         :arg dataSeries: The list of :class:`.DataSeries` instances to plot.
-        
+
         :arg allXdata:   A list of arrays containing X axis data, one for each
                          ``DataSeries``.
-        
+
         :arg allYdata:   A list of arrays containing Y axis data, one for each
                          ``DataSeries``.
-        
+
         :arg oldxlim:    X plot limits from the previous draw. If
                          ``xAutoScale`` is disabled, this limit is preserved.
-        
+
         :arg oldylim:    Y plot limits from the previous draw. If
                          ``yAutoScale`` is disabled, this limit is preserved.
 
@@ -692,21 +674,21 @@ class PlotPanel(viewpanel.ViewPanel):
 
         :arg xlabel:     If provided, overrides the value of the :attr:`xlabel`
                          property.
-        
+
         :arg ylabel:     If provided, overrides the value of the :attr:`ylabel`
-                         property. 
-        
+                         property.
+
         :arg plotArgs:   Remaining arguments passed to the
                          :meth:`__drawOneDataSeries` method.
         """
-        
+
         # Only draw the plot if there are no
         # pending draw requests. Otherwise
         # we would be drawing out-of-date data.
         self.__drawRequests -= 1
         if self.__drawRequests != 0:
             return
-        
+
         axis          = self.getAxis()
         canvas        = self.getCanvas()
         width, height = canvas.get_width_height()
@@ -716,7 +698,7 @@ class PlotPanel(viewpanel.ViewPanel):
 
         xlims = []
         ylims = []
-        
+
         for ds, xdata, ydata in zip(dataSeries, allXdata, allYdata):
 
             if any((ds is None, xdata is None, ydata is None)):
@@ -755,7 +737,7 @@ class PlotPanel(viewpanel.ViewPanel):
         if xlabel != '':
             axis.set_xlabel(xlabel, va='bottom')
             axis.xaxis.set_label_coords(0.5, 10.0 / height)
-            
+
         if ylabel != '':
             axis.set_ylabel(ylabel, va='top')
             axis.yaxis.set_label_coords(10.0 / width, 0.5)
@@ -766,12 +748,15 @@ class PlotPanel(viewpanel.ViewPanel):
 
             for ytl in axis.yaxis.get_ticklabels():
                 ytl.set_horizontalalignment('left')
-                
+
             for xtl in axis.xaxis.get_ticklabels():
                 xtl.set_verticalalignment('bottom')
         else:
-            axis.set_xticks([])
-            axis.set_yticks([])
+            xlabels = ['' for i in range(len(axis.xaxis.get_ticklabels()))]
+            ylabels = ['' for i in range(len(axis.yaxis.get_ticklabels()))]
+
+            axis.set_xticklabels(xlabels)
+            axis.set_yticklabels(ylabels)
 
         # Limits
         if xmin != xmax:
@@ -786,14 +771,14 @@ class PlotPanel(viewpanel.ViewPanel):
                 handles,
                 labels,
                 loc='upper right',
-                fontsize=12,
+                fontsize=10,
                 fancybox=True)
             legend.get_frame().set_alpha(0.6)
 
         if self.grid:
             axis.grid(linestyle='-',
                       color=self.gridColour,
-                      linewidth=2,
+                      linewidth=0.5,
                       zorder=0)
         else:
             axis.grid(False)
@@ -805,7 +790,7 @@ class PlotPanel(viewpanel.ViewPanel):
         if refresh:
             canvas.draw()
 
-        
+
     def __drawOneDataSeries(self, ds, xdata, ydata, **plotArgs):
         """Plots a single :class:`.DataSeries` instance. This method is called
         by the :meth:`drawDataSeries` method.
@@ -817,7 +802,7 @@ class PlotPanel(viewpanel.ViewPanel):
                        arguments are all passed through to the
                        ``Axis.plot`` function.
         """
-        
+
         if ds.alpha == 0:
             return (0, 0), (0, 0)
 
@@ -869,17 +854,17 @@ class PlotPanel(viewpanel.ViewPanel):
             axis.set_xscale('log')
             posx    = xdata[xdata > 0]
             xlimits = np.nanmin(posx), np.nanmax(posx)
-            
+
         else:
             xlimits = np.nanmin(xdata), np.nanmax(xdata)
-            
+
         if self.yLogScale:
             axis.set_yscale('log')
             posy    = ydata[ydata > 0]
             ylimits = np.nanmin(posy), np.nanmax(posy)
         else:
             ylimits = np.nanmin(ydata), np.nanmax(ydata)
-            
+
         return xlimits, ylimits
 
 
@@ -888,7 +873,7 @@ class PlotPanel(viewpanel.ViewPanel):
         to any new :class:`.DataSeries` instances, and then calls
         :meth:`asyncDraw`.
         """
-        
+
         for ds in self.dataSeries:
             for propName in ds.redrawProperties():
                 ds.addListener(propName,
@@ -915,7 +900,7 @@ class PlotPanel(viewpanel.ViewPanel):
         axis.set_ylim(self.limits.y)
         self.asyncDraw()
 
-        
+
     def __calcLimits(self,
                      dataxlims,
                      dataylims,
@@ -935,17 +920,17 @@ class PlotPanel(viewpanel.ViewPanel):
         . Otherwise, the existing axis limits are retained.
 
         :arg dataxlims: A tuple containing the (min, max) x data range.
-        
+
         :arg dataylims: A tuple containing the (min, max) y data range.
-        
+
         :arg axisxlims: A tuple containing the current (min, max) x axis
                         limits.
-        
+
         :arg axisylims: A tuple containing the current (min, max) y axis
                         limits.
-        
+
         :arg axWidth:   Canvas width in pixels
-        
+
         :arg axHeight:  Canvas height in pixels
         """
 
@@ -953,27 +938,27 @@ class PlotPanel(viewpanel.ViewPanel):
 
             xmin = min([lim[0] for lim in dataxlims])
             xmax = max([lim[1] for lim in dataxlims])
-            
+
             lPad = (xmax - xmin) * (50.0 / axWidth)
             rPad = (xmax - xmin) * (50.0 / axWidth)
 
             xmin = xmin - lPad
-            xmax = xmax + rPad 
+            xmax = xmax + rPad
         else:
             xmin = axisxlims[0]
-            xmax = axisxlims[1] 
+            xmax = axisxlims[1]
 
         if self.yAutoScale:
-            
+
             ymin = min([lim[0] for lim in dataylims])
             ymax = max([lim[1] for lim in dataylims])
-            
+
             bPad = (ymax - ymin) * (50.0 / axHeight)
             tPad = (ymax - ymin) * (50.0 / axHeight)
 
             ymin = ymin - bPad
-            ymax = ymax + tPad 
-            
+            ymax = ymax + tPad
+
         else:
 
             ymin = axisylims[0]
@@ -981,8 +966,8 @@ class PlotPanel(viewpanel.ViewPanel):
 
         self.disableListener('limits', self.__name)
         self.limits[:] = [xmin, xmax, ymin, ymax]
-        self.enableListener('limits', self.__name)            
- 
+        self.enableListener('limits', self.__name)
+
         return (xmin, xmax), (ymin, ymax)
 
 
@@ -1007,7 +992,7 @@ class OverlayPlotPanel(PlotPanel):
      3. Optionally implement the :meth:`prepareDataSeries` method to
         perform any custom preprocessing.
 
-    
+
     **The internal data series store**
 
 
@@ -1033,7 +1018,7 @@ class OverlayPlotPanel(PlotPanel):
 
     **Proxy images**
 
-    
+
     The ``OverlayPlotPanel`` will replace all :class:`.ProxyImage` instances
     with their base images. This functionality was originally added to support
     the :attr:`.HistogramSeries.showOverlay` functionality - it adds a mask
@@ -1061,7 +1046,7 @@ class OverlayPlotPanel(PlotPanel):
 
     **Sub-classes**
 
-    
+
     The ``OverlayPlotPanel`` is the base class for:
 
     .. autosummary::
@@ -1072,13 +1057,13 @@ class OverlayPlotPanel(PlotPanel):
        ~fsleyes.views.powerspectrumpanel.PowerSpectrumPanel
     """
 
-    
+
     plotColours = {}
     """This dictionary is used to store a collection of ``{overlay : colour}``
     mappings. It is shared across all ``OverlayPlotPanel`` instances, so that
     the same (initial) colour is used for the same overlay, across multiple
     plots.
-    
+
     Sub-classes should use the :meth:`getOverlayPlotColour` method to retrieve
     the initial colour to use for a given overlay.
     """
@@ -1099,7 +1084,7 @@ class OverlayPlotPanel(PlotPanel):
         initialState = kwargs.pop('initialState', None)
 
         PlotPanel.__init__(self, *args, **kwargs)
-        
+
         self.__name = 'OverlayPlotPanel_{}'.format(self._name)
 
         # The dataSeries attribute is a dictionary of
@@ -1108,13 +1093,13 @@ class OverlayPlotPanel(PlotPanel):
         #
         # mappings, containing a DataSeries instance for
         # each compatible overlay in the overlay list.
-        # 
+        #
         # Different DataSeries types need to be re-drawn
         # when different properties change. For example,
-        # a VoxelTimeSeries instance needs to be redrawn 
-        # when the DisplayContext.location property 
-        # changes, whereas a MelodicTimeSeries instance 
-        # needs to be redrawn when the VolumeOpts.volume 
+        # a VoxelTimeSeries instance needs to be redrawn
+        # when the DisplayContext.location property
+        # changes, whereas a MelodicTimeSeries instance
+        # needs to be redrawn when the VolumeOpts.volume
         # property changes.
         #
         # Therefore, the refreshProps dictionary contains
@@ -1135,7 +1120,7 @@ class OverlayPlotPanel(PlotPanel):
 
         self             .addListener('dataSeries',
                                       self.__name,
-                                      self.__dataSeriesChanged) 
+                                      self.__dataSeriesChanged)
         self._displayCtx .addListener('selectedOverlay',
                                       self.__name,
                                       self.__selectedOverlayChanged)
@@ -1190,16 +1175,16 @@ class OverlayPlotPanel(PlotPanel):
                 unique.append(ds)
 
         return unique
-        
+
 
     def getDataSeries(self, overlay):
         """Returns the :class:`.DataSeries` instance associated with the
         specified overlay, or ``None`` if there is no ``DataSeries`` instance.
         """
-        
+
         if isinstance(overlay, fsloverlay.ProxyImage):
-            overlay = overlay.getBase() 
-        
+            overlay = overlay.getBase()
+
         return self.__dataSeries.get(overlay)
 
 
@@ -1209,9 +1194,9 @@ class OverlayPlotPanel(PlotPanel):
         dictionary, it is returned. Otherwise a random colour is generated,
         added to ``plotColours``, and returned.
         """
-        
+
         if isinstance(overlay, fsloverlay.ProxyImage):
-            overlay = overlay.getBase() 
+            overlay = overlay.getBase()
 
         colour = self.plotColours.get(overlay)
 
@@ -1249,7 +1234,7 @@ class OverlayPlotPanel(PlotPanel):
 
             copy           = plotting.DataSeries(ds.overlay)
             toAdd[i]       = copy
- 
+
             copy.alpha     = ds.alpha
             copy.lineWidth = ds.lineWidth
             copy.lineStyle = ds.lineStyle
@@ -1262,7 +1247,7 @@ class OverlayPlotPanel(PlotPanel):
             # above may have had post-processing
             # applied to it (e.g. smoothing)
             xdata, ydata = self.prepareDataSeries(ds)
-            
+
             copy.setData(xdata, ydata)
 
             # This is disgraceful. It wasn't too bad
@@ -1270,11 +1255,11 @@ class OverlayPlotPanel(PlotPanel):
             # PlotListPanel class, but is a horrendous
             # hack now that it is defined here in the
             # PlotPanel class.
-            # 
+            #
             # At some stage I will remove this offensive
             # code, and figure out a more robust system
             # for appending this metadata to DataSeries
-            # instances. 
+            # instances.
             #
             # When the user selects a data series in
             # the list, we want to change the selected
@@ -1288,11 +1273,11 @@ class OverlayPlotPanel(PlotPanel):
             if isinstance(ds, (plotting.MelodicTimeSeries,
                                plotting.MelodicPowerSpectrumSeries)):
                 copy._volume = opts.volume
-                
+
             elif isinstance(ds, (plotting.VoxelTimeSeries,
                                  plotting.VoxelPowerSpectrumSeries)):
                 copy._location = opts.getVoxel()
-                
+
         self.dataSeries.extend(toAdd)
 
 
@@ -1303,18 +1288,18 @@ class OverlayPlotPanel(PlotPanel):
         """
         if len(self.dataSeries) > 0:
             self.dataSeries.pop()
-    
+
 
     def createDataSeries(self, overlay):
         """This method must be implemented by sub-classes. It must create and
         return a :class:`.DataSeries` instance for the specified overlay.
 
-        
+
         .. note:: Sub-class implementations should set the
                   :attr:`.DataSeries.colour` property to that returned by
                   the :meth:`getOverlayPlotColour` method.
 
-        
+
         Different ``DataSeries`` types need to be re-drawn when different
         properties change. For example, a :class:`.VoxelTimeSeries`` instance
         needs to be redrawn when the :attr:`.DisplayContext.location` property
@@ -1334,18 +1319,18 @@ class OverlayPlotPanel(PlotPanel):
            property on the corresponding target.
 
         This method must therefore return a tuple containing:
-        
+
           - A :class:`.DataSeries` instance, or ``None`` if the overlay
             is incompatible.
           - A list of *target* instances.
           - A list of *property names*.
-        
+
         The target and property name lists must have the same length.
         """
         raise NotImplementedError('createDataSeries must be '
                                   'implemented by sub-classes')
 
-    
+
     def clearDataSeries(self, overlay):
         """Destroys the internally cached :class:`.DataSeries` for the given
         overlay.
@@ -1353,7 +1338,7 @@ class OverlayPlotPanel(PlotPanel):
 
         if isinstance(overlay, fsloverlay.ProxyImage):
             overlay = overlay.getBase()
-        
+
         ds                 = self.__dataSeries  .pop(overlay, None)
         targets, propNames = self.__refreshProps.pop(overlay, ([], []))
 
@@ -1370,7 +1355,7 @@ class OverlayPlotPanel(PlotPanel):
             try:    t.removeListener(p, self.__name)
             except: pass
 
-        
+
     def updateDataSeries(self, initialState=None):
         """Makes sure that a :class:`.DataSeries` instance has been created
         for every compatible overlay, and that property listeners are
@@ -1380,12 +1365,12 @@ class OverlayPlotPanel(PlotPanel):
                            bool }`` mappings, specifying the initial value
                            of the :attr:`.DataSeries.enabled` property for
                            newly created instances. If not provided, only
-                           the data series for the currently selected 
+                           the data series for the currently selected
                            overlay (if it has been newly added) is initially
                            enabled.
         """
 
-        # Default to showing the 
+        # Default to showing the
         # currently selected overlay
         if initialState is None:
             if len(self._overlayList) > 0:
@@ -1427,7 +1412,7 @@ class OverlayPlotPanel(PlotPanel):
 
             self.__dataSeries[  ovl] = ds
             self.__refreshProps[ovl] = (refreshTargets, refreshProps)
-        
+
         # Make sure that property listeners are
         # registered all of these overlays
         for overlay in newOverlays:
@@ -1444,14 +1429,14 @@ class OverlayPlotPanel(PlotPanel):
                                self.__name,
                                self.asyncDraw,
                                overwrite=True)
-        
+
             for target, propName in zip(targets, propNames):
 
                 log.debug('Adding listener on {}.{} for {} data '
                           'series'.format(type(target).__name__,
                                           propName,
                                           overlay))
-                    
+
                 target.addListener(propName,
                                    self.__name,
                                    self.asyncDraw,
@@ -1475,7 +1460,7 @@ class OverlayPlotPanel(PlotPanel):
         # filter function.
         def listFilter(overlay):
             return self.getDataSeries(overlay) is not None
-        
+
         self.togglePanel(overlaylistpanel.OverlayListPanel,
                          showVis=True,
                          showSave=False,
@@ -1527,14 +1512,14 @@ class OverlayPlotPanel(PlotPanel):
         else:
             self.asyncDraw()
 
-    
+
     def __overlayListChanged(self, *a, **kwa):
         """Called when the :class:`.OverlayList` changes. Makes sure that
         there are no :class:`.DataSeries` instances in the
         :attr:`.PlotPanel.dataSeries` list, or in the internal cache, which
         refer to overlays that no longer exist.
 
-        :arg initialState: Must be passed as a keyword argument. If provided, 
+        :arg initialState: Must be passed as a keyword argument. If provided,
                            passed through to the :meth:`updateDataSeries`
                            method.
         """

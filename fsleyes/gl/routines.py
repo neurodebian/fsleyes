@@ -38,7 +38,7 @@ def clear(bgColour):
     gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
 
     # enable transparency
-    gl.glEnable(gl.GL_BLEND) 
+    gl.glEnable(gl.GL_BLEND)
     gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 
 
@@ -53,7 +53,7 @@ def enabled(capabilities, enable=True):
     :arg capabilities: One or more OpenGL capabilities to be
                        temporarily enabled/disabled, e.g. ``GL_BLEND``,
                        ``GL_TEXTURE_2D``, etc.
-    
+
     :arg enable:       Whether the capabilities are to be enabled (the
                        default) or disabled.
     """
@@ -78,7 +78,7 @@ def enabled(capabilities, enable=True):
     # functions, one pre and post
     # for each capability, being
     # one of:
-    # 
+    #
     #   - glEnable
     #   - glDisable
     #   - glEnableClientState
@@ -89,12 +89,12 @@ def enabled(capabilities, enable=True):
 
     def noop(*a):
         pass
-    
+
     pres  = []
     posts = []
 
     for c in capabilities:
-        
+
         if gl.glIsEnabled(c) == enable:
             pre  = noop
             post = noop
@@ -183,25 +183,121 @@ def show2D(xax, yax, width, height, lo, hi, flipx=False, flipy=False):
     elif zax == 1:
         gl.glRotatef(270, 1, 0, 0)
 
-        
+
+def lookAt(eye, centre, up):
+    """Replacement for ``gluLookAt`. Creates a transformation matrix which
+    transforms the display coordinate system such that a camera at position
+    (0, 0, 0), and looking towards (0, 0, -1), will see a scene as if from
+    position ``eye``, oriented ``up``, and looking towards ``centre``.
+
+    See:
+    https://www.khronos.org/registry/OpenGL-Refpages/gl2.1/xhtml/gluLookAt.xml
+    """
+
+    eye    = np.array(eye)
+    centre = np.array(centre)
+    up     = np.array(up)
+    proj   = np.eye(4)
+
+    forward  = centre - eye
+    forward /= np.sqrt(np.dot(forward, forward))
+
+    right  = np.cross(forward, up)
+    right /= np.sqrt(np.dot(right, right))
+
+    up     = np.cross(right, forward)
+    up    /= np.sqrt(np.dot(up, up))
+
+    proj[0, :3] =  right
+    proj[1, :3] =  up
+    proj[2, :3] = -forward
+
+    eye  = transform.scaleOffsetXform(1, -eye)
+    proj = transform.concat(proj, eye)
+
+    return proj
+
+
+def ortho(lo, hi, width, height, zoom):
+    """Generates an orthographic projection matrix. The display coordinate
+    system origin ``(0, 0, 0)`` is mapped to the centre of the clipping space.
+
+      - The horizontal axis is scaled to::
+          [-(hi[0] - lo[0]) / 2, (hi[0] - lo[0]) / 2]
+
+      - The vertical axis is scaled to::
+          [-(hi[1] - lo[1]) / 2, (hi[1] - lo[1]) / 2]
+
+    :arg lo:          Low ``(x, y, z)`` bounds.
+    :arg hi:          High ``(x, y, z)`` bounds.
+    :arg width:       Canvas width in pixels
+    :arg height:      Canvas height in pixels
+    :arg zoom:        Zoom factor. Required to determine suitable near and far
+                      clipping plane locations.
+    """
+
+    lo = np.array(lo, copy=False)
+    hi = np.array(hi, copy=False)
+
+    xmin, ymin = lo[:2]
+    xmax, ymax = hi[:2]
+    zmin, zmax = min(lo), max(hi)
+
+    xmin, xmax, ymin, ymax = preserveAspectRatio(
+        width, height, xmin, xmax, ymin, ymax)
+
+    xlen = xmax - xmin
+    ylen = ymax - ymin
+    zlen = np.sqrt(np.sum((hi - lo) ** 2)) * zoom
+
+    xhalf = xlen / 2.0
+    yhalf = ylen / 2.0
+
+    xmax =  xhalf
+    xmin = -xhalf
+    ymax =  yhalf
+    ymin = -yhalf
+    zmin = -zlen
+    zmax = +zlen
+
+    projmat       = np.eye(4, dtype=np.float32)
+    projmat[0, 0] =  2 / (xmax - xmin)
+    projmat[1, 1] =  2 / (ymax - ymin)
+    projmat[2, 2] = -2 / (zmax - zmin)
+    projmat[0, 3] = -(xmax + xmin) / (xmax - xmin)
+    projmat[1, 3] = -(ymax + ymin) / (ymax - ymin)
+    projmat[2, 3] = -(zmax + zmin) / (zmax - zmin)
+
+    return projmat
+
+
+def adjust(x, y, w, h):
+    """Adjust the given ``x`` and ``y`` values by the aspect ratio
+    defined by the given ``w`` and ``h`` values.
+    """
+
+    xmin, xmax, ymin, ymax = preserveAspectRatio(w, h, 0, x, 0, y)
+    return (xmax - xmin), (ymax - ymin)
+
+
 def preserveAspectRatio(width, height, xmin, xmax, ymin, ymax, grow=True):
     """Adjusts the given x/y limits so that they can be displayed on a
     display of the given ``width`` and ``height``, while preserving the
     aspect ratio.
 
     :arg width:  Display width
-    
+
     :arg height: Display height
-    
+
     :arg xmin:   Low x limit
-    
+
     :arg xmax:   High x limit
-    
+
     :arg ymin:   Low y limit
-    
+
     :arg ymax:   High y limit
-    
-    :arg grow:   If ``True`` (the default), the x/y limits are expanded to 
+
+    :arg grow:   If ``True`` (the default), the x/y limits are expanded to
                  preserve the aspect ratio. Otherwise, they are shrunken.
     """
 
@@ -238,7 +334,7 @@ def preserveAspectRatio(width, height, xmin, xmax, ymin, ymax, grow=True):
 
         if grow: offset =  0.5 * (newylen - ylen)
         else:    offset = -0.5 * (newylen - ylen)
-        
+
         ymin = ymin - offset
         ymax = ymax + offset
 
@@ -254,7 +350,7 @@ def text2D(text,
            calcSize=False):
     """Renders a 2D string using ``glutStrokeCharacter``.
 
-    :arg text:        The text to render. Only ASCII characters 32-127 (and 
+    :arg text:        The text to render. Only ASCII characters 32-127 (and
                       newlines) are supported.
 
     :arg pos:         2D text position in pixels.
@@ -307,7 +403,7 @@ def text2D(text,
     width  = 0
     height = 0
     lines  = text.split('\n')
-    
+
     for i, line in enumerate(lines):
 
         height += scale * 152.38
@@ -327,7 +423,7 @@ def text2D(text,
             if calcSize:
                 charWidth  = glut.glutStrokeWidth(font, ord(char))
                 lineWidth += charWidth * (fontSize / 152.38)
-                
+
             else:
                 glut.glutStrokeCharacter(font, ord(char))
 
@@ -348,13 +444,13 @@ def text2D(text,
     else:        return 0,     0
 
 
-def calculateSamplePoints(shape,
-                          resolution,
-                          xform,
-                          xax,
-                          yax,
-                          origin='centre',
-                          bbox=None):
+def pointGrid(shape,
+              resolution,
+              xform,
+              xax,
+              yax,
+              origin='centre',
+              bbox=None):
     """Calculates a uniform grid of points, in the display coordinate system
     (as specified by the given :class:`.Display` object properties) along the
     x-y plane (as specified by the xax/yax indices), at which the given image
@@ -378,7 +474,7 @@ def calculateSamplePoints(shape,
     :arg resolution: The desired resolution in display coordinates, along
                      each display axis.
 
-    :arg xform:      A transformation matrix which converts from data 
+    :arg xform:      A transformation matrix which converts from data
                      coordinates to the display coordinate system.
 
     :arg xax:        The horizontal display coordinate system axis (0, 1, or
@@ -389,9 +485,9 @@ def calculateSamplePoints(shape,
     :arg origin:     ``centre`` or ``corner``. See the
                      :func:`.transform.axisBounds` function.
 
-    :arg bbox:       An optional sequence of three ``(low, high)`` values, 
-                     defining the bounding box in the display coordinate 
-                     system which should be considered - the generated grid 
+    :arg bbox:       An optional sequence of three ``(low, high)`` values,
+                     defining the bounding box in the display coordinate
+                     system which should be considered - the generated grid
                      will be constrained to lie within this bounding box.
     """
 
@@ -407,8 +503,8 @@ def calculateSamplePoints(shape,
 
     # Number of samples along each display
     # axis, given the requested resolution
-    xNumSamples = np.floor((xmax - xmin) / xres)
-    yNumSamples = np.floor((ymax - ymin) / yres)
+    xNumSamples = int(np.floor((xmax - xmin) / xres))
+    yNumSamples = int(np.floor((ymax - ymin) / yres))
 
     # adjust the x/y resolution so
     # the samples fit exactly into
@@ -416,7 +512,7 @@ def calculateSamplePoints(shape,
     xres = (xmax - xmin) / xNumSamples
     yres = (ymax - ymin) / yNumSamples
 
-    # Calculate the locations of every 
+    # Calculate the locations of every
     # sample point in display space
     worldX = np.linspace(xmin + 0.5 * xres,
                          xmax - 0.5 * xres,
@@ -450,6 +546,22 @@ def calculateSamplePoints(shape,
     return coords, xres, yres, xNumSamples, yNumSamples
 
 
+def pointGrid3D(shape, xform=None, origin='centre', bbox=None):
+    """Generates a 3D grid of points into an image of the given ``shape``,
+    with the given ``xform`` defining the index to display coordinate
+    transform.
+
+    note: Not implemented properly yet.
+    """
+
+    coords = np.indices(shape).transpose(1, 2, 3, 0).reshape(-1, 3)
+
+    if xform is not None:
+        coords = transform.transform(coords, xform)
+
+    return coords
+
+
 def samplePointsToTriangleStrip(coords,
                                 xpixdim,
                                 ypixdim,
@@ -458,13 +570,13 @@ def samplePointsToTriangleStrip(coords,
                                 xax,
                                 yax):
     """Given a regular 2D grid of points at which an image is to be sampled
-    (for example, that generated by the :func:`calculateSamplePoints` function
-    above), converts those points into an OpenGL vertex triangle strip.
+    (for example, that generated by the :func:`pointGrid` function above),
+    converts those points into an OpenGL vertex triangle strip.
 
     A grid of ``M*N`` points is represented by ``M*2*(N + 1)`` vertices. For
     example, this image represents a 4*3 grid, with periods representing vertex
     locations::
-    
+
         .___.___.___.___.
         |   |   |   |   |
         |   |   |   |   |
@@ -478,7 +590,7 @@ def samplePointsToTriangleStrip(coords,
         |   |   |   |   |
         .___.___.___.___.
 
-    
+
     Vertex locations which are vertically adjacent represent the same point in
     space. Such vertex pairs are unable to be combined because, in OpenGL,
     they must be represented by distinct vertices (we can't apply multiple
@@ -500,7 +612,7 @@ def samplePointsToTriangleStrip(coords,
         | \| \| \|
         .  .  .  .
         0  2  4  6
-      
+
     In order to use a single OpenGL call to draw multiple non-contiguous voxel
     rows, between every column we add a couple of 'dummy' vertices, which will
     then be interpreted by OpenGL as 'degenerate triangles', and will not be
@@ -514,16 +626,16 @@ def samplePointsToTriangleStrip(coords,
          l  n  p  r  tt
          |\ |\ |\ |\ |
          | \| \| \| \|
-        kk  m  o  q  s  
+        kk  m  o  q  s
          b  d  f  h  jj
          |\ |\ |\ |\ |
          | \| \| \| \|
          a  c  e  g  i
-    
+
     These repeated/degenerate vertices are dealt with by using a vertex index
     array.  See these links for good overviews of triangle strips and
     degenerate triangles in OpenGL:
-    
+
      - http://www.learnopengles.com/tag/degenerate-triangles/
      - http://en.wikipedia.org/wiki/Triangle_strip
 
@@ -532,29 +644,29 @@ def samplePointsToTriangleStrip(coords,
       - A 2D ``numpy.float32`` array of shape ``(2 * (xlen + 1) * ylen), 3)``,
         containing the coordinates of all triangle strip vertices which
         represent the entire grid of sample points.
-    
+
       - A 2D ``numpy.float32`` array of shape ``(2 * (xlen + 1) * ylen), 3)``,
         containing the centre of every grid, to be used for texture
         coordinates/colour lookup.
-    
+
       - A 1D ``numpy.uint32`` array of size ``ylen * (2 * (xlen + 1) + 2) - 2``
         containing indices into the first array, defining the order in which
         the vertices need to be rendered. There are more indices than vertex
         coordinates due to the inclusion of repeated/degenerate vertices.
 
     :arg coords:  N*3 array of points, the sampling locations.
-    
+
     :arg xpixdim: Length of one sample along the horizontal axis.
-    
+
     :arg ypixdim: Length of one sample along the vertical axis.
-    
+
     :arg xlen:    Number of samples along the horizontal axis.
-    
+
     :arg ylen:    Number of samples along the vertical axis.
-    
+
     :arg xax:     Display coordinate system axis which corresponds to the
                   horizontal screen axis.
-    
+
     :arg yax:     Display coordinate system axis which corresponds to the
                   vertical screen axis.
     """
@@ -565,7 +677,7 @@ def samplePointsToTriangleStrip(coords,
     ylen = int(ylen)
 
     # Duplicate every row - each voxel
-    # is defined by two vertices 
+    # is defined by two vertices
     coords = coords.repeat(2, 0)
 
     texCoords   = np.array(coords, dtype=np.float32)
@@ -585,19 +697,19 @@ def samplePointsToTriangleStrip(coords,
     # coordinates remain in the voxel centres)
     worldCoords[   :, :, xax] -= 0.5 * xpixdim
     worldCoords[ ::2, :, yax] -= 0.5 * ypixdim
-    worldCoords[1::2, :, yax] += 0.5 * ypixdim 
+    worldCoords[1::2, :, yax] += 0.5 * ypixdim
 
-    vertsPerRow  = 2 * (xlen + 1) 
+    vertsPerRow  = 2 * (xlen + 1)
     dVertsPerRow = 2 * (xlen + 1) + 2
     nindices     = ylen * dVertsPerRow - 2
 
     indices = np.zeros(nindices, dtype=np.uint32)
 
     for yi, xi in it.product(range(ylen), range(xlen + 1)):
-        
+
         ii = yi * dVertsPerRow + 2 * xi
         vi = yi *  vertsPerRow + xi
-        
+
         indices[ii]     = vi
         indices[ii + 1] = vi + xlen + 1
 
@@ -622,11 +734,11 @@ def voxelGrid(points, xax, yax, xpixdim, ypixdim):
     :arg points:  An ``N*3`` array of voxel xyz coordinates
 
     :arg xax:     XYZ axis index that maps to the horizontal scren axis
-    
+
     :arg yax:     XYZ axis index that maps to the vertical scren axis
-    
+
     :arg xpixdim: Length of a voxel along the x axis.
-    
+
     :arg ypixdim: Length of a voxel along the y axis.
     """
 
@@ -640,13 +752,13 @@ def voxelGrid(points, xax, yax, xpixdim, ypixdim):
     ypixdim = ypixdim / 2.0
 
     # bottom left corner
-    vertices[ ::4, xax] -= xpixdim 
+    vertices[ ::4, xax] -= xpixdim
     vertices[ ::4, yax] -= ypixdim
 
     # bottom right
     vertices[1::4, xax] += xpixdim
     vertices[1::4, yax] -= ypixdim
-    
+
     # top left
     vertices[2::4, xax] -= xpixdim
     vertices[2::4, yax] += ypixdim
@@ -658,16 +770,16 @@ def voxelGrid(points, xax, yax, xpixdim, ypixdim):
     # each square is rendered as four lines
     indices = np.array([0, 1, 0, 2, 1, 3, 2, 3], dtype=np.uint32)
     indices = np.tile(indices, npoints)
-    
+
     indices = (indices.T +
                np.repeat(np.arange(0, npoints * 4, 4, dtype=np.uint32), 8)).T
-    
+
     return vertices, indices
 
 
 def voxelBlock(*args, **kwargs):
     """Generates a ``numpy`` array containing all ones, centered at the
-    specified voxel. 
+    specified voxel.
 
     :arg dtype: The data type of the returned ``numpy`` array. Defaults to
                 ``uint8``.
@@ -676,9 +788,9 @@ def voxelBlock(*args, **kwargs):
     see that function for details on the arguments.
 
     :returns: A tuple containing:
-    
+
               - The ``numpy`` array
-    
+
               - Voxel coordinates specifying the offset of the position of
                 this array in the image.
     """
@@ -714,7 +826,7 @@ def voxelBox(voxel,
     :arg shape:   Shape of the image in which the block is to be located.
 
     :arg dims:    Size of the image voxels along each dimension.
- 
+
     :arg boxSize: Desired width/height/depth of the box in scaled voxels.
                   May be either a single value, or a sequence of three
                   values.
@@ -743,7 +855,7 @@ def voxelBox(voxel,
 
     for i in range(3):
         if i not in axes:
-            boxSize[i] = dims[i] 
+            boxSize[i] = dims[i]
 
     voxel       = np.array(voxel)
     dims        = np.array(dims[:3])
@@ -759,7 +871,7 @@ def voxelBox(voxel,
     #
     # Note that we are assuming that
     # voxel coordinates correspond to
-    # the voxel centre here 
+    # the voxel centre here
     # (voxel + 0.5). This has the effect
     # that the returned box vertices will
     # be integer voxel coordinates (i.e.
@@ -768,18 +880,18 @@ def voxelBox(voxel,
     scaledLo    = scaledVoxel - boxSize / 2.0
     scaledHi    = scaledVoxel + boxSize / 2.0
 
-    # Scale the low/high bounds back 
+    # Scale the low/high bounds back
     # into voxel coordinates, and
     # round them up or down according
     # to the bias setting.
     if bias == 'low':
         lo = np.floor(scaledLo / dims)
         hi = np.floor(scaledHi / dims)
-        
+
     elif bias == 'high':
         lo = np.ceil(scaledLo / dims)
         hi = np.ceil(scaledHi / dims)
-        
+
     else:
         lo = np.floor(scaledLo / dims)
         hi = np.ceil( scaledHi / dims)
@@ -826,14 +938,14 @@ def slice2D(dataShape,
          4---5
         1 \  |
         |\ \ |
-        | \ \| 
+        | \ \|
         |  \ 3
         0---2
 
     Otherwise, if geometry is ``square``, four vertices are returned, arranged
     as follows::
 
-         
+
         3---2
         |   |
         |   |
@@ -842,19 +954,19 @@ def slice2D(dataShape,
 
     If ``origin`` is set to ``centre`` (the default), it is assumed that
     a voxel at location ``(x, y, z)`` is located in the space::
-    
+
         (x - 0.5 : x + 0.5, y - 0.5 : y + 0.5, z - 0.5 : z + 0.5)
 
-    
+
     Otherwise, if ``origin`` is set to ``corner``, a voxel at location ``(x,
     y, z)`` is assumed to be located in the space::
 
         (x : x + 1, y : y + 1, z : z + 1)
 
-    
+
     :arg dataShape:       Number of elements along each dimension in the
                           image data.
-    
+
     :arg xax:             Index of display axis which corresponds to the
                           horizontal screen axis.
 
@@ -862,7 +974,7 @@ def slice2D(dataShape,
                           vertical screen axis.
 
     :arg zpos:            Position of the slice along the screen z axis.
-    
+
     :arg voxToDisplayMat: Affine transformation matrix which transforms from
                           voxel/array indices into the display coordinate
                           system.
@@ -874,14 +986,14 @@ def slice2D(dataShape,
     :arg origin:          ``centre`` or ``corner``. See the
                           :func:`.transform.axisBounds` function.
 
-    :arg bbox:            An optional sequence of three ``(low, high)`` 
-                          values, defining the bounding box in the display 
-                          coordinate system which should be considered - the 
+    :arg bbox:            An optional sequence of three ``(low, high)``
+                          values, defining the bounding box in the display
+                          coordinate system which should be considered - the
                           generated grid will be constrained to lie within
                           this bounding box.
-    
+
     Returns a tuple containing:
-    
+
       - A ``N*3`` ``numpy.float32`` array containing the vertex locations
         of a slice through the data, where ``N=6`` if ``geometry=triangles``,
         or ``N=4`` if ``geometry=square``,
@@ -919,7 +1031,7 @@ def slice2D(dataShape,
         bbxmax = xmin + np.ceil( (bbxmax - xmin) / xvlen) * xvlen
         bbymin = ymin + np.floor((bbymin - ymin) / yvlen) * yvlen
         bbymax = ymin + np.ceil( (bbymax - ymin) / yvlen) * yvlen
-        
+
         xmin = max((xmin, bbxmin))
         xmax = min((xmax, bbxmax))
         ymin = max((ymin, bbymin))
@@ -930,12 +1042,12 @@ def slice2D(dataShape,
         vertices = np.zeros((6, 3), dtype=np.float32)
 
         vertices[ 0, [xax, yax]] = [xmin, ymin]
-        vertices[ 1, [xax, yax]] = [xmin, ymax]
-        vertices[ 2, [xax, yax]] = [xmax, ymin]
+        vertices[ 1, [xax, yax]] = [xmax, ymin]
+        vertices[ 2, [xax, yax]] = [xmin, ymax]
         vertices[ 3, [xax, yax]] = [xmax, ymin]
-        vertices[ 4, [xax, yax]] = [xmin, ymax]
-        vertices[ 5, [xax, yax]] = [xmax, ymax]
-        
+        vertices[ 4, [xax, yax]] = [xmax, ymax]
+        vertices[ 5, [xax, yax]] = [xmin, ymax]
+
     elif geometry == 'square':
         vertices = np.zeros((4, 3), dtype=np.float32)
 
@@ -949,6 +1061,138 @@ def slice2D(dataShape,
     vertices[:, zax] = zpos
 
     voxCoords = transform.transform(vertices, displayToVoxMat)
+
+    return vertices, voxCoords
+
+
+def boundingBox(dataShape,
+                voxToDisplayMat,
+                displayToVoxMat,
+                geometry='triangles',
+                origin='centre',
+                bbox=None):
+    """Generates a bounding box to represent a 3D image of the given shape,
+    in the coordinate system defined by the ``voxToDisplayMat`` affine.
+
+    See the :func:`slice2D` function for details on the arguments.
+
+    Returns a tuple containing:
+
+      - A ``N*3`` ``numpy.float32`` array containing the vertex locations
+        of a bounding box ``N=36`` if ``geometry=triangles``,
+        or ``N=24`` if ``geometry=square``,
+
+      - A ``N*3`` ``numpy.float32`` array containing the voxel coordinates
+        that correspond to the vertex locations.
+    """
+
+    xlo, ylo, zlo = (0, 0, 0)
+    xhi, yhi, zhi = dataShape
+
+    if origin == 'centre':
+        xlo, ylo, zlo = xlo - 0.5, ylo - 0.5, zlo - 0.5
+        xhi, yhi, zhi = xhi - 0.5, yhi - 0.5, zhi - 0.5
+
+    # If the voxel -> display transformation
+    # matrix contains negative scales, we need
+    # to invert the voxel coordinate ranges to
+    # ensure a correct triangle winding order
+    # (so that back faces can be culled).
+    scales = transform.decompose(voxToDisplayMat)[0]
+
+    if scales[0] < 0: xlo, xhi = xhi, xlo
+    if scales[1] < 0: ylo, yhi = yhi, ylo
+    if scales[2] < 0: zlo, zhi = zhi, zlo
+
+    if geometry == 'triangles':
+        voxCoords = np.zeros((36, 3), dtype=np.float32)
+
+        voxCoords[ 0, :] = (xlo, yhi, zlo)
+        voxCoords[ 1, :] = (xhi, ylo, zlo)
+        voxCoords[ 2, :] = (xlo, ylo, zlo)
+        voxCoords[ 3, :] = (xlo, yhi, zlo)
+        voxCoords[ 4, :] = (xhi, yhi, zlo)
+        voxCoords[ 5, :] = (xhi, ylo, zlo)
+
+        voxCoords[ 6, :] = (xlo, ylo, zhi)
+        voxCoords[ 7, :] = (xhi, ylo, zhi)
+        voxCoords[ 8, :] = (xlo, yhi, zhi)
+        voxCoords[ 9, :] = (xlo, yhi, zhi)
+        voxCoords[10, :] = (xhi, ylo, zhi)
+        voxCoords[11, :] = (xhi, yhi, zhi)
+
+        voxCoords[12, :] = (xlo, ylo, zlo)
+        voxCoords[13, :] = (xhi, ylo, zlo)
+        voxCoords[14, :] = (xlo, ylo, zhi)
+        voxCoords[15, :] = (xlo, ylo, zhi)
+        voxCoords[16, :] = (xhi, ylo, zlo)
+        voxCoords[17, :] = (xhi, ylo, zhi)
+
+        voxCoords[18, :] = (xlo, yhi, zlo)
+        voxCoords[19, :] = (xhi, yhi, zlo)
+        voxCoords[20, :] = (xlo, yhi, zhi)
+        voxCoords[21, :] = (xlo, yhi, zhi)
+        voxCoords[22, :] = (xhi, yhi, zlo)
+        voxCoords[23, :] = (xhi, yhi, zhi)
+
+        voxCoords[18, :] = (xlo, yhi, zhi)
+        voxCoords[19, :] = (xhi, yhi, zlo)
+        voxCoords[20, :] = (xlo, yhi, zlo)
+        voxCoords[21, :] = (xlo, yhi, zhi)
+        voxCoords[22, :] = (xhi, yhi, zhi)
+        voxCoords[23, :] = (xhi, yhi, zlo)
+
+        voxCoords[24, :] = (xlo, ylo, zhi)
+        voxCoords[25, :] = (xlo, yhi, zlo)
+        voxCoords[26, :] = (xlo, ylo, zlo)
+        voxCoords[27, :] = (xlo, ylo, zhi)
+        voxCoords[28, :] = (xlo, yhi, zhi)
+        voxCoords[29, :] = (xlo, yhi, zlo)
+
+        voxCoords[30, :] = (xhi, ylo, zlo)
+        voxCoords[31, :] = (xhi, yhi, zlo)
+        voxCoords[32, :] = (xhi, ylo, zhi)
+        voxCoords[33, :] = (xhi, ylo, zhi)
+        voxCoords[34, :] = (xhi, yhi, zlo)
+        voxCoords[35, :] = (xhi, yhi, zhi)
+
+    elif geometry == 'square':
+        voxCoords = np.zeros((24, 3), dtype=np.float32)
+
+        voxCoords[ 0, :] = (xlo, ylo, zlo)
+        voxCoords[ 1, :] = (xhi, ylo, zlo)
+        voxCoords[ 2, :] = (xhi, yhi, zlo)
+        voxCoords[ 3, :] = (xlo, yhi, zlo)
+
+        voxCoords[ 4, :] = (xlo, ylo, zhi)
+        voxCoords[ 5, :] = (xhi, ylo, zhi)
+        voxCoords[ 6, :] = (xhi, yhi, zhi)
+        voxCoords[ 7, :] = (xlo, yhi, zhi)
+
+        voxCoords[ 8, :] = (xlo, ylo, zlo)
+        voxCoords[ 9, :] = (xhi, ylo, zlo)
+        voxCoords[10, :] = (xhi, ylo, zhi)
+        voxCoords[11, :] = (xlo, ylo, zhi)
+
+        voxCoords[12, :] = (xlo, yhi, zlo)
+        voxCoords[13, :] = (xhi, yhi, zlo)
+        voxCoords[14, :] = (xhi, yhi, zhi)
+        voxCoords[15, :] = (xlo, yhi, zhi)
+
+        voxCoords[16, :] = (xlo, ylo, zlo)
+        voxCoords[17, :] = (xlo, yhi, zlo)
+        voxCoords[18, :] = (xlo, yhi, zhi)
+        voxCoords[19, :] = (xlo, ylo, zhi)
+
+        voxCoords[20, :] = (xhi, ylo, zlo)
+        voxCoords[21, :] = (xhi, yhi, zlo)
+        voxCoords[22, :] = (xhi, yhi, zhi)
+        voxCoords[23, :] = (xhi, ylo, zhi)
+
+    else:
+        raise ValueError('Unrecognised geometry type: {}'.format(geometry))
+
+    vertices = transform.transform(voxCoords, voxToDisplayMat)
 
     return vertices, voxCoords
 
@@ -998,7 +1242,7 @@ def subsample(data, resolution, pixdim=None, volume=None):
     if xstart >= data.shape[0]: xstart = data.shape[0] - 1
     if ystart >= data.shape[1]: ystart = data.shape[1] - 1
     if zstart >= data.shape[2]: zstart = data.shape[2] - 1
-        
+
     if len(data.shape) > 3: sample = data[xstart::xstep,
                                           ystart::ystep,
                                           zstart::zstep,
@@ -1017,21 +1261,21 @@ def broadcast(vertices, indices, zposes, xforms, zax):
     corresponding transformation to each set of vertices.
 
     :arg vertices: Vertex array (a ``N*3`` numpy array).
-    
+
     :arg indices:  Index array.
-    
+
     :arg zposes:   Positions along the depth axis at which the vertices
                    are to be replicated.
-    
+
     :arg xforms:   Sequence of transformation matrices, one for each
                    Z position.
-    
+
     :arg zax:      Index of the 'depth' axis
 
     Returns three values:
-    
+
       - A numpy array containing all of the generated vertices
-    
+
       - A numpy array containing the original vertices for each of the
         generated vertices, which may be used as texture coordinates
 
@@ -1040,14 +1284,14 @@ def broadcast(vertices, indices, zposes, xforms, zax):
 
     vertices = np.array(vertices)
     indices  = np.array(indices)
-    
+
     nverts   = vertices.shape[0]
     nidxs    = indices.shape[ 0]
 
     allTexCoords  = np.zeros((nverts * len(zposes), 3), dtype=np.float32)
     allVertCoords = np.zeros((nverts * len(zposes), 3), dtype=np.float32)
     allIndices    = np.zeros( nidxs  * len(zposes),     dtype=np.uint32)
-    
+
     for i, (zpos, xform) in enumerate(zip(zposes, xforms)):
 
         vertices[:, zax] = zpos
@@ -1061,7 +1305,7 @@ def broadcast(vertices, indices, zposes, xforms, zax):
         allIndices[   iStart:iEnd]    = indices + i * nverts
         allTexCoords[ vStart:vEnd, :] = vertices
         allVertCoords[vStart:vEnd, :] = transform.transform(vertices, xform)
-        
+
     return allVertCoords, allTexCoords, allIndices
 
 
@@ -1069,7 +1313,7 @@ def planeEquation(xyz1, xyz2, xyz3):
     """Calculates the equation of a plane which contains each
     of the given points.
 
-    Returns a tuple containing four values, the coefficients of the
+    Returns a ``numpy`` array containing four values, the coefficients of the
     equation:
 
     :math:`a\\times x + b\\times y + c \\times z = d`
@@ -1095,6 +1339,26 @@ def planeEquation(xyz1, xyz2, xyz3):
     return eq
 
 
+def planeEquation2(origin, normal):
+    """Calculates the equation of a plane equation from a normal vector
+    and a single point on the plane.
+
+    Returns a ``numpy`` array containing four values, the coefficients of the
+    equation:
+
+    See also :func:`planeEquation`.
+    """
+
+    normal     = transform.normalise(normal)
+    ax, by, cz = np.array(origin) * normal
+
+    eqn     = np.zeros(4, dtype=np.float64)
+    eqn[:3] = normal
+    eqn[ 3] = -np.sum((ax, by, cz))
+
+    return eqn
+
+
 def unitSphere(res):
     """Generates a unit sphere, as described in the *Sphere Generation*
     article, on Paul Bourke's excellent website:
@@ -1104,11 +1368,11 @@ def unitSphere(res):
     :arg res: Resolution - the number of angles to sample.
 
     :returns: A tuple comprising:
-    
+
               - a ``numpy.float32`` array of size ``(res**2, 3)``
                 containing a set of ``(x, y, z)`` vertices which define
                 the ellipsoid surface.
-     
+
               - A ``numpy.uint32`` array of size ``(4 * (res - 1)**2)``
                 containing a list of indices into the vertex array,
                 defining a vertex ordering that can be used to draw
@@ -1143,10 +1407,10 @@ def unitSphere(res):
     # Generate a list of indices which join the
     # vertices so they can be used to draw the
     # sphere as GL_QUADs.
-    # 
+    #
     # The vertex locations for each quad follow
     # this pattern:
-    # 
+    #
     #  1. (u,         v)
     #  2. (u + ustep, v)
     #  3. (u + ustep, v + vstep)
@@ -1157,7 +1421,7 @@ def unitSphere(res):
     indices  = np.tile(quadIdxs, nquads)
     indices += np.arange(nquads,  dtype=np.uint32).repeat(4)
     indices += np.arange(res - 1, dtype=np.uint32).repeat(4 * (res - 1))
-    
+
     return vertices, indices
 
 
@@ -1178,7 +1442,7 @@ def fullUnitSphere(res):
     cosu = np.cos(u)
     cosv = np.cos(v)
     sinu = np.sin(u)
-    sinv = np.sin(v) 
+    sinv = np.sin(v)
 
     vertices = np.zeros(((res - 1) * (res - 1) * 4, 3), dtype=np.float32)
 
@@ -1190,7 +1454,7 @@ def fullUnitSphere(res):
     cu1sv1 = np.outer(cosu[1:],  sinv[1:]) .flatten()
     cucv1  = np.outer(cosu[:-1], cosv[1:]) .flatten()
     cusv1  = np.outer(cosu[:-1], sinv[1:]) .flatten()
-    
+
     su     = np.repeat(sinu[:-1], res - 1)
     s1u    = np.repeat(sinu[1:],  res - 1)
 
@@ -1225,3 +1489,21 @@ def unitCircle(res, triangles=False):
         verts  = np.concatenate((origin, verts))
 
     return verts
+
+
+def polygonIndices(nverts):
+    """Generate triangle indices for simple 2D polygons. Given vertices
+    describing a monotone polygon on a 2D plane, generates an index list
+    into the vertices which can be used to draw the vertices as triangles.
+    """
+
+    ntris   = nverts - 2
+    nidxs   = ntris  * 3
+    indices = np.zeros(nidxs, dtype=np.uint32)
+
+    indices[1]    = 1
+    indices[2:-1] = np.repeat(np.arange(2, nverts - 1), 3)
+    indices[-1]   = nverts - 1
+    indices[::3]  = 0
+
+    return indices

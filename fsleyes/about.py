@@ -4,21 +4,20 @@
 #
 # Author: Paul McCarthy <pauldmccarthy@gmail.com>
 #
-"""This module provides the :class:`.AboutDialog` class, a dialog which 
+"""This module provides the :class:`.AboutDialog` class, a dialog which
 displays information about *FSLeyes*.
 """
 
 
-import os.path   as op
+import os.path as op
 
-import              wx
-import OpenGL.GL as gl
+import wx
 
-import fsl.utils.imagepanel                 as imagepanel
-from   fsl.utils.platform   import platform as fslplatform
-import fsleyes.strings                      as strings
-import fsleyes.splash                       as splash
-import fsleyes.version                      as version
+import fsleyes_widgets.imagepanel         as imagepanel
+from   fsl.utils.platform import platform as fslplatform
+import fsleyes.strings                    as strings
+import fsleyes.splash                     as splash
+import fsleyes.version                    as version
 
 
 class AboutDialog(wx.Dialog):
@@ -42,7 +41,7 @@ class AboutDialog(wx.Dialog):
         textPanel   = wx.TextCtrl(self,
                                   size=(-1, 200),
                                   style=(wx.TE_LEFT      |
-                                         wx.TE_RICH      | 
+                                         wx.TE_RICH      |
                                          wx.TE_MULTILINE |
                                          wx.TE_READONLY  |
                                          wx.TE_AUTO_URL))
@@ -55,9 +54,8 @@ class AboutDialog(wx.Dialog):
 
         # Create / retrieve all the content
         verStr    = version.__version__
-        vcsVerStr = version.__vcs_version__
-        glVerStr  = gl.glGetString(gl.GL_VERSION)
-        glRenStr  = gl.glGetString(gl.GL_RENDERER)
+        glVerStr  = fslplatform.glVersion
+        glRenStr  = fslplatform.glRenderer
         swlibs    = strings.about['libs']
 
         swVersions = []
@@ -76,11 +74,10 @@ class AboutDialog(wx.Dialog):
                     swVer = str(mod.__version__)
             except:
                 swVer = ''
-            
+
             swVersions.append(swVer)
 
         verStr    = strings.about['version']   .format(verStr)
-        vcsVerStr = strings.about['vcsVersion'].format(vcsVerStr)
         fslVer    = strings.about['fslVersion'].format(fslplatform.fslVersion)
         fslDir    = strings.about['fslPath']   .format(fslplatform.fsldir)
         glVerStr  = strings.about['glVersion'] .format(glVerStr)
@@ -106,7 +103,6 @@ class AboutDialog(wx.Dialog):
                              strings.about['company'],
                              strings.about['author'],
                              strings.about['email'],
-                             vcsVerStr,
                              fslVer,
                              fslDir,
                              glVerStr,

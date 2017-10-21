@@ -23,11 +23,10 @@ import logging
 import numpy     as np
 import numpy.fft as fft
 
-import props
-
 import fsl.utils.async       as async
 import fsl.utils.cache       as cache
 import fsl.data.melodicimage as fslmelimage
+import fsleyes_props         as props
 from . import                   dataseries
 
 
@@ -42,7 +41,7 @@ class PowerSpectrumSeries(dataseries.DataSeries):
     series.
     """
 
-    
+
     varNorm  = props.Boolean(default=True)
     """If ``True``, the data is normalised to unit variance before the fourier
     transformation.
@@ -58,7 +57,7 @@ class PowerSpectrumSeries(dataseries.DataSeries):
         dataseries.DataSeries.__init__(self, overlay)
         self.displayCtx = displayCtx
 
-        
+
     def destroy(self):
         """Must be called when this ``PowerSpectrumSeries`` is no longer
         needed.
@@ -114,20 +113,20 @@ class VoxelPowerSpectrumSeries(PowerSpectrumSeries):
         # We use a cache just like in the
         # VoxelTimeSeries class - see that
         # class.
-        # 
+        #
         # TODO You need to invalidate the cache
         #      when the image data changes.
-        self.__cache = cache.Cache(maxsize=1000) 
+        self.__cache = cache.Cache(maxsize=1000)
 
-        if not self.overlay.is4DImage():
+        if self.overlay.ndims < 4:
             raise ValueError('Overlay is not a 4D image')
 
-    
+
     def makeLabel(self):
         """Creates and returns a label for use with this
         ``VoxelPowerSpectrumSeries``.
         """
-        
+
         display = self.displayCtx.getDisplay(self.overlay)
         opts    = display.getDisplayOpts()
         coords  = opts.getVoxel()
@@ -138,7 +137,7 @@ class VoxelPowerSpectrumSeries(PowerSpectrumSeries):
                                           coords[1],
                                           coords[2])
         else:
-            return '{} [out of bounds]'.format(display.name) 
+            return '{} [out of bounds]'.format(display.name)
 
 
     # See VoxelTimeSeries.getData for an
@@ -148,8 +147,9 @@ class VoxelPowerSpectrumSeries(PowerSpectrumSeries):
         """Returns the data for the current voxel of the overlay. The current
         voxel is dictated by the :attr:`.DisplayContext.location` property.
         """
-        
+
         opts  = self.displayCtx.getOpts(self.overlay)
+        vdim  = opts.volumeDim
         voxel = opts.getVoxel()
 
         if voxel is None:
@@ -157,11 +157,11 @@ class VoxelPowerSpectrumSeries(PowerSpectrumSeries):
 
         x, y, z = voxel
 
-        ydata = self.__cache.get((x, y, z), None)
+        ydata = self.__cache.get((x, y, z, vdim), None)
 
         if ydata is None:
-            ydata = self.overlay[x, y, z, :]
-            self.__cache.put((x, y, z), ydata) 
+            ydata = self.overlay[opts.index(voxel, atVolume=False)]
+            self.__cache.put((x, y, z, vdim), ydata)
 
         ydata = self.calcPowerSpectrum(ydata)
         xdata = np.arange(len(ydata), dtype=np.float32)
@@ -175,7 +175,7 @@ class MelodicPowerSpectrumSeries(PowerSpectrumSeries):
     component is dictated by the :attr:`.NiftiOpts.volume` property.
     """
 
-    
+
     def __init__(self, *args, **kwargs):
         """Create a ``MelodicPowerSpectrumSeries``. All arguments are passed
         through to the :meth:`PowerSpectrumSeries.__init__` method.
@@ -184,11 +184,11 @@ class MelodicPowerSpectrumSeries(PowerSpectrumSeries):
 
         if not isinstance(self.overlay, fslmelimage.MelodicImage):
             raise ValueError('Overlay is not a MelodicImage')
-        
+
         self.varNorm = False
         self.disableProperty('varNorm')
 
-    
+
     def makeLabel(self):
         """Returns a label that can be used for this
         ``MelodicPowerSpectrumSeries``.
@@ -197,7 +197,7 @@ class MelodicPowerSpectrumSeries(PowerSpectrumSeries):
         opts      = display.getDisplayOpts()
         component = opts.volume
 
-        return '{} [component {}]'.format(display.name, component + 1) 
+        return '{} [component {}]'.format(display.name, component + 1)
 
 
     def getData(self):

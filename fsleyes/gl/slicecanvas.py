@@ -9,18 +9,17 @@ functionality to display a 2D slice from a collection of 3D overlays.
 """
 
 
-import copy
 import logging
 
 import OpenGL.GL as gl
 
 import numpy as np
 
-import props
-
 import fsl.data.image                     as fslimage
 import fsl.utils.async                    as async
-import fsl.utils.status                   as status
+import fsleyes_widgets.utils.status       as status
+import fsleyes_props                      as props
+
 import fsleyes.strings                    as strings
 import fsleyes.displaycontext.canvasopts  as canvasopts
 import fsleyes.gl.routines                as glroutines
@@ -33,7 +32,7 @@ import fsleyes.gl.annotations             as annotations
 log = logging.getLogger(__name__)
 
 
-class SliceCanvas(props.HasProperties):
+class SliceCanvas(object):
     """The ``SliceCanvas`` represents a canvas which may be used to display a
     single 2D slice from a collection of 3D overlays.  See also the
     :class:`.LightBoxCanvas`, a sub-class of ``SliceCanvas``.
@@ -45,15 +44,15 @@ class SliceCanvas(props.HasProperties):
 
                - :class:`.OSMesaSliceCanvas` for static off-screen rendering of
                  a scene using OSMesa.
-    
+
                - :class:`.WXGLSliceCanvas` for interactive rendering on a
                  :class:`wx.glcanvas.GLCanvas` canvas.
 
 
-    The ``SliceCanvas`` derives from the :class:`.props.HasProperties` class.
-    The settings, and current scene displayed on a ``SliceCanvas`` instance,
-    can be changed through the properties of the ``SliceCanvas``. All of these
-    properties are defined in the :class:`.SliceCanvasOpts` class.
+    The ``SliceCanvas`` creates a :class:`.SliceCanvasOpts` instance to manage
+    its settings. The scene scene displayed on a ``SliceCanvas`` instance can
+    be manipulated via the properties of its ``SliceCanvasOpts`` instnace,
+    which is accessed via the ``opts`` attribute.
 
 
     **GL objects**
@@ -75,20 +74,20 @@ class SliceCanvas(props.HasProperties):
 
     **Performance optimisations**
 
-    
-    The :attr:`renderMode` property controls the way in which the
-    ``SliceCanvas`` renders :class:`.GLObject` instances. It has three
+
+    The :attr:`.SliceCanvasOpts.renderMode` property controls the way in which
+    the ``SliceCanvas`` renders :class:`.GLObject` instances. It has three
     settings:
 
 
     ============= ============================================================
     ``onscreen``  ``GLObject`` instances are rendered directly to the canvas.
-    
+
     ``offscreen`` ``GLObject`` instances are rendered off-screen to a fixed
                   size 2D texture (a :class:`.RenderTexture`). This texture
                   is then rendered to the canvas. One :class:`.RenderTexture`
                   is used for every overlay  in the :class:`.OverlayList`.
-    
+
     ``prerender`` A stack of 2D slices for every ``GLObject`` instance is
                   pre-generated off-screen, and cached, using a
                   :class:`.RenderTextureStack`. When the ``SliceCanvas`` needs
@@ -97,29 +96,27 @@ class SliceCanvas(props.HasProperties):
                   canvas. One :class:`.RenderTextureStack` is used for every
                   overlay in the :class:`.OverlayList`.
     ============= ============================================================
-                  
+
 
     **Attributes and methods**
 
-    
+
     The following attributes are available on a ``SliceCanvas``:
 
 
-    =============== ==========================================
-    ``xax``         Index of the horizontal screen axis
-    ``yax``         Index of the horizontal screen axis
-    ``zax``         Index of the horizontal screen axis
+    =============== ===========================================
     ``name``        A unique name for this ``SliceCanvas``
+    ``opts``        Reference to the :class:`.SliceCanvasOpts`.
     ``overlayList`` Reference to the :class:`.OverlayList`.
     ``displayCtx``  Reference to the :class:`.DisplayContext`.
-    =============== ==========================================
+    =============== ===========================================
 
-    
+
     The following convenience methods are available on a ``SliceCanvas``:
 
     .. autosummary::
        :nosignatures:
-    
+
        canvasToWorld
        panDisplayBy
        centreDisplayAt
@@ -129,35 +126,24 @@ class SliceCanvas(props.HasProperties):
        getAnnotations
     """
 
-    
-    pos             = copy.copy(canvasopts.SliceCanvasOpts.pos)
-    zoom            = copy.copy(canvasopts.SliceCanvasOpts.zoom)
-    displayBounds   = copy.copy(canvasopts.SliceCanvasOpts.displayBounds)
-    showCursor      = copy.copy(canvasopts.SliceCanvasOpts.showCursor)
-    cursorGap       = copy.copy(canvasopts.SliceCanvasOpts.cursorGap)
-    zax             = copy.copy(canvasopts.SliceCanvasOpts.zax)
-    invertX         = copy.copy(canvasopts.SliceCanvasOpts.invertX)
-    invertY         = copy.copy(canvasopts.SliceCanvasOpts.invertY)
-    cursorColour    = copy.copy(canvasopts.SliceCanvasOpts.cursorColour)
-    bgColour        = copy.copy(canvasopts.SliceCanvasOpts.bgColour)
-    renderMode      = copy.copy(canvasopts.SliceCanvasOpts.renderMode)
-    
-        
-    def __init__(self, overlayList, displayCtx, zax=0):
-        """Create a ``SliceCanvas``. 
+
+    def __init__(self, overlayList, displayCtx, zax=0, opts=None):
+        """Create a ``SliceCanvas``.
 
         :arg overlayList: An :class:`.OverlayList` object containing a
                           collection of overlays to be displayed.
-        
+
         :arg displayCtx:  A :class:`.DisplayContext` object which describes
                           how the overlays should be displayed.
-        
+
         :arg zax:         Display coordinate system axis perpendicular to the
                           plane to be displayed (the *depth* axis), default 0.
         """
 
-        props.HasProperties.__init__(self)
+        if opts is None:
+            opts = canvasopts.SliceCanvasOpts()
 
+        self.opts        = opts
         self.overlayList = overlayList
         self.displayCtx  = displayCtx
         self.name        = '{}_{}'.format(self.__class__.__name__, id(self))
@@ -174,33 +160,28 @@ class SliceCanvas(props.HasProperties):
         # respectively of the form:
         #     { overlay : RenderTexture              }
         #     { overlay : (RenderTextureStack, name) }
-        # 
+        #
         self._offscreenTextures = {}
         self._prerenderTextures = {}
 
-        # The zax property is the image axis which maps to the
-        # 'depth' axis of this canvas. The _zAxisChanged method
-        # also fixes the values of 'xax' and 'yax'.
-        self.zax = zax
-        self.xax = (zax + 1) % 3
-        self.yax = (zax + 2) % 3
-
-        self._annotations = annotations.Annotations(self, self.xax, self.yax)
+        # The zax property is the image axis which
+        # maps to the 'depth' axis of this canvas.
+        opts.zax = zax
 
         # when any of the properties of this
         # canvas change, we need to redraw
-        self.addListener('zax',           self.name, self._zAxisChanged)
-        self.addListener('pos',           self.name, self.Refresh)
-        self.addListener('displayBounds', self.name, self.Refresh)
-        self.addListener('bgColour',      self.name, self.Refresh)
-        self.addListener('cursorColour',  self.name, self.Refresh)
-        self.addListener('showCursor',    self.name, self.Refresh)
-        self.addListener('cursorGap',     self.name, self.Refresh)
-        self.addListener('invertX',       self.name, self.Refresh)
-        self.addListener('invertY',       self.name, self.Refresh)
-        self.addListener('zoom',          self.name, self._zoomChanged)
-        self.addListener('renderMode',    self.name, self._renderModeChange)
-        
+        opts.addListener('zax',           self.name, self._zAxisChanged)
+        opts.addListener('pos',           self.name, self.Refresh)
+        opts.addListener('displayBounds', self.name, self.Refresh)
+        opts.addListener('bgColour',      self.name, self.Refresh)
+        opts.addListener('cursorColour',  self.name, self.Refresh)
+        opts.addListener('showCursor',    self.name, self.Refresh)
+        opts.addListener('cursorGap',     self.name, self.Refresh)
+        opts.addListener('invertX',       self.name, self.Refresh)
+        opts.addListener('invertY',       self.name, self.Refresh)
+        opts.addListener('zoom',          self.name, self._zoomChanged)
+        opts.addListener('renderMode',    self.name, self._renderModeChange)
+
         # When the overlay list changes, refresh the
         # display, and update the display bounds
         self.overlayList.addListener('overlays',
@@ -208,7 +189,7 @@ class SliceCanvas(props.HasProperties):
                                      self._overlayListChanged)
         self.displayCtx .addListener('overlayOrder',
                                      self.name,
-                                     self.Refresh) 
+                                     self.Refresh)
         self.displayCtx .addListener('bounds',
                                      self.name,
                                      self._overlayBoundsChanged)
@@ -216,9 +197,12 @@ class SliceCanvas(props.HasProperties):
                                      self.name,
                                      self._syncOverlayDisplayChanged)
 
-        # The zAxisChanged method 
+        # The zAxisChanged method
         # will kick everything off
-        self._zAxisChanged() 
+        self._annotations = annotations.Annotations(self,
+                                                    self.opts.xax,
+                                                    self.opts.yax)
+        self._zAxisChanged()
 
 
     def destroy(self):
@@ -229,14 +213,15 @@ class SliceCanvas(props.HasProperties):
         :class:`.DisplayContext`, and :class:`.Display` instances, and
         destroys OpenGL representations of all overlays.
         """
-        self.removeListener('zax',             self.name)
-        self.removeListener('pos',             self.name)
-        self.removeListener('displayBounds',   self.name)
-        self.removeListener('showCursor',      self.name)
-        self.removeListener('invertX',         self.name)
-        self.removeListener('invertY',         self.name)
-        self.removeListener('zoom',            self.name)
-        self.removeListener('renderMode',      self.name)
+        opts = self.opts
+        opts.removeListener('zax',             self.name)
+        opts.removeListener('pos',             self.name)
+        opts.removeListener('displayBounds',   self.name)
+        opts.removeListener('showCursor',      self.name)
+        opts.removeListener('invertX',         self.name)
+        opts.removeListener('invertY',         self.name)
+        opts.removeListener('zoom',            self.name)
+        opts.removeListener('renderMode',      self.name)
 
         self.overlayList.removeListener('overlays',     self.name)
         self.displayCtx .removeListener('bounds',       self.name)
@@ -261,6 +246,7 @@ class SliceCanvas(props.HasProperties):
             if rt is not None: glresources.delete(rtName)
             if ot is not None: ot         .destroy()
 
+        self.opts               = None
         self.overlayList        = None
         self.displayCtx         = None
         self._glObjects         = None
@@ -274,7 +260,7 @@ class SliceCanvas(props.HasProperties):
         """
         return self.overlayList is None
 
-    
+
     def canvasToWorld(self, xpos, ypos, invertX=None, invertY=None):
         """Given pixel x/y coordinates on this canvas, translates them
         into xyz display coordinates.
@@ -283,13 +269,15 @@ class SliceCanvas(props.HasProperties):
         :arg invertY: If ``None``, taken from :attr:`.invertY`.
         """
 
-        if invertX is None: invertX = self.invertX
-        if invertY is None: invertY = self.invertY
+        opts = self.opts
 
-        realWidth                 = self.displayBounds.xlen
-        realHeight                = self.displayBounds.ylen
-        canvasWidth, canvasHeight = map(float, self._getSize())
-            
+        if invertX is None: invertX = opts.invertX
+        if invertY is None: invertY = opts.invertY
+
+        realWidth                 = opts.displayBounds.xlen
+        realHeight                = opts.displayBounds.ylen
+        canvasWidth, canvasHeight = [float(s) for s in self.GetSize()]
+
         if invertX: xpos = canvasWidth  - xpos
         if invertY: ypos = canvasHeight - ypos
 
@@ -298,14 +286,14 @@ class SliceCanvas(props.HasProperties):
            realHeight   == 0 or \
            canvasHeight == 0:
             return None
-        
-        xpos = self.displayBounds.xlo + (xpos / canvasWidth)  * realWidth
-        ypos = self.displayBounds.ylo + (ypos / canvasHeight) * realHeight
+
+        xpos = opts.displayBounds.xlo + (xpos / canvasWidth)  * realWidth
+        ypos = opts.displayBounds.ylo + (ypos / canvasHeight) * realHeight
 
         pos = [None] * 3
-        pos[self.xax] = xpos
-        pos[self.yax] = ypos
-        pos[self.zax] = self.pos.z
+        pos[opts.xax] = xpos
+        pos[opts.yax] = ypos
+        pos[opts.zax] = opts.pos[opts.zax]
 
         return pos
 
@@ -316,15 +304,15 @@ class SliceCanvas(props.HasProperties):
         """
 
         if len(self.overlayList) == 0: return
-        
-        xmin, xmax, ymin, ymax = self.displayBounds[:]
+
+        xmin, xmax, ymin, ymax = self.opts.displayBounds[:]
 
         xmin = xmin + xoff
         xmax = xmax + xoff
         ymin = ymin + yoff
         ymax = ymax + yoff
 
-        self.displayBounds[:] = [xmin, xmax, ymin, ymax]
+        self.opts.displayBounds[:] = [xmin, xmax, ymin, ymax]
 
 
     def centreDisplayAt(self, xpos, ypos):
@@ -338,7 +326,7 @@ class SliceCanvas(props.HasProperties):
         """Returns the horizontal/vertical position, in display coordinates,
         of the current centre of the display bounds.
         """
-        bounds  = self.displayBounds
+        bounds  = self.opts.displayBounds
         xcentre = bounds.xlo + (bounds.xhi - bounds.xlo) * 0.5
         ycentre = bounds.ylo + (bounds.yhi - bounds.ylo) * 0.5
 
@@ -350,7 +338,7 @@ class SliceCanvas(props.HasProperties):
         coordinates) is visible.
         """
 
-        bounds = self.displayBounds
+        bounds = self.opts.displayBounds
 
         # Do nothing if the position
         # is already being displayed
@@ -362,10 +350,10 @@ class SliceCanvas(props.HasProperties):
 
         if   xpos <= bounds.xlo: xoff = xpos - bounds.xlo
         elif xpos >= bounds.xhi: xoff = xpos - bounds.xhi
-        
+
         if   ypos <= bounds.ylo: yoff = ypos - bounds.ylo
         elif ypos >= bounds.yhi: yoff = ypos - bounds.yhi
-        
+
         if xoff != 0 or yoff != 0:
             self.panDisplayBy(xoff, yoff)
 
@@ -374,12 +362,12 @@ class SliceCanvas(props.HasProperties):
         """Zooms the canvas to the given rectangle, specified in
         horizontal/vertical display coordinates.
         """
-        
+
         # We are going to convert the rectangle specified by
         # the inputs into a zoom value, set the canvas zoom
         # level, and then centre the canvas on the rectangle.
 
-        # Middle of the rectangle, used 
+        # Middle of the rectangle, used
         # at the end for centering
         xmid = xlo + (xhi - xlo) / 2.0
         ymid = ylo + (yhi - ylo) / 2.0
@@ -393,10 +381,11 @@ class SliceCanvas(props.HasProperties):
 
         # Size of the overlay bounding
         # box, and the zoom value limits
-        xmin, xmax = self.displayCtx.bounds.getRange(self.xax)
-        ymin, ymax = self.displayCtx.bounds.getRange(self.yax)
-        zoommin    = self.getConstraint('zoom', 'minval')
-        zoommax    = self.getConstraint('zoom', 'maxval') 
+        opts       = self.opts
+        xmin, xmax = self.displayCtx.bounds.getRange(opts.xax)
+        ymin, ymax = self.displayCtx.bounds.getRange(opts.yax)
+        zoommin    = opts.getAttribute('zoom', 'minval')
+        zoommax    = opts.getAttribute('zoom', 'maxval')
 
         xlen    = xmax    - xmin
         ylen    = ymax    - ymin
@@ -420,30 +409,31 @@ class SliceCanvas(props.HasProperties):
         # to apply the new zoom to the display bounds,
         # then centre the display on the calculated
         # centre point.
-        with props.skip(self, 'zoom',          self.name), \
-             props.skip(self, 'displayBounds', self.name):
-            self.zoom = zoom
+        with props.skip(opts, 'zoom',          self.name), \
+             props.skip(opts, 'displayBounds', self.name):
+            opts.zoom = zoom
             self._updateDisplayBounds()
             self.centreDisplayAt(xmid, ymid)
-        
+
         self.Refresh()
- 
+
 
     def resetDisplay(self):
         """Resets the :attr:`zoom` to 100%, and sets the canvas display
         bounds to the overaly bounding box (from the
         :attr:`.DisplayContext.bounds`)
         """
-        
-        xmin = self.displayCtx.bounds.getLo(self.xax)
-        xmax = self.displayCtx.bounds.getHi(self.xax)
-        ymin = self.displayCtx.bounds.getLo(self.yax)
-        ymax = self.displayCtx.bounds.getHi(self.yax)
 
-        with props.skip(self, 'zoom', self.name):
-            self.zoom = 100
+        opts = self.opts
+        xmin = self.displayCtx.bounds.getLo(opts.xax)
+        xmax = self.displayCtx.bounds.getHi(opts.xax)
+        ymin = self.displayCtx.bounds.getLo(opts.yax)
+        ymax = self.displayCtx.bounds.getHi(opts.yax)
 
-        with props.suppress(self, 'displayBounds'):
+        with props.skip(opts, 'zoom', self.name):
+            opts.zoom = 100
+
+        with props.suppress(opts, 'displayBounds'):
             self._updateDisplayBounds((xmin, xmax, ymin, ymax))
 
         self.Refresh()
@@ -465,7 +455,7 @@ class SliceCanvas(props.HasProperties):
         # globjs can be set to False
         if not globj: return None
         else:         return globj
-            
+
 
     def _initGL(self):
         """Call the :meth:`_overlayListChanged` method - it will generate
@@ -473,7 +463,7 @@ class SliceCanvas(props.HasProperties):
         """
         self._overlayListChanged()
 
-        
+
     def _updateRenderTextures(self):
         """Called when the :attr:`renderMode` changes, when the overlay
         list changes, or when the  GLObject representation of an overlay
@@ -487,18 +477,20 @@ class SliceCanvas(props.HasProperties):
         overlays.
         """
 
-        if self.renderMode == 'onscreen':
+        renderMode = self.opts.renderMode
+
+        if renderMode == 'onscreen':
             return
 
         # If any overlays have been removed from the overlay
         # list, destroy the associated render texture stack
-        if self.renderMode == 'offscreen':
+        if renderMode == 'offscreen':
             for ovl, texture in list(self._offscreenTextures.items()):
                 if ovl not in self.overlayList:
                     self._offscreenTextures.pop(ovl)
                     texture.destroy()
-            
-        elif self.renderMode == 'prerender':
+
+        elif renderMode == 'prerender':
             for ovl, (texture, name) in list(self._prerenderTextures.items()):
                 if ovl not in self.overlayList:
                     self._prerenderTextures.pop(ovl)
@@ -508,13 +500,13 @@ class SliceCanvas(props.HasProperties):
         # create a new render textures for them
         for overlay in self.overlayList:
 
-            if self.renderMode == 'offscreen':
+            if renderMode == 'offscreen':
                 if overlay in self._offscreenTextures:
                     continue
-                
-            elif self.renderMode == 'prerender':
+
+            elif renderMode == 'prerender':
                 if overlay in self._prerenderTextures:
-                    continue 
+                    continue
 
             globj   = self._glObjects.get(overlay, None)
             display = self.displayCtx.getDisplay(overlay)
@@ -527,29 +519,30 @@ class SliceCanvas(props.HasProperties):
             # and then that texture is rendered to the
             # screen. The off-screen texture is managed
             # by a RenderTexture object.
-            if self.renderMode == 'offscreen':
-                
-                name = '{}_{}_{}'.format(display.name, self.xax, self.yax)
+            if renderMode == 'offscreen':
+
+                opts = self.opts
+                name = '{}_{}_{}'.format(display.name, opts.xax, opts.yax)
                 rt   = textures.GLObjectRenderTexture(
                     name,
                     globj,
-                    self.xax,
-                    self.yax)
+                    opts.xax,
+                    opts.yax)
 
                 self._offscreenTextures[overlay] = rt
-                
+
             # For prerender mode, slices of the
             # GLObjects are pre-rendered on a
             # stack of off-screen textures, which
             # is managed by a RenderTextureStack
             # object.
-            elif self.renderMode == 'prerender':
+            elif renderMode == 'prerender':
                 rt, name = self._getPreRenderTexture(globj, overlay)
                 self._prerenderTextures[overlay] = rt, name
 
         self.Refresh()
 
-        
+
     def _getPreRenderTexture(self, globj, overlay):
         """Creates/retrieves a :class:`.RenderTextureStack` for the given
         :class:`.GLObject`. A tuple containing the ``RenderTextureStack``,
@@ -560,26 +553,27 @@ class SliceCanvas(props.HasProperties):
         """
 
         display = self.displayCtx.getDisplay(overlay)
-        opts    = display.getDisplayOpts()
+        copts   = self.opts
+        dopts   = display.getDisplayOpts()
 
         name = '{}_{}_zax{}'.format(
             id(overlay),
             textures.RenderTextureStack.__name__,
-            self.zax) 
+            copts.zax)
 
         # If all display/opts properties
         # are synchronised to the parent,
         # then we use a texture stack that
         # might be shared across multiple
         # views.
-        # 
+        #
         # But if any display/opts properties
         # are not synchronised, we'll use our
-        # own texture stack. 
+        # own texture stack.
         if not (display.getParent()         and
-                display.allSyncedToParent() and 
-                opts   .getParent()         and
-                opts   .allSyncedToParent()):
+                display.allSyncedToParent() and
+                dopts  .getParent()         and
+                dopts  .allSyncedToParent()):
 
             name = '{}_{}'.format(id(self.displayCtx), name)
 
@@ -588,22 +582,24 @@ class SliceCanvas(props.HasProperties):
 
         else:
             rt = textures.RenderTextureStack(globj)
-            rt.setAxes(self.xax, self.yax)
+            rt.setAxes(copts.xax, copts.yax)
             glresources.set(name, rt)
 
         return rt, name
 
-                
+
     def _renderModeChange(self, *a):
         """Called when the :attr:`renderMode` property changes."""
 
-        log.debug('Render mode changed: {}'.format(self.renderMode))
+        renderMode = self.opts.renderMode
+
+        log.debug('Render mode changed: {}'.format(renderMode))
 
         # destroy any existing render textures
         for ovl, texture in list(self._offscreenTextures.items()):
             self._offscreenTextures.pop(ovl)
             texture.destroy()
-            
+
         for ovl, (texture, name) in list(self._prerenderTextures.items()):
             self._prerenderTextures.pop(ovl)
             glresources.delete(name)
@@ -612,7 +608,7 @@ class SliceCanvas(props.HasProperties):
         # is rendered directly to the canvas
         # displayed on the screen, so render
         # textures are not needed.
-        if self.renderMode == 'onscreen':
+        if renderMode == 'onscreen':
             self.Refresh()
             return
 
@@ -624,57 +620,31 @@ class SliceCanvas(props.HasProperties):
     def _syncOverlayDisplayChanged(self, *a):
         """Called when the :attr:`.DisplayContext.syncOverlayDisplay`
         property changes. If the current :attr:`renderMode` is ``prerender``,
-        the :class:`.RenderTextureStack` instances for each overlay are 
+        the :class:`.RenderTextureStack` instances for each overlay are
         re-created.
-        
+
         This is done because, if all display properties for an overlay are
         synchronised, then a single ``RenderTextureStack`` can be shared
         across multiple displays. However, if any display properties are not
         synchronised, then a separate ``RenderTextureStack`` is needed for
         the :class:`.DisplayContext` used by this ``SliceCanvas``.
         """
-        if self.renderMode == 'prerender':
+        if self.opts.renderMode == 'prerender':
             self._renderModeChange(self)
-    
+
 
     def _zAxisChanged(self, *a):
-        """Called when the :attr:`zax` property is changed. Calculates
-        the corresponding X and Y axes, and saves them as attributes of
-        this object. Also notifies the GLObjects for every overlay in
-        the overlay list.
+        """Called when the :attr:`zax` property is changed. Notifies
+        the :class:`.Annotations` instance, and calls :meth:`resetDisplay`.
         """
 
-        log.debug('{}'.format(self.zax))
+        opts = self.opts
 
-        # Store the canvas position, in the
-        # axis order of the display coordinate
-        # system
-        pos                  = [None] * 3
-        pos[self.xax]        = self.pos.x
-        pos[self.yax]        = self.pos.y
-        pos[pos.index(None)] = self.pos.z
+        log.debug('{}'.format(opts.zax))
 
-        # Figure out the new x and y axes
-        # based on the new zax value
-        dims = list(range(3))
-        dims.pop(self.zax)
-        self.xax = dims[0]
-        self.yax = dims[1]
+        self._annotations.setAxes(opts.xax, opts.yax)
 
-        self._annotations.setAxes(self.xax, self.yax)
-
-        for ovl, globj in list(self._glObjects.items()):
-            if globj:
-                globj.setAxes(self.xax, self.yax)
-
-        self._overlayBoundsChanged()
-
-        # Reset the canvas position as, because the
-        # z axis has been changed, the old coordinates
-        # will be in the wrong dimension order
-        self.pos.xyz = [pos[self.xax],
-                        pos[self.yax],
-                        pos[self.zax]]
+        self.resetDisplay()
 
         # If pre-rendering is enabled, the
         # render textures need to be updated, as
@@ -709,9 +679,11 @@ class SliceCanvas(props.HasProperties):
 
         If ``updateRenderTextures`` is ``True`` (the default), and the
         :attr:`.renderMode` is ``offscreen`` or ``prerender``, any
-        render texture associated with the overlay is destroyed. 
+        render texture associated with the overlay is destroyed.
         """
-        
+
+        renderMode = self.opts.renderMode
+
         # Tell the previous GLObject (if
         # any) to clean up after itself
         globj = self._glObjects.pop(overlay, None)
@@ -720,12 +692,12 @@ class SliceCanvas(props.HasProperties):
             globj.destroy()
 
             if updateRenderTextures:
-                if self.renderMode == 'offscreen':
+                if renderMode == 'offscreen':
                     tex = self._offscreenTextures.pop(overlay, None)
                     if tex is not None:
                         tex.destroy()
 
-                elif self.renderMode == 'prerender':
+                elif renderMode == 'prerender':
                     tex, name = self._prerenderTextures.pop(
                         overlay, (None, None))
                     if tex is not None:
@@ -749,7 +721,7 @@ class SliceCanvas(props.HasProperties):
                   the :class:`.GLObject` instnace will be created on the
                   ``wx.EVT_IDLE`` lopp (via the :mod:`.idle` module).
         """
-        
+
         display = self.displayCtx.getDisplay(overlay)
 
         if overlay in self._glObjects:
@@ -790,9 +762,9 @@ class SliceCanvas(props.HasProperties):
                 return
 
             globj = globject.createGLObject(overlay,
-                                            display,
-                                            self.xax,
-                                            self.yax)
+                                            self.displayCtx,
+                                            self,
+                                            False)
 
             if globj is not None:
                 globj.register(self.name, self.__onGLObjectUpdate)
@@ -806,7 +778,7 @@ class SliceCanvas(props.HasProperties):
             self._glObjects[overlay] = globj
 
             if updateRenderTextures:
-                self._updateRenderTextures() 
+                self._updateRenderTextures()
 
             display.addListener('overlayType',
                                 self.name,
@@ -828,7 +800,7 @@ class SliceCanvas(props.HasProperties):
 
         async.idle(create)
 
-        
+
     def __onGLObjectUpdate(self, globj, *a):
         """Called when a :class:`.GLObject` has been updated, and needs to be
         redrawn.
@@ -837,17 +809,17 @@ class SliceCanvas(props.HasProperties):
         # If we are in prerender mode, we
         # need to tell the RenderTextureStack
         # for this GLObject to update itself.
-        if self.renderMode == 'prerender':
+        if self.opts.renderMode == 'prerender':
 
             overlay  = globj._sc_overlay
             rt, name = self._prerenderTextures.get(overlay, (None, None))
-            
+
             if rt is not None:
                 rt.onGLObjectUpdate()
-            
+
         self.Refresh()
-        
-        
+
+
     def _overlayListChanged(self, *args, **kwargs):
         """This method is called every time an overlay is added or removed
         to/from the overlay list.
@@ -906,18 +878,18 @@ class SliceCanvas(props.HasProperties):
                   :class:`.GLObjects` to be drawn.
         """
 
-        overlays = [] 
+        overlays = []
         globjs   = []
         for ovl in self.displayCtx.getOrderedOverlays():
-            
+
             globj = self._glObjects.get(ovl, None)
-            
+
             # If an overlay does not yet have a corresponding
             # GLObject, we presume that it hasn't been created
             # yet, so we'll tell genGLObject to create one for
             # it.
             if   globj is None: self.__genGLObject(ovl)
-            
+
             # If there is a value for this overlay in
             # the globjects dictionary, but it evaluates
             # to False, then GLObject creation has been
@@ -925,28 +897,14 @@ class SliceCanvas(props.HasProperties):
             elif globj:
                 overlays.append(ovl)
                 globjs  .append(globj)
- 
+
         return overlays, globjs
 
-    
-    def _overlayBoundsChanged(self, *a):
-        """Called when the display bounds are changed.
 
-        Updates the constraints on the :attr:`pos` property so it is
-        limited to stay within a valid range, and then calls the
+    def _overlayBoundsChanged(self, *a):
+        """Called when the display bounds are changed. Calls the
         :meth:`resetDisplay` method.
         """
-
-        ovlBounds = self.displayCtx.bounds
-
-        with props.suppress(self, 'pos'):
-            self.pos.setMin(0, ovlBounds.getLo(self.xax))
-            self.pos.setMax(0, ovlBounds.getHi(self.xax))
-            self.pos.setMin(1, ovlBounds.getLo(self.yax))
-            self.pos.setMax(1, ovlBounds.getHi(self.yax))
-            self.pos.setMin(2, ovlBounds.getLo(self.zax))
-            self.pos.setMax(2, ovlBounds.getHi(self.zax))
-
         self.resetDisplay()
 
 
@@ -954,10 +912,10 @@ class SliceCanvas(props.HasProperties):
         """Called when the :attr:`zoom` property changes. Updates the
         display bounds.
         """
-        loc = [self.displayCtx.location[self.xax],
-               self.displayCtx.location[self.yax]]
+        opts = self.opts
+        loc = [opts.pos[opts.xax], opts.pos[opts.yax]]
         self._updateDisplayBounds(oldLoc=loc)
-        
+
 
     def _applyZoom(self, xmin, xmax, ymin, ymax):
         """*Zooms* in to the given rectangle according to the current value
@@ -968,12 +926,12 @@ class SliceCanvas(props.HasProperties):
         # Zoom is specified as a percentage.
         # At 100% the full scene takes up the
         # full display.
-        # 
+        #
         # In order to make the zoom smoother
         # at low levels, we re-scale the zoom
         # value to be exponential across the
         # range.
-        # 
+        #
         # This is done by transforming the zoom
         # from [100 - zmax] into [0.0 - 1.0], then
         # turning it from linear [0.0 - 1.0] to
@@ -987,9 +945,10 @@ class SliceCanvas(props.HasProperties):
         # screen)
 
         # Assuming that minval == 100.0
-        zoom    = self.zoom
-        minzoom = self.getConstraint('zoom', 'minval')
-        maxzoom = self.getConstraint('zoom', 'maxval')
+        opts    = self.opts
+        zoom    = opts.zoom
+        minzoom = opts.getAttribute('zoom', 'minval')
+        maxzoom = opts.getAttribute('zoom', 'maxval')
 
         # Don't break the maths below
         if zoom <= 0:
@@ -999,15 +958,15 @@ class SliceCanvas(props.HasProperties):
         if zoom >= 100:
 
             # [100 - zmax] -> [0.0 - 1.0] -> exponentify -> [100 - zmax]
-            zoom       = (self.zoom - minzoom) / (maxzoom - minzoom)
+            zoom       = (zoom - minzoom)      / (maxzoom - minzoom)
             zoom       = minzoom + (zoom ** 3) * (maxzoom - minzoom)
-            
+
             # Then we transform the zoom from
             # [100 - zmax] to [1.0 - 0.0] -
             # this value is used to scale the
-            # bounds. 
+            # bounds.
             zoomFactor = minzoom / zoom
-            
+
         # Hack for zoom < 100
         else:
             zoomFactor = 100.0 / zoom
@@ -1016,8 +975,8 @@ class SliceCanvas(props.HasProperties):
         ylen    = ymax - ymin
         newxlen = xlen * zoomFactor
         newylen = ylen * zoomFactor
- 
-        # centre the zoomed-in rectangle 
+
+        # centre the zoomed-in rectangle
         # on the provided limits
         xmid = xmin + 0.5 * xlen
         ymid = ymin + 0.5 * ylen
@@ -1027,19 +986,19 @@ class SliceCanvas(props.HasProperties):
         xmax = xmid + 0.5 * newxlen
         ymin = ymid - 0.5 * newylen
         ymax = ymid + 0.5 * newylen
-        
+
         return (xmin, xmax, ymin, ymax)
 
-        
+
     def _updateDisplayBounds(self, bbox=None, oldLoc=None):
         """Called on canvas resizes, overlay bound changes, and zoom changes.
-        
+
         Calculates the bounding box, in display coordinates, to be displayed
         on the canvas. Stores this bounding box in the :attr:`displayBounds`
         property. If any of the parameters are not provided, the
         :attr:`.DisplayContext.bounds` are used.
 
-        
+
         .. note:: This method is used internally, and also by the
                   :class:`.WXGLSliceCanvas` class.
 
@@ -1047,31 +1006,33 @@ class SliceCanvas(props.HasProperties):
                      has changed, the display context location has already
                      been updated.  See the
                      :meth:`.DisplayContext.__displaySpaceChanged` method.
-        
-        
+
+
         :arg bbox:   Tuple containing four values:
-        
+
                       - Minimum x (horizontal) value to be in the display
                         bounds.
-        
+
                       - Maximum x value to be in the display bounds.
-        
+
                       - Minimum y (vertical) value to be in the display bounds.
-        
+
                       - Maximum y value to be in the display bounds.
-        
+
         :arg oldLoc: If provided, should be the ``(x, y)`` location shown on
                      this ``SliceCanvas`` - the new display bounds will be
                      adjusted so that this location remains the same, with
                      respect to the new field of view.
         """
 
+        opts = self.opts
+
         if bbox is None:
-            bbox = (self.displayCtx.bounds.getLo(self.xax),
-                    self.displayCtx.bounds.getHi(self.xax),
-                    self.displayCtx.bounds.getLo(self.yax),
-                    self.displayCtx.bounds.getHi(self.yax))
-            
+            bbox = (self.displayCtx.bounds.getLo(opts.xax),
+                    self.displayCtx.bounds.getHi(opts.xax),
+                    self.displayCtx.bounds.getLo(opts.yax),
+                    self.displayCtx.bounds.getHi(opts.yax))
+
         xmin = bbox[0]
         xmax = bbox[1]
         ymin = bbox[2]
@@ -1081,12 +1042,12 @@ class SliceCanvas(props.HasProperties):
         # we need to preserve them with
         # respect to the current display
         # location.
-        width, height                      = self._getSize()
-        oldxmin, oldxmax, oldymin, oldymax = self.displayBounds[:]
+        width, height                      = self.GetSize()
+        oldxmin, oldxmax, oldymin, oldymax = opts.displayBounds[:]
 
         log.debug('{}: Required display bounds: '
                   'X: ({: 5.1f}, {: 5.1f}) Y: ({: 5.1f}, {: 5.1f})'.format(
-                      self.zax, xmin, xmax, ymin, ymax))
+                      opts.zax, xmin, xmax, ymin, ymax))
 
         # Adjust the bounds to preserve the
         # x/y aspect ratio, and according to
@@ -1107,7 +1068,7 @@ class SliceCanvas(props.HasProperties):
 
             # Re-set the new bounds to the current
             # display location, offset by the same
-            # amount that it used to be (as 
+            # amount that it used to be (as
             # calculated above).
             #
             # N.B. This code assumes that, if the display
@@ -1115,54 +1076,53 @@ class SliceCanvas(props.HasProperties):
             #      context location has already been updated.
             #      See the DisplayContext.__displaySpaceChanged
             #      method.
-            xloc = self.displayCtx.location[self.xax]
-            yloc = self.displayCtx.location[self.yax]
- 
+            xloc = opts.pos[opts.xax]
+            yloc = opts.pos[opts.yax]
+
             xlen = xmax - xmin
             ylen = ymax - ymin
 
             xmin = xloc - oldxoff * xlen
             ymin = yloc - oldyoff * ylen
-            
+
             xmax = xmin + xlen
             ymax = ymin + ylen
-            
+
         log.debug('{}: Final display bounds: '
                   'X: ({: 5.1f}, {: 5.1f}) Y: ({: 5.1f}, {: 5.1f})'.format(
-                      self.zax, xmin, xmax, ymin, ymax))
+                      opts.zax, xmin, xmax, ymin, ymax))
 
-        self.displayBounds[:] = (xmin, xmax, ymin, ymax)
+        opts.displayBounds[:] = (xmin, xmax, ymin, ymax)
 
-        
+
     def _setViewport(self, invertX=None, invertY=None):
         """Sets up the GL canvas size, viewport, and projection.
 
         :arg invertX: Invert the X axis. If not provided, taken from
                       :attr:`invertX`.
-        
-        :arg invertY: Invert the Y axis. If not provided, taken from 
-                      :attr:`invertY`. 
+
+        :arg invertY: Invert the Y axis. If not provided, taken from
+                      :attr:`invertY`.
 
         :returns: A sequence of three ``(low, high)`` values, defining the
-                  display coordinate system bounding box. Note that this
-                  sequence is ordered in absolute terms, not in terms of
-                  the orientation of this ``SliceCanvas``.
+                  display coordinate system bounding box.
         """
 
-        xax  = self.xax
-        yax  = self.yax
-        zax  = self.zax
-        xmin = self.displayBounds.xlo
-        xmax = self.displayBounds.xhi
-        ymin = self.displayBounds.ylo
-        ymax = self.displayBounds.yhi
+        opts = self.opts
+        xax  = opts.xax
+        yax  = opts.yax
+        zax  = opts.zax
+        xmin = opts.displayBounds.xlo
+        xmax = opts.displayBounds.xhi
+        ymin = opts.displayBounds.ylo
+        ymax = opts.displayBounds.yhi
         zmin = self.displayCtx.bounds.getLo(zax)
         zmax = self.displayCtx.bounds.getHi(zax)
-        size = self._getSize()
-        
-        if invertX is None: invertX = self.invertX
-        if invertY is None: invertY = self.invertY
-            
+        size = self.GetSize()
+
+        if invertX is None: invertX = opts.invertX
+        if invertY is None: invertY = opts.invertY
+
         width, height = size
 
         # If there are no images to be displayed,
@@ -1203,26 +1163,27 @@ class SliceCanvas(props.HasProperties):
 
         return [(lo[0], hi[0]), (lo[1], hi[1]), (lo[2], hi[2])]
 
-        
+
     def _drawCursor(self):
         """Draws a green cursor at the current X/Y position."""
 
+        copts      = self.opts
         ovl        = self.displayCtx.getSelectedOverlay()
-        xmin, xmax = self.displayCtx.bounds.getRange(self.xax)
-        ymin, ymax = self.displayCtx.bounds.getRange(self.yax)
-        x          = self.pos.x
-        y          = self.pos.y
+        xmin, xmax = self.displayCtx.bounds.getRange(copts.xax)
+        ymin, ymax = self.displayCtx.bounds.getRange(copts.yax)
+        x          = copts.pos[copts.xax]
+        y          = copts.pos[copts.yax]
         lines      = []
 
         # Just show a vertical line at xpos,
         # and a horizontal line at ypos
-        if not self.cursorGap:
+        if not copts.cursorGap:
             lines.append(((x,    ymin), (x,    ymax)))
-            lines.append(((xmin, y),    (xmax, y))) 
+            lines.append(((xmin, y),    (xmax, y)))
 
         # Draw vertical/horizontal cursor lines,
         # with a gap at the cursor centre
-        
+
         # Not a NIFTI image - just
         # use a fixed gap size
         elif ovl is None or not isinstance(ovl, fslimage.Nifti):
@@ -1230,16 +1191,16 @@ class SliceCanvas(props.HasProperties):
             lines.append(((xmin,    y),       (x - 0.5, y)))
             lines.append(((x + 0.5, y),       (xmax,    y)))
             lines.append(((x,       ymin),    (x,       y - 0.5)))
-            lines.append(((x,       y + 0.5), (x,       ymax))) 
+            lines.append(((x,       y + 0.5), (x,       ymax)))
 
         # If the current overlay is NIFTI, make
         # the gap size match its voxel size
         else:
 
             # Get the current voxel
-            # coordinates, 
-            opts = self.displayCtx.getOpts(ovl)
-            vox = opts.getVoxel(vround=False)
+            # coordinates,
+            dopts = self.displayCtx.getOpts(ovl)
+            vox   = dopts.getVoxel(vround=False)
 
             # Out of bounds of the current
             # overlay, fall back to using
@@ -1256,10 +1217,10 @@ class SliceCanvas(props.HasProperties):
                 # Figure out the voxel coord axes
                 # that (approximately) correspond
                 # with the display x/y axes.
-                axes = ovl.axisMapping(opts.getTransform('voxel', 'display'))
+                axes = ovl.axisMapping(dopts.getTransform('voxel', 'display'))
                 axes = np.abs(axes) - 1
-                xax  = axes[self.xax]
-                yax  = axes[self.yax]
+                xax  = axes[copts.xax]
+                yax  = axes[copts.yax]
 
                 # Clamp the voxel x/y coords to
                 # the voxel edge (round, then
@@ -1268,7 +1229,7 @@ class SliceCanvas(props.HasProperties):
                 vox[xax] = np.round(vox[xax]) - 0.5
                 vox[yax] = np.round(vox[yax]) - 0.5
 
-                # Get the voxels that are above 
+                # Get the voxels that are above
                 # and next to our current voxel.
                 voxx = np.copy(vox)
                 voxy = np.copy(vox)
@@ -1279,14 +1240,14 @@ class SliceCanvas(props.HasProperties):
                 # Transform those integer coords back
                 # into display coordinates to get the
                 # display location on the voxel boundary.
-                vloc  = opts.transformCoords(vox,  'voxel', 'display')
-                vlocx = opts.transformCoords(voxx, 'voxel', 'display')
-                vlocy = opts.transformCoords(voxy, 'voxel', 'display')
+                vloc  = dopts.transformCoords(vox,  'voxel', 'display')
+                vlocx = dopts.transformCoords(voxx, 'voxel', 'display')
+                vlocy = dopts.transformCoords(voxy, 'voxel', 'display')
 
-                xlow  = min(vloc[self.xax], vlocx[self.xax])
-                xhigh = max(vloc[self.xax], vlocx[self.xax])
-                ylow  = min(vloc[self.yax], vlocy[self.yax])
-                yhigh = max(vloc[self.yax], vlocy[self.yax])
+                xlow  = min(vloc[copts.xax], vlocx[copts.xax])
+                xhigh = max(vloc[copts.xax], vlocx[copts.xax])
+                ylow  = min(vloc[copts.yax], vlocy[copts.yax])
+                yhigh = max(vloc[copts.yax], vlocy[copts.yax])
 
             lines.append(((xmin,  y),     (xlow, y)))
             lines.append(((xhigh, y),     (xmax, y)))
@@ -1294,7 +1255,7 @@ class SliceCanvas(props.HasProperties):
             lines.append(((x,     yhigh), (x,    ymax)))
 
         kwargs = {
-            'colour' : self.cursorColour,
+            'colour' : copts.cursorColour,
             'width'  : 1
         }
 
@@ -1310,39 +1271,41 @@ class SliceCanvas(props.HasProperties):
         This method is called by :meth:`_draw` if :attr:`renderMode` is
         set to ``offscreen``.
         """
-        
+
         log.debug('Combining off-screen render textures, and rendering '
-                  'to canvas (size {})'.format(self._getSize()))
+                  'to canvas (size {})'.format(self.GetSize()))
+
+        copts = self.opts
+        zpos  = copts.pos[copts.zax]
 
         for overlay in self.displayCtx.getOrderedOverlays():
-            
+
             rt      = self._offscreenTextures.get(overlay, None)
             display = self.displayCtx.getDisplay(overlay)
-            opts    = display.getDisplayOpts()
-            lo      = opts.bounds.getLo()
-            hi      = opts.bounds.getHi()
+            dopts   = display.getDisplayOpts()
+            lo      = dopts.bounds.getLo()
+            hi      = dopts.bounds.getHi()
 
             if rt is None or not display.enabled:
                 continue
 
-            xmin, xmax = lo[self.xax], hi[self.xax]
-            ymin, ymax = lo[self.yax], hi[self.yax]
+            xmin, xmax = lo[copts.xax], hi[copts.xax]
+            ymin, ymax = lo[copts.yax], hi[copts.yax]
 
             log.debug('Drawing overlay {} texture to {:0.3f}-{:0.3f}, '
                       '{:0.3f}-{:0.3f}'.format(
                           overlay, xmin, xmax, ymin, ymax))
 
-            rt.drawOnBounds(
-                self.pos.z, xmin, xmax, ymin, ymax, self.xax, self.yax) 
+            rt.drawOnBounds(zpos, xmin, xmax, ymin, ymax, copts.xax, copts.yax)
 
-            
+
     def _draw(self, *a):
         """Draws the current scene to the canvas. """
-        
+
         if self.destroyed():
             return
-        
-        width, height = self._getSize()
+
+        width, height = self.GetSize()
         if width == 0 or height == 0:
             return
 
@@ -1351,13 +1314,16 @@ class SliceCanvas(props.HasProperties):
 
         overlays, globjs = self._getGLObjects()
 
-        bbox = None
+        copts = self.opts
+        bbox  = None
+        zpos  = copts.pos[copts.zax]
+        axes  = (copts.xax, copts.yax, copts.zax)
 
-        # Set the viewport to match the current 
+        # Set the viewport to match the current
         # display bounds and canvas size
-        if self.renderMode is not 'offscreen':
+        if copts.renderMode is not 'offscreen':
             bbox = self._setViewport()
-            glroutines.clear(self.bgColour)
+            glroutines.clear(copts.bgColour)
 
         # Do not draw anything if some globjects
         # are not ready. This is because, if a
@@ -1372,32 +1338,32 @@ class SliceCanvas(props.HasProperties):
         for overlay, globj in zip(overlays, globjs):
 
             display = self.displayCtx.getDisplay(overlay)
-            opts    = display.getDisplayOpts()
+            dopts   = display.getDisplayOpts()
 
             if not display.enabled:
                 continue
 
             # On-screen rendering - the globject is
             # rendered directly to the screen canvas
-            if self.renderMode == 'onscreen':
+            if copts.renderMode == 'onscreen':
                 log.debug('Drawing {} slice for overlay {} '
                           'directly to canvas'.format(
-                              self.zax, display.name))
+                              copts.zax, display.name))
 
-                globj.preDraw()
-                globj.draw(self.pos.z, bbox=bbox)
-                globj.postDraw() 
+                globj.preDraw(bbox=bbox)
+                globj.draw2D(zpos, axes, bbox=bbox)
+                globj.postDraw(bbox=bbox)
 
             # Off-screen rendering - each overlay is
             # rendered to an off-screen texture -
             # these textures are combined below.
             # Set up the texture as the rendering
             # target, and draw to it
-            elif self.renderMode == 'offscreen':
-                
+            elif copts.renderMode == 'offscreen':
+
                 rt = self._offscreenTextures.get(overlay, None)
-                lo = opts.bounds.getLo()
-                hi = opts.bounds.getHi()
+                lo = dopts.bounds.getLo()
+                hi = dopts.bounds.getHi()
 
                 # Assume that all is well - the texture
                 # just has not yet been created
@@ -1405,19 +1371,19 @@ class SliceCanvas(props.HasProperties):
                     log.debug('Render texture missing for overlay {}'.format(
                         overlay))
                     continue
-                
+
                 log.debug('Drawing {} slice for overlay {} '
                           'to off-screen texture'.format(
-                              self.zax, overlay.name))
+                              copts.zax, overlay.name))
 
                 rt.bindAsRenderTarget()
-                rt.setRenderViewport(self.xax, self.yax, lo, hi)
-                
+                rt.setRenderViewport(copts.xax, copts.yax, lo, hi)
+
                 glroutines.clear((0, 0, 0, 0))
 
                 with glroutines.disabled(gl.GL_BLEND):
                     globj.preDraw()
-                    globj.draw(self.pos.z)
+                    globj.draw2D(zpos, axes)
                     globj.postDraw()
 
                 rt.unbindAsRenderTarget()
@@ -1426,8 +1392,8 @@ class SliceCanvas(props.HasProperties):
             # Pre-rendering - a pre-generated 2D
             # texture of the current z position
             # is rendered to the screen canvas
-            elif self.renderMode == 'prerender':
-                
+            elif copts.renderMode == 'prerender':
+
                 rt, name = self._prerenderTextures.get(overlay, (None, None))
 
                 if rt is None:
@@ -1435,20 +1401,20 @@ class SliceCanvas(props.HasProperties):
 
                 log.debug('Drawing {} slice for overlay {} '
                           'from pre-rendered texture'.format(
-                              self.zax, display.name)) 
+                              copts.zax, display.name))
 
-                rt.draw(self.pos.z)
+                rt.draw(zpos)
 
         # For off-screen rendering, all of the globjects
         # were rendered to off-screen textures - here,
         # those off-screen textures are all rendered on
         # to the screen canvas.
-        if self.renderMode == 'offscreen':
+        if copts.renderMode == 'offscreen':
             self._setViewport()
-            glroutines.clear(self.bgColour)
-            self._drawOffscreenTextures() 
+            glroutines.clear(copts.bgColour)
+            self._drawOffscreenTextures()
 
-        if self.showCursor:
+        if copts.showCursor:
             self._drawCursor()
 
-        self._annotations.draw(self.pos.z)
+        self._annotations.draw(zpos)

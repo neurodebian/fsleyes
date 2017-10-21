@@ -16,13 +16,14 @@ import numpy as np
 
 import wx
 
-import                                            props
-
 import fsl.data.featimage                      as fslfeatimage
 import fsl.data.melodicimage                   as fslmelimage
 import fsl.data.image                          as fslimage
+import fsleyes_props                           as props
+
 import fsleyes.overlay                         as fsloverlay
 import fsleyes.actions                         as actions
+import fsleyes.actions.addmaskdataseries       as addmaskdataseries
 import fsleyes.strings                         as strings
 import fsleyes.plotting                        as plotting
 import fsleyes.controls.timeseriescontrolpanel as timeseriescontrolpanel
@@ -38,12 +39,12 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
     time series data from overlays. A ``TimeSeriesPanel`` looks something like
     the following:
 
-    
+
     .. image:: images/timeseriespanel.png
        :scale: 50%
        :align: center
 
-    
+
     A ``TimeSeriesPanel`` plots one or more :class:`.TimeSeries` instances,
     which encapsulate time series data from an overlay. All ``TimeSeries``
     classes are defined in the :mod:`.plotting.timeseries` module; these are
@@ -61,7 +62,7 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
 
     **Control panels**
 
-    
+
     Some *FSLeyes control* panels are associated with the
     :class:`.TimeSeriesPanel`:
 
@@ -71,7 +72,7 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
        ~fsleyes.controls.plotlistpanel.PlotListPanel
        ~fsleyes.controls.timeseriescontrolpanel.TimeSeriesControlPanel
 
-    
+
     The ``TimeSeriesPanel`` defines some :mod:`.actions`, allowing the user
     to show/hide these control panels:
 
@@ -80,6 +81,14 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
 
        toggleTimeSeriesToolBar
        toggleTimeSeriesControl
+
+
+    Some tools are also available, to do various things:
+
+    .. autosummary::
+       :nosignatures:
+
+       addMaskDataSeries
 
 
     **FEATures**
@@ -93,24 +102,24 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
     various aspects of the FEAT model fit. See the :class:`.FEATTimeSeries`
     and the :class:`.TimeSeriesControlPanel` classes for more details.
 
-    
+
     **Melodic features**
 
-    
+
     The ``TimeSeriesPanel`` also has some functionality for
     :class:`.MelodicImage` overlays - a :class:`.MelodicTimeSeries` instance
     is used to plot the component time courses for the current component (as
     defined by the :attr:`.NiftiOpts.volume` property).
     """
 
-    
+
     usePixdim = props.Boolean(default=True)
     """If ``True``, the X axis data is scaled by the pixdim value of the
     selected overlay (which, for FMRI time series data is typically set
     to the TR time).
     """
 
-    
+
     plotMode = props.Choice(('normal', 'demean', 'normalise', 'percentChange'))
     """Options to scale/offset the plotted time courses.
 
@@ -140,7 +149,7 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
         :arg frame:       The :class:`.FSLeyesFrame` instance.
         """
 
-        # If the currently selected image is from 
+        # If the currently selected image is from
         # a FEAT analysis, and the corresponding
         # filtered_func_data is loaded, enable the
         # initial state of the time course for
@@ -165,7 +174,14 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
         self.addListener('plotMelodicICs',
                          self._name,
                          self.__plotMelodicICsChanged)
-        
+
+        self.__addMaskAction = addmaskdataseries.AddMaskDataSeriesAction(
+            overlayList,
+            displayCtx,
+            self)
+
+        self.addMaskDataSeries.bindProps('enabled', self.__addMaskAction)
+
         self.initProfile()
 
 
@@ -173,11 +189,14 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
         """Removes some listeners, and calls the :meth:`.PlotPanel.destroy`
         method.
         """
-        
+
         self.removeListener('plotMode',       self._name)
         self.removeListener('usePixdim',      self._name)
         self.removeListener('plotMelodicICs', self._name)
-        
+
+        self.__addMaskAction.destroy()
+        self.__addMaskAction = None
+
         plotpanel.OverlayPlotPanel.destroy(self)
 
 
@@ -197,14 +216,20 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
         """Shows/hides a :class:`.TimeSeriesToolBar`. See
         :meth:`.ViewPanel.togglePanel`.
         """
-        self.togglePanel(timeseriestoolbar.TimeSeriesToolBar, tsPanel=self) 
+        self.togglePanel(timeseriestoolbar.TimeSeriesToolBar, tsPanel=self)
 
-        
+
+    @actions.action
+    def addMaskDataSeries(self):
+        """Executes the :class:`AddMaskDataSeriesAction`. """
+        self.__addMaskAction()
+
+
     def getActions(self):
         """Overrides :meth:`.ActionProvider.getActions`. Returns all of the
         :mod:`.actions` that are defined on this ``TimeSeriesPanel``.
         """
-        actions = [self.screenshot,
+        actionz = [self.screenshot,
                    self.importDataSeries,
                    self.exportDataSeries,
                    None,
@@ -213,9 +238,16 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
                    self.toggleTimeSeriesToolBar,
                    self.toggleTimeSeriesControl]
 
-        names = [a.__name__ if a is not None else None for a in actions]
+        names = [a.__name__ if a is not None else None for a in actionz]
 
-        return list(zip(names, actions))
+        return list(zip(names, actionz))
+
+
+    def getTools(self):
+        """Returns a list of tools to be added to the ``FSLeyesFrame`` for
+        ``TimeSeriesPanel`` views.
+        """
+        return [self.addMaskDataSeries]
 
 
     def draw(self, *a):
@@ -255,7 +287,7 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
             with props.suppress(ts, 'label'):
                 ts.label = ts.makeLabel()
 
-        xlabel, ylabel = self.__generatedefaultLabels(tss)
+        xlabel, ylabel = self.__generateDefaultLabels(tss)
 
         self.drawDataSeries(extraSeries=tss, xlabel=xlabel, ylabel=ylabel)
         self.drawArtists()
@@ -267,12 +299,12 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
         :class:`.TimeSeries` sub-classes) for the specified overlay.
 
         Returns a tuple containing the following:
-        
+
           - A :class:`.TimeSeries` instance for the given overlay
-        
+
           - A list of *targets* - objects which have properties that
             influence the state of the ``TimeSeries`` instance.
-        
+
           - A list of *property names*, one for each target.
 
         If the given overlay is not compatible (i.e. it has no time series
@@ -281,7 +313,7 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
 
         if not isinstance(overlay, fslimage.Image):
             return None, None, None
-            
+
         # Is this a FEAT filtered_func_data image?
         if isinstance(overlay, fslfeatimage.FEATImage):
 
@@ -304,11 +336,14 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
 
         # Otherwise we just plot
         # bog-standard 4D voxel data
-        elif len(overlay.shape) == 4 and overlay.shape[3] > 1:
+        # (listening to volumeDim for
+        # images with >4 dimensions)
+        elif overlay.ndims > 3:
             ts = plotting.VoxelTimeSeries(self, overlay, self._displayCtx)
-            targets   = [self._displayCtx]
-            propNames = ['location']
-            
+            opts      = self._displayCtx.getOpts(overlay)
+            targets   = [self._displayCtx, opts]
+            propNames = ['location', 'volumeDim']
+
         else:
             return None, None, None
 
@@ -317,7 +352,7 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
         ts.lineWidth = 1
         ts.lineStyle = '-'
         ts.label     = ts.makeLabel()
-                
+
         return ts, targets, propNames
 
 
@@ -338,7 +373,7 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
                 xdata = xdata * ts.overlay.tr
             else:
                 xdata = xdata * ts.overlay.pixdim[3]
-        
+
         if self.plotMode == 'demean':
             ydata = ydata - ydata.mean()
 
@@ -349,12 +384,12 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
                 ydata = 2 * (ydata - ymin) / (ymax - ymin) - 1
             else:
                 ydata = np.zeros(len(ydata))
-            
+
         elif self.plotMode == 'percentChange':
             mean  = ydata.mean()
             ydata = 100 * (ydata / mean) - 100
-            
-        return xdata, ydata 
+
+        return xdata, ydata
 
 
     def __plotMelodicICsChanged(self, *a):
@@ -371,7 +406,7 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
         self.draw()
 
 
-    def __generatedefaultLabels(self, timeSeries):
+    def __generateDefaultLabels(self, timeSeries):
         """Called by :meth:`draw`. If the :attr:`.PlotPanel.xlabel` or
         :attr:`.PlotPanel.ylabel` properties are unset, an attempt is made
         to generate default labels.
@@ -389,12 +424,12 @@ class TimeSeriesPanel(plotpanel.OverlayPlotPanel):
 
         # If all of the overlays related to the data series being
         # plotted:
-        # 
+        #
         #   - are Images
         #   - have the same time unit (as specified in the nifti header)
-        #  
-        # Then a default label is specified   
-        # 
+        #
+        # Then a default label is specified
+        #
         # n.b. this is not foolproof, as many
         # non-time 4D images will still set
         # the time units to seconds.

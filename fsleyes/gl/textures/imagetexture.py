@@ -10,11 +10,12 @@ for storing a :class:`.Image` instance.
 
 
 import logging
+import collections
 
 import numpy as np
 
 from . import texture3d
-import fsl.data.imagewrapper as imagewrapper 
+import fsl.data.imagewrapper as imagewrapper
 
 
 log = logging.getLogger(__name__)
@@ -30,9 +31,9 @@ class ImageTexture(texture3d.Texture3D):
     documentation for more details.
     """
 
-    
+
     def __init__(self,
-                 name,                 
+                 name,
                  image,
                  **kwargs):
         """Create an ``ImageTexture``. A listener is added to the
@@ -41,10 +42,10 @@ class ImageTexture(texture3d.Texture3D):
         :meth:`__imageDataChanged` method.
 
         :arg name:   A name for this ``imageTexure``.
-        
+
         :arg image:  The :class:`.Image` instance.
 
-        :arg volume: Initial volume, for 4D images.
+        :arg volume: Initial volume index/indices, for >3D images.
 
         All other arguments are passed through to the
         :meth:`.Texture3D.__init__` method, and thus used as initial texture
@@ -53,15 +54,19 @@ class ImageTexture(texture3d.Texture3D):
 
         nvals = kwargs.get('nvals', 1)
 
-        try:
-            if nvals > 1 and image.shape[3] != nvals:
-                raise RuntimeError()
-        except:
-            raise RuntimeError('Data shape mismatch: texture '
-                               'size {} requested for '
-                               'image shape {}'.format(nvals, image.shape))
+        # For 4D textures, the image must have a shape of the form:
+        #   (x, y, z, [1, [1, [1, [1, ]]]] nvals)
+        if nvals > 1:
+            ndims        = image.ndims
+            expShape     = list(image.shape[:3])
+            expShape    += [1] * (ndims - 3)
+            expShape[-1] = nvals
+            if list(image.shape) != expShape:
+                raise RuntimeError('Data shape mismatch: texture '
+                                   'size {} requested for '
+                                   'image shape {}'.format(nvals, image.shape))
 
-        self.__name       = '{}_{}'.format(type(self).__name__, id(self)) 
+        self.__name       = '{}_{}'.format(type(self).__name__, id(self))
         self.image        = image
         self.__nvals      = nvals
         self.__volume     = None
@@ -84,10 +89,13 @@ class ImageTexture(texture3d.Texture3D):
         texture3d.Texture3D.destroy(self)
         self.image.deregister(self.__name, 'data')
 
-        
+
     def setVolume(self, volume):
-        """For 4D :class:`.Image` instances, specifies the volume to use
-        as the 3D texture data.
+        """For :class:`.Image` instances with more than three dimensions,
+        specifies the indices for the fourth and above dimensions with which
+        to extract the 3D texture data. If the image has four dimensions, this
+        may be a scalar, otherwise it must be a sequence of
+        (``Image.ndims - 3``) the correct length.
         """
         self.set(volume=volume)
 
@@ -97,13 +105,13 @@ class ImageTexture(texture3d.Texture3D):
         Triggers an image texture refresh via a call to :meth:`set`.
 
         :arg image:    The ``Image`` instance
-        
+
         :arg topic:    The string ``'data'``
-        
+
         :arg sliceobj: Slice object specifying the portion of the image
                        that was changed.
         """
-        
+
         # If the data change was performed using
         # normal array indexing, we can just replace
         # that part of the image texture.
@@ -120,7 +128,7 @@ class ImageTexture(texture3d.Texture3D):
                       'texture (offset: {}, size: {})'.format(
                           image.name,
                           offset, data.shape))
-            
+
             self.patchData(data, offset)
 
         # Otherwise (boolean array indexing) we have
@@ -132,7 +140,7 @@ class ImageTexture(texture3d.Texture3D):
 
             self.set()
 
-        
+
     def set(self, **kwargs):
         """Overrides :meth:`.Texture3D.set`. Set any parameters on this
         ``ImageTexture``. This method accepts any parameters that are accepted
@@ -155,28 +163,36 @@ class ImageTexture(texture3d.Texture3D):
         normRange  = kwargs.pop('normaliseRange', None)
         volume     = kwargs.pop('volume',         self.__volume)
         volRefresh = kwargs.pop('volRefresh',     True)
+        image      = self.image
+        nvals      = self.__nvals
+        ndims      = image.ndims
 
         if normRange is None:
-            normRange = self.image.dataRange
+            normRange = image.dataRange
 
-        is4D   = self.__nvals == 1          and \
-                 len(self.image.shape) == 4 and \
-                 self.image.shape[3] > 1
+        if ndims == 3 or nvals > 1:
+            volume = None
+        else:
+            if volume is None and self.__volume is None:
+                volume = [0] * (ndims - 3)
 
-        if volume is None and self.__volume is None:
-            volume = 0
+            elif not isinstance(volume, collections.Sequence):
+                volume = [volume]
+
+            if len(volume) != ndims - 3:
+                raise ValueError('Invalid volume indices for {} '
+                                 'dims: {}'.format(ndims, volume))
 
         if (not volRefresh) and volume == self.__volume:
             return
 
-        if not is4D:
-            kwargs['data'] = self.image[:]
+        self.__volume = volume
 
-        else:
-            
-            self.__volume  = volume
-            kwargs['data'] = self.image[..., volume]
+        slc = [slice(None), slice(None), slice(None)]
+        if volume is not None:
+            slc += volume
 
+        kwargs['data']           = self.image[tuple(slc)]
         kwargs['normaliseRange'] = normRange
 
         return texture3d.Texture3D.set(self, **kwargs)

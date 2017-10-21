@@ -41,23 +41,22 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
               instantiated directly - use one of these subclasses, depending
               on your use-case:
 
-               - :class:`.OSMesaLightBoxCanvas` for static off-screen 
+               - :class:`.OSMesaLightBoxCanvas` for static off-screen
                  rendering of a scene using OSMesa.
-    
+
                - :class:`.WXGLLightBoxCanvas` for interactive rendering on a
                  :class:`wx.glcanvas.GLCanvas` canvas.
 
-    
+
     The ``LightBoxCanvas`` class derives from the :class:`.SliceCanvas` class,
     and is tightly coupled to the ``SliceCanvas`` implementation.  Various
     settings, and the current scene displayed on a ``LightBoxCanvas``
     instance, can be changed through the properties of the
-    ``LightBoxCanvas``. All of these properties are defined in the
-    :class:`.LightBoxCanvasOpts` class.
+    ``LightBoxCanvasOpts`` instance, available via the :attr:`opts` attribute.
 
-    
+
     Performance of a ``LightBoxCanvas`` instance may be controlled through the
-    :attr:`.SliceCanvas.renderMode` property, in the same way as for the
+    :attr:`.SliceCanvasOpts.renderMode` property, in the same way as for the
     :class:`.SliceCanvas`. However, the ``LightBoxCanvas`` handles the
     ``offscreen`` render mode differently to the ``SliceCanvas. Where the
     ``SliceCanvas`` uses a separate :class:`.RenderTexture` for every overlay
@@ -77,25 +76,16 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
        calcSliceSpacing
     """
 
-    
-    sliceSpacing   = copy.copy(canvasopts.LightBoxCanvasOpts.sliceSpacing)
-    ncols          = copy.copy(canvasopts.LightBoxCanvasOpts.ncols)
-    nrows          = copy.copy(canvasopts.LightBoxCanvasOpts.nrows)
-    topRow         = copy.copy(canvasopts.LightBoxCanvasOpts.topRow)
-    zrange         = copy.copy(canvasopts.LightBoxCanvasOpts.zrange)
-    showGridLines  = copy.copy(canvasopts.LightBoxCanvasOpts.showGridLines)
-    highlightSlice = copy.copy(canvasopts.LightBoxCanvasOpts.highlightSlice)
 
-        
     def __init__(self, overlayList, displayCtx, zax=0):
         """Create a ``LightBoxCanvas`` object.
-        
+
         :arg overlayList: An :class:`.OverlayList` object which contains a
                           list of overlays to be displayed.
 
         :arg displayCtx: A :class:`.DisplayContext` object which defines how
                          that overlay list is to be displayed.
-        
+
         :arg zax:        Display coordinate system axis to be used as the
                          'depth' axis. Can be changed via the
                          :attr:`.SliceCanvas.zax` property.
@@ -107,19 +97,35 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         self._nslices   = 0
         self._totalRows = 0
 
+        # The final display bounds calculated by
+        # SliceCanvas._updateDisplayBounds is not
+        # necessarily the same as the actual bounds,
+        # as they are  adjusted to preserve  the
+        # image aspect ratio. But the real bounds
+        # are of use in the _zPosChanged method, so
+        # we save them here as an attribute -
+        # see _updateDisplayBounds.
+        self._realBounds = None
+
         # This will point to a RenderTexture if
         # the offscreen render mode is enabled
         self._offscreenRenderTexture = None
 
-        slicecanvas.SliceCanvas.__init__(self, overlayList, displayCtx, zax)
+        opts = canvasopts.LightBoxCanvasOpts()
 
-        self.addListener('sliceSpacing',   self.name, self._slicePropsChanged)
-        self.addListener('ncols',          self.name, self._slicePropsChanged)
-        self.addListener('nrows',          self.name, self._slicePropsChanged)
-        self.addListener('zrange',         self.name, self._slicePropsChanged)
-        self.addListener('showGridLines',  self.name, self.Refresh)
-        self.addListener('highlightSlice', self.name, self.Refresh)
-        self.addListener('topRow',         self.name, self._topRowChanged)
+        slicecanvas.SliceCanvas.__init__(self,
+                                         overlayList,
+                                         displayCtx,
+                                         zax,
+                                         opts)
+
+        opts.addListener('sliceSpacing',   self.name, self._slicePropsChanged)
+        opts.addListener('ncols',          self.name, self._slicePropsChanged)
+        opts.addListener('nrows',          self.name, self._slicePropsChanged)
+        opts.addListener('zrange',         self.name, self._slicePropsChanged)
+        opts.addListener('showGridLines',  self.name, self.Refresh)
+        opts.addListener('highlightSlice', self.name, self.Refresh)
+        opts.addListener('topRow',         self.name, self._topRowChanged)
 
         # Add a listener to the position so when it
         # changes we can adjust the display range (via
@@ -129,11 +135,11 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         # registered a listener, on pos, with
         # self.name - so we use a different name
         # here
-        self.addListener('pos',
+        opts.addListener('pos',
                          '{}_zPosChanged'.format(self.name),
                          self._zPosChanged)
 
-        
+
     def destroy(self):
         """Overrides :meth:`.SliceCanvas.destroy`. Must be called when this
         ``LightBoxCanvas`` is no longer needed.
@@ -143,46 +149,51 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         the :meth:`.SliceCanvas.destroy` method.
         """
 
-        self.removeListener('pos', '{}_zPosChanged'.format(self.name))
-        self.removeListener('sliceSpacing',                self.name)
-        self.removeListener('ncols',                       self.name)
-        self.removeListener('nrows',                       self.name)
-        self.removeListener('zrange',                      self.name)
-        self.removeListener('showGridLines',               self.name)
-        self.removeListener('highlightSlice',              self.name)
-        self.removeListener('topRow',                      self.name)
-        
+        opts = self.opts
+
+        opts.removeListener('pos', '{}_zPosChanged'.format(self.name))
+        opts.removeListener('sliceSpacing',                self.name)
+        opts.removeListener('ncols',                       self.name)
+        opts.removeListener('nrows',                       self.name)
+        opts.removeListener('zrange',                      self.name)
+        opts.removeListener('showGridLines',               self.name)
+        opts.removeListener('highlightSlice',              self.name)
+        opts.removeListener('topRow',                      self.name)
+
         if self._offscreenRenderTexture is not None:
             self._offscreenRenderTexture.destroy()
-        
+
         slicecanvas.SliceCanvas.destroy(self)
 
-    
-    def worldToCanvas(self, xpos, ypos, zpos):
-        """Given an x/y/z location in the display coordinate system (with
-        xpos corresponding to the horizontal screen axis, ypos to the vertical
-        axis, and zpos to the depth axis), converts it into an x/y position,
-        in the coordinate system of this ``LightBoxCanvas``.
+
+    def worldToCanvas(self, pos):
+        """Given an x/y/z location in the display coordinate system, converts
+        it into an x/y position, in the coordinate system of this
+        ``LightBoxCanvas``.
         """
-        sliceno = int(np.floor((zpos - self.zrange.xlo) / self.sliceSpacing))
+        opts    = self.opts
+        xpos    = pos[opts.xax]
+        ypos    = pos[opts.yax]
+        zpos    = pos[opts.zax]
+        sliceno = int(np.floor((zpos - opts.zrange.xlo) / opts.sliceSpacing))
 
-        xlen = self.displayCtx.bounds.getLen(self.xax)
-        ylen = self.displayCtx.bounds.getLen(self.yax)
-        xmin = self.displayCtx.bounds.getLo( self.xax)
-        ymin = self.displayCtx.bounds.getLo( self.yax)
-        
-        row = self._totalRows - int(np.floor(sliceno / self.ncols)) - 1
-        col =                   int(np.floor(sliceno % self.ncols))
+        xlen = self.displayCtx.bounds.getLen(opts.xax)
+        ylen = self.displayCtx.bounds.getLen(opts.yax)
+        xmin = self.displayCtx.bounds.getLo( opts.xax)
+        ymin = self.displayCtx.bounds.getLo( opts.yax)
 
-        if self.invertX: xpos = xmin + xlen - (xpos - xmin)
-        if self.invertY: ypos = ymin + ylen - (ypos - ymin)
+        row = self._totalRows - int(np.floor(sliceno / opts.ncols)) - 1
+        col =                   int(np.floor(sliceno % opts.ncols))
+
+        if opts.invertX: xpos = xmin + xlen - (xpos - xmin)
+        if opts.invertY: ypos = ymin + ylen - (ypos - ymin)
 
         xpos = xpos + xlen * col
         ypos = ypos + ylen * row
-        
+
         return xpos, ypos
 
-        
+
     def canvasToWorld(self, xpos, ypos):
         """Overrides :meth:.SliceCanvas.canvasToWorld`.
 
@@ -193,8 +204,9 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         ``None`` is returned.
         """
 
+        opts  = self.opts
         nrows = self._totalRows
-        ncols = self.ncols
+        ncols = opts.ncols
 
         screenPos = slicecanvas.SliceCanvas.canvasToWorld(
             self, xpos, ypos, invertX=False, invertY=False)
@@ -202,13 +214,13 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         if screenPos is None:
             return None
 
-        screenx = screenPos[self.xax]
-        screeny = screenPos[self.yax]
+        screenx = screenPos[opts.xax]
+        screeny = screenPos[opts.yax]
 
-        xmin = self.displayCtx.bounds.getLo( self.xax)
-        ymin = self.displayCtx.bounds.getLo( self.yax)
-        xlen = self.displayCtx.bounds.getLen(self.xax)
-        ylen = self.displayCtx.bounds.getLen(self.yax)
+        xmin = self.displayCtx.bounds.getLo( opts.xax)
+        ymin = self.displayCtx.bounds.getLo( opts.yax)
+        xlen = self.displayCtx.bounds.getLen(opts.xax)
+        ylen = self.displayCtx.bounds.getLen(opts.yax)
 
         xmax = xmin + ncols * xlen
         ymax = ymin + nrows * ylen
@@ -228,19 +240,19 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         xpos = screenx  -          col      * xlen
         ypos = screeny  - (nrows - row - 1) * ylen
 
-        if self.invertX: xpos = xlen - (xpos - xmin) + xmin
-        if self.invertY: ypos = ylen - (ypos - ymin) + ymin
-        
-        zpos = self.zrange.xlo + (sliceno + 0.5) * self.sliceSpacing
+        if opts.invertX: xpos = xlen - (xpos - xmin) + xmin
+        if opts.invertY: ypos = ylen - (ypos - ymin) + ymin
+
+        zpos = opts.zrange.xlo + (sliceno + 0.5) * opts.sliceSpacing
 
         pos           = [0, 0, 0]
-        pos[self.xax] = xpos
-        pos[self.yax] = ypos
-        pos[self.zax] = zpos
+        pos[opts.xax] = xpos
+        pos[opts.yax] = ypos
+        pos[opts.zax] = zpos
 
         return tuple(pos)
 
-        
+
     def getTotalRows(self):
         """Returns the total number of rows that may be displayed. """
         return self._totalRows
@@ -248,30 +260,31 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
 
     def calcSliceSpacing(self, overlay):
         """Calculates and returns a Z-axis slice spacing value suitable
-        for the given overlay. 
+        for the given overlay.
         """
+        copts      = self.opts
         displayCtx = self.displayCtx
-        opts       = displayCtx.getOpts(overlay)
-        zmin, zmax = opts.bounds.getRange(self.zax)
+        dopts      = displayCtx.getOpts(overlay)
+        zmin, zmax = dopts.bounds.getRange(copts.zax)
         overlay    = displayCtx.getReferenceImage(overlay)
 
         # If the overlay does not have a
         # reference NIFTI image, choose
-        # an arbitrary slice spacing. 
+        # an arbitrary slice spacing.
         if overlay is None:
             return (zmax - zmin) / 50.0
 
-        # Get the DisplayOpts instance 
+        # Get the DisplayOpts instance
         # for the reference image
-        opts = displayCtx.getOpts(overlay)
+        dopts = displayCtx.getOpts(overlay)
 
         # Otherwise return a spacing
         # appropriate for the current
         # display space
-        if   opts.transform == 'id':          return 1
-        elif opts.transform == 'pixdim':      return overlay.pixdim[self.zax]
-        elif opts.transform == 'pixdim-flip': return overlay.pixdim[self.zax]
-        elif opts.transform == 'affine':      return min(overlay.pixdim[:3])
+        if   dopts.transform == 'id':          return 1
+        elif dopts.transform == 'pixdim':      return overlay.pixdim[copts.zax]
+        elif dopts.transform == 'pixdim-flip': return overlay.pixdim[copts.zax]
+        elif dopts.transform == 'affine':      return min(overlay.pixdim[:3])
 
         # This overlay is being displayed with a
         # custrom transformation matrix  - check
@@ -291,16 +304,10 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         properties to sensible values.
         """
         slicecanvas.SliceCanvas._zAxisChanged(self, *a)
+        self._updateZAxisProperties()
+        self._slicePropsChanged()
 
-        overlay = self.displayCtx.getSelectedOverlay()
 
-        if overlay is None:
-            return
-
-        self.sliceSpacing = self.calcSliceSpacing(overlay)
-        self.zrange.x     = self.displayCtx.bounds.getRange(self.zax)
-
-        
     def _topRowChanged(self, *a):
         """Called when the :attr:`topRow` property changes.  Adjusts display
         range and refreshes the canvas.
@@ -313,22 +320,23 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         """Called when any of the slice properties change. Regenerates slice
         locations and display bounds, and refreshes the canvas.
         """
-        
+
         self._calcNumSlices()
         self._genSliceLocations()
         self._zPosChanged()
         self._updateDisplayBounds()
 
         if log.getEffectiveLevel() == logging.DEBUG:
-            props = [('nrows',        self.nrows),
-                     ('ncols',        self.ncols),
-                     ('sliceSpacing', self.sliceSpacing),
-                     ('zrange',       self.zrange)]
+            opts  = self.opts
+            props = [('nrows',        opts.nrows),
+                     ('ncols',        opts.ncols),
+                     ('sliceSpacing', opts.sliceSpacing),
+                     ('zrange',       opts.zrange)]
 
             props = '; '.join(['{}={}'.format(k, v) for k, v in props])
 
             log.debug('Lightbox properties changed: [{}]'.format(props))
-            
+
         self.Refresh()
 
 
@@ -337,11 +345,11 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         any off-screen :class:`.RenderTexture` is destroyed, and calls the
         :meth:`.SliceCanvas._renderModeChange` method.
         """
-        
+
         if self._offscreenRenderTexture is not None:
             self._offscreenRenderTexture.destroy()
             self._offscreenRenderTexture = None
-            
+
         slicecanvas.SliceCanvas._renderModeChange(self, *a)
 
 
@@ -351,15 +359,17 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         :class:`.RenderTextureStack` instances as needed.
         """
 
-        if self.renderMode == 'onscreen':
+        renderMode = self.opts.renderMode
+
+        if renderMode == 'onscreen':
             return
 
         # The LightBoxCanvas does offscreen rendering
         # a bit different to the SliceCanvas. The latter
         # uses a separate render texture for each overlay
         # whereas here we're going to use a single
-        # render texture for all overlays. 
-        elif self.renderMode == 'offscreen':
+        # render texture for all overlays.
+        elif renderMode == 'offscreen':
             if self._offscreenRenderTexture is not None:
                 self._offscreenRenderTexture.destroy()
 
@@ -372,8 +382,8 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         # The LightBoxCanvas handles pre-render mode
         # the same way as the SliceCanvas - a separate
         # RenderTextureStack for eacn globject
-        elif self.renderMode == 'prerender':
-            
+        elif renderMode == 'prerender':
+
             # Delete any RenderTextureStack instances for
             # overlays which have been removed from the list
             for overlay, (tex, name) in list(self._prerenderTextures.items()):
@@ -391,7 +401,7 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
 
                 if (globj is None) or (not globj):
                     continue
-                
+
                 rt, name = self._getPreRenderTexture(globj, overlay)
                 self._prerenderTextures[overlay] = rt, name
 
@@ -402,11 +412,12 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         """Calculates the total number of slices to be displayed and
         the total number of rows.
         """
-        
-        xlen = self.displayCtx.bounds.getLen(self.xax)
-        ylen = self.displayCtx.bounds.getLen(self.yax)
-        zlen = self.zrange.xlen
-        width, height = self._getSize()
+
+        opts = self.opts
+        xlen = self.displayCtx.bounds.getLen(opts.xax)
+        ylen = self.displayCtx.bounds.getLen(opts.yax)
+        zlen = opts.zrange.xlen
+        width, height = self.GetSize()
 
         if xlen   == 0 or \
            ylen   == 0 or \
@@ -414,25 +425,23 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
            height == 0:
             return
 
-        self._nslices   = int(np.ceil(zlen / self.sliceSpacing))
-        self._totalRows = int(np.ceil(self._nslices / float(self.ncols)))
+        self._nslices   = int(np.ceil(zlen / opts.sliceSpacing))
+        self._totalRows = int(np.ceil(self._nslices / float(opts.ncols)))
 
         if self._nslices == 0 or self._totalRows == 0:
             return
-        
+
         # All slices are going to be displayed, so
         # we'll 'disable' the topRow property
-        if self._totalRows < self.nrows:
-            self.setConstraint('topRow', 'minval', 0)
-            self.setConstraint('topRow', 'maxval', 0)
+        if self._totalRows < opts.nrows:
+            opts.setAttribute('topRow', 'minval', 0)
+            opts.setAttribute('topRow', 'maxval', 0)
 
         # nrows slices are going to be displayed,
         # and the topRow property can be used to
         # scroll through all available rows.
         else:
-            self.setConstraint('topRow',
-                               'maxval',
-                               self._totalRows - self.nrows)
+            opts.setAttribute('topRow', 'maxval', self._totalRows - opts.nrows)
 
 
     def _zPosChanged(self, *a):
@@ -440,11 +449,12 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
 
         Makes sure that the corresponding slice is visible.
         """
-        # figure out where we are in the canvas world
-        canvasX, canvasY = self.worldToCanvas(*self.pos.xyz)
 
-        # See the _updateDisplayBounds method for an
-        # explanation of the _realBounds attribute
+        # figure out where we are in the canvas world
+        opts             = self.opts
+        canvasX, canvasY = self.worldToCanvas(opts.pos.xyz)
+
+        # Get the actual canvas bounds
         xlo, xhi, ylo, yhi = self._realBounds
 
         # already in bounds
@@ -455,12 +465,12 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
             return
 
         # figure out what row we're on
-        sliceno = int(np.floor((self.pos.z - self.zrange.xlo) /
-                                self.sliceSpacing))
-        row     = int(np.floor(sliceno / self.ncols))
+        zpos    = opts.pos[opts.zax]
+        sliceno = int(np.floor((zpos - opts.zrange.xlo) / opts.sliceSpacing))
+        row     = int(np.floor(sliceno / opts.ncols))
 
         # and make sure that row is visible
-        self.topRow = row
+        opts.topRow = row
 
 
     def _overlayListChanged(self, *a):
@@ -482,10 +492,12 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         :attr:`sliceSpacing` and :attr:`zrange` properties.
         """
 
+        opts = self.opts
+
         if len(self.overlayList) == 0:
-            self.setConstraint('zrange', 'minDistance', 0)
-            self.zrange.x     = (0, 0)
-            self.sliceSpacing = 0
+            opts.setAttribute('zrange', 'minDistance', 0)
+            opts.zrange.x     = (0, 0)
+            opts.sliceSpacing = 0
             return
 
         # Get the new Z range from the
@@ -494,7 +506,7 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         # And calculate the minimum possible
         # slice spacing - the smallest pixdim
         # across all overlays in the list.
-        newZRange = self.displayCtx.bounds.getRange(self.zax)
+        newZRange = self.displayCtx.bounds.getRange(opts.zax)
         newZGap   = sys.float_info.max
 
         for overlay in self.overlayList:
@@ -506,9 +518,9 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
 
         # Update the zrange and slice
         # spacing constraints
-        self.zrange.setLimits(0, *newZRange)
-        self.setConstraint('zrange',       'minDistance', newZGap)
-        self.setConstraint('sliceSpacing', 'minval',      newZGap)
+        opts.zrange.setLimits(0, *newZRange)
+        opts.setAttribute('zrange',       'minDistance', newZGap)
+        opts.setAttribute('sliceSpacing', 'minval',      newZGap)
 
 
     def _overlayBoundsChanged(self, *a):
@@ -523,8 +535,8 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         self._updateZAxisProperties()
         self._calcNumSlices()
         self._genSliceLocations()
-        
-        
+
+
     def _updateDisplayBounds(self, *args, **kwargs):
         """Overrides :meth:`.SliceCanvas._updateDisplayBounds`.
 
@@ -533,41 +545,36 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         be displayed, in display coordinates.
         """
 
-        xmin = self.displayCtx.bounds.getLo( self.xax)
-        ymin = self.displayCtx.bounds.getLo( self.yax)
-        xlen = self.displayCtx.bounds.getLen(self.xax)
-        ylen = self.displayCtx.bounds.getLen(self.yax)
+        opts = self.opts
+        xmin = self.displayCtx.bounds.getLo( opts.xax)
+        ymin = self.displayCtx.bounds.getLo( opts.yax)
+        xlen = self.displayCtx.bounds.getLen(opts.xax)
+        ylen = self.displayCtx.bounds.getLen(opts.yax)
 
         # Calculate the vertical offset required to
         # ensure that the current 'topRow' is the first
         # row, and the correct number of rows ('nrows')
         # are displayed
-        
+
         # if the number of rows to be displayed (nrows)
         # is more than the number of rows that exist
         # (totalRows), calculate an offset to vertically
         # centre the existing row space in the display
         # row space
-        if self._totalRows < self.nrows:
-            off  = (self._totalRows - self.nrows) / 2.0
+        if self._totalRows < opts.nrows:
+            off  = (self._totalRows - opts.nrows) / 2.0
 
         # otherwise calculate the offset so that the
         # top of the display space lines up with the
         # current topRow
         else:
-            off  = self._totalRows - self.nrows - self.topRow
+            off  = self._totalRows - opts.nrows - opts.topRow
 
         ymin = ymin + ylen * off
-        xmax = xmin + xlen * self.ncols
-        ymax = ymin + ylen * self.nrows
+        xmax = xmin + xlen * opts.ncols
+        ymax = ymin + ylen * opts.nrows
 
-        # The final display bounds calculated by
-        # SliceCanvas._updateDisplayBounds is not
-        # necessarily the same as the actual bounds,
-        # as they are  adjusted to preserve  the
-        # image aspect ratio. But the real bounds
-        # are of use in the _zPosChanged method, so
-        # we save them here as an attribute
+        # Save the real canvas bounds
         self._realBounds = (xmin, xmax, ymin, ymax)
 
         log.debug('Required lightbox bounds: X: ({}, {}) Y: ({}, {})'.format(
@@ -586,13 +593,14 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         former specifies the transformation matrix to be used to position the
         slice on the canvas.
         """
-        
+
         # calculate the locations, in display coordinates,
         # of all slices to be displayed on the canvas
+        opts      = self.opts
         sliceLocs = np.arange(
-            self.zrange.xlo + self.sliceSpacing * 0.5,
-            self.zrange.xhi,
-            self.sliceSpacing)
+            opts.zrange.xlo + opts.sliceSpacing * 0.5,
+            opts.zrange.xhi,
+            opts.sliceSpacing)
 
         self._sliceLocs  = {}
         self._transforms = {}
@@ -604,7 +612,7 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
 
             iSliceLocs  = []
             iTransforms = []
-            
+
             for zi, zpos in enumerate(sliceLocs):
 
                 xform = self._calculateSliceTransform(overlay, zi)
@@ -625,38 +633,41 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         the slice in the correct location on the canvas.
         """
 
+        opts  = self.opts
         nrows = self._totalRows
-        ncols = self.ncols
+        ncols = opts.ncols
 
         row = int(np.floor(sliceno / ncols))
         col = int(np.floor(sliceno % ncols))
 
-        xlen = self.displayCtx.bounds.getLen(self.xax)
-        ylen = self.displayCtx.bounds.getLen(self.yax)
+        xlen = self.displayCtx.bounds.getLen(opts.xax)
+        ylen = self.displayCtx.bounds.getLen(opts.yax)
 
         translate              = np.identity(4, dtype=np.float32)
-        translate[self.xax, 3] = xlen * col
-        translate[self.yax, 3] = ylen * (nrows - row - 1)
-        translate[self.zax, 3] = 0
-        
+        translate[opts.xax, 3] = xlen * col
+        translate[opts.yax, 3] = ylen * (nrows - row - 1)
+        translate[opts.zax, 3] = 0
+
         return translate
 
 
     def __prepareSliceTransforms(self, globj, xforms):
         """Applies the :attr:`.SliceCanvas.invertX` and
         :attr:`.SliceCanvas.invertY` properties to the given transformation
-        matrices, if necessary.
+        matrices, if necessary. Returns the transformations.
         """
 
-        if not self.invertX or self.invertY:
+        opts = self.opts
+
+        if not opts.invertX or opts.invertY:
             return xforms
 
         invXforms = []
         lo, hi    = globj.getDisplayBounds()
-        xmin      = lo[self.xax]
-        xmax      = hi[self.xax]
-        ymin      = lo[self.yax]
-        ymax      = hi[self.yax]
+        xmin      = lo[opts.xax]
+        xmax      = hi[opts.xax]
+        ymin      = lo[opts.yax]
+        ymax      = hi[opts.yax]
         xlen      = xmax - xmin
         ylen      = ymax - ymin
 
@@ -669,17 +680,17 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
             toOrigin   = np.eye(4)
             fromOrigin = np.eye(4)
 
-            xoff = xlen / 2.0 + xform[self.xax, 3] + xmin
-            yoff = ylen / 2.0 + xform[self.yax, 3] + ymin
+            xoff = xlen / 2.0 + xform[opts.xax, 3] + xmin
+            yoff = ylen / 2.0 + xform[opts.yax, 3] + ymin
 
-            if self.invertX:
-                invert[    self.xax, self.xax] = -1
-                toOrigin[  self.xax, 3]        = -xoff
-                fromOrigin[self.xax, 3]        =  xoff
-            if self.invertY:
-                invert[    self.yax, self.yax] = -1
-                toOrigin[  self.yax, 3]        = -yoff
-                fromOrigin[self.yax, 3]        =  yoff
+            if opts.invertX:
+                invert[    opts.xax, opts.xax] = -1
+                toOrigin[  opts.xax, 3]        = -xoff
+                fromOrigin[opts.xax, 3]        =  xoff
+            if opts.invertY:
+                invert[    opts.yax, opts.yax] = -1
+                toOrigin[  opts.yax, 3]        = -yoff
+                fromOrigin[opts.yax, 3]        =  yoff
 
             xform = transform.concat(fromOrigin,
                                      invert,
@@ -693,15 +704,20 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
     def _drawGridLines(self):
         """Draws grid lines between all the displayed slices."""
 
-        xlen = self.displayCtx.bounds.getLen(self.xax)
-        ylen = self.displayCtx.bounds.getLen(self.yax)
-        xmin = self.displayCtx.bounds.getLo( self.xax)
-        ymin = self.displayCtx.bounds.getLo( self.yax)
+        opts = self.opts
+
+        if self._totalRows == 0 or opts.ncols == 0:
+            return
+
+        xlen = self.displayCtx.bounds.getLen(opts.xax)
+        ylen = self.displayCtx.bounds.getLen(opts.yax)
+        xmin = self.displayCtx.bounds.getLo( opts.xax)
+        ymin = self.displayCtx.bounds.getLo( opts.yax)
 
         rowLines = np.zeros(((self._totalRows - 1) * 2, 2), dtype=np.float32)
-        colLines = np.zeros(((self.ncols      - 1) * 2, 2), dtype=np.float32)
-        
-        topRow = self._totalRows - self.topRow 
+        colLines = np.zeros(((opts.ncols      - 1) * 2, 2), dtype=np.float32)
+
+        topRow = self._totalRows - opts.topRow
         btmRow = topRow          - self._totalRows
 
         rowLines[:, 1] = np.arange(
@@ -709,16 +725,16 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
             ymin +  topRow      * ylen, ylen).repeat(2)
 
         rowLines[:, 0] = np.tile(
-            np.array([xmin, xmin + self.ncols * xlen]),
+            np.array([xmin, xmin + opts.ncols * xlen]),
             self._totalRows - 1)
-        
+
         colLines[:, 0] = np.arange(
             xmin + xlen,
-            xmin + xlen * self.ncols, xlen).repeat(2)
+            xmin + xlen * opts.ncols, xlen).repeat(2)
 
         colLines[:, 1] = np.tile(np.array([
             ymin + btmRow * ylen,
-            ymin + topRow * ylen]), self.ncols - 1)
+            ymin + topRow * ylen]), opts.ncols - 1)
 
         colour = (0.3, 0.9, 1.0, 0.8)
 
@@ -729,27 +745,28 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
                                            colour=colour,
                                            width=2)
 
-        
+
     def _drawSliceHighlight(self):
         """Draws a box around the slice which contains the current cursor
         location.
         """
-        
-        sliceno = int(np.floor((self.pos.z - self.zrange.xlo) /
-                               self.sliceSpacing))
 
-        xlen    = self.displayCtx.bounds.getLen(self.xax)
-        ylen    = self.displayCtx.bounds.getLen(self.yax)
-        xmin    = self.displayCtx.bounds.getLo( self.xax)
-        ymin    = self.displayCtx.bounds.getLo( self.yax) 
-        row     = int(np.floor(sliceno / self.ncols))
-        col     = int(np.floor(sliceno % self.ncols))
+        opts    = self.opts
+        zpos    = opts.pos[opts.zax]
+        sliceno = int(np.floor((zpos - opts.zrange.xlo) / opts.sliceSpacing))
+
+        xlen    = self.displayCtx.bounds.getLen(opts.xax)
+        ylen    = self.displayCtx.bounds.getLen(opts.yax)
+        xmin    = self.displayCtx.bounds.getLo( opts.xax)
+        ymin    = self.displayCtx.bounds.getLo( opts.yax)
+        row     = int(np.floor(sliceno / opts.ncols))
+        col     = int(np.floor(sliceno % opts.ncols))
 
         # don't draw the cursor if it is on a
         # non-existent or non-displayed slice
         if sliceno >  self._nslices:            return
-        if row     <  self.topRow:              return
-        if row     >= self.topRow + self.nrows: return
+        if row     <  opts.topRow:              return
+        if row     >= opts.topRow + opts.nrows: return
 
         # in GL space, the top row is actually the bottom row
         row = self._totalRows - row - 1
@@ -761,34 +778,35 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
                                    colour=(1, 0, 0),
                                    width=2)
 
-        
+
     def _drawCursor(self):
         """Draws a cursor at the current canvas position (the
         :attr:`.SliceCanvas.pos` property).
         """
 
-        sliceno = int(np.floor((self.pos.z - self.zrange.xlo) /
-                               self.sliceSpacing))
-        xlen    = self.displayCtx.bounds.getLen(self.xax)
-        ylen    = self.displayCtx.bounds.getLen(self.yax)
-        xmin    = self.displayCtx.bounds.getLo( self.xax)
-        ymin    = self.displayCtx.bounds.getLo( self.yax)
-        row     = int(np.floor(sliceno / self.ncols))
-        col     = int(np.floor(sliceno % self.ncols))
+        opts    = self.opts
+        zpos    = opts.pos[opts.zax]
+        sliceno = int(np.floor((zpos - opts.zrange.xlo) / opts.sliceSpacing))
+        xlen    = self.displayCtx.bounds.getLen(opts.xax)
+        ylen    = self.displayCtx.bounds.getLen(opts.yax)
+        xmin    = self.displayCtx.bounds.getLo( opts.xax)
+        ymin    = self.displayCtx.bounds.getLo( opts.yax)
+        row     = int(np.floor(sliceno / opts.ncols))
+        col     = int(np.floor(sliceno % opts.ncols))
 
         # don't draw the cursor if it is on a
         # non-existent or non-displayed slice
         if sliceno >  self._nslices:            return
-        if row     <  self.topRow:              return
-        if row     >= self.topRow + self.nrows: return
+        if row     <  opts.topRow:              return
+        if row     >= opts.topRow + opts.nrows: return
 
         # in GL space, the top row is actually the bottom row
         row = self._totalRows - row - 1
 
-        xpos, ypos = self.worldToCanvas(*self.pos.xyz)
+        xpos, ypos = self.worldToCanvas(opts.pos.xyz)
 
         xverts = np.zeros((2, 2))
-        yverts = np.zeros((2, 2)) 
+        yverts = np.zeros((2, 2))
 
         xverts[:, 0] = xpos
         xverts[0, 1] = ymin + (row)     * ylen
@@ -801,54 +819,65 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
         annot = self.getAnnotations()
 
         kwargs = {
-            'colour' : self.cursorColour,
+            'colour' : opts.cursorColour,
             'width'  : 1
         }
 
         annot.line(xverts[0], xverts[1], **kwargs)
         annot.line(yverts[0], yverts[1], **kwargs)
-        
-        
+
+
     def _draw(self, *a):
         """Draws the current scene to the canvas. """
 
+
+        if self.destroyed():
+            return
+
+        width, height = self.GetSize()
+        if width == 0 or height == 0:
+            return
+
         if not self._setGLContext():
             return
-        
+
+        opts = self.opts
+        axes = (opts.xax, opts.yax, opts.zax)
+
         overlays, globjs = self._getGLObjects()
-        
+
         # See comment in SliceCanvas._draw
         # regarding this test
         if any([not g.ready() for g in globjs]):
             return
 
-        if self.renderMode == 'offscreen':
-            
+        if opts.renderMode == 'offscreen':
+
             log.debug('Rendering to off-screen texture')
 
             rt = self._offscreenRenderTexture
-            
+
             lo = [None] * 3
             hi = [None] * 3
-            
-            lo[self.xax], hi[self.xax] = self.displayBounds.x
-            lo[self.yax], hi[self.yax] = self.displayBounds.y
-            lo[self.zax], hi[self.zax] = self.zrange
-            
+
+            lo[opts.xax], hi[opts.xax] = opts.displayBounds.x
+            lo[opts.yax], hi[opts.yax] = opts.displayBounds.y
+            lo[opts.zax], hi[opts.zax] = opts.zrange
+
             rt.bindAsRenderTarget()
-            rt.setRenderViewport(self.xax, self.yax, lo, hi)
-            glroutines.clear((0, 0, 0, 0)) 
-            
+            rt.setRenderViewport(opts.xax, opts.yax, lo, hi)
+            glroutines.clear((0, 0, 0, 0))
+
         else:
             self._setViewport(invertX=False, invertY=False)
-            glroutines.clear(self.bgColour) 
+            glroutines.clear(opts.bgColour)
 
 
-        startSlice = self.ncols * self.topRow
-        endSlice   = startSlice + self.nrows * self.ncols
+        startSlice = opts.ncols * opts.topRow
+        endSlice   = startSlice + opts.nrows * opts.ncols
 
         if endSlice > self._nslices:
-            endSlice = self._nslices    
+            endSlice = self._nslices
 
         # Draw all the slices for all the overlays.
         for overlay, globj in zip(overlays, globjs):
@@ -870,46 +899,44 @@ class LightBoxCanvas(slicecanvas.SliceCanvas):
             xforms = self._transforms[overlay][startSlice:endSlice]
             xforms = self.__prepareSliceTransforms(globj, xforms)
 
-            if self.renderMode == 'prerender':
+            if opts.renderMode == 'prerender':
                 rt, name = self._prerenderTextures.get(overlay, (None, None))
 
                 if rt is None:
                     continue
-                
+
                 log.debug('Drawing {} slices ({} - {}) for overlay {} '
                           'from pre-rendered texture'.format(
                               endSlice - startSlice,
                               startSlice,
                               endSlice,
                               overlay))
-                
+
                 for zpos, xform in zip(zposes, xforms):
                     rt.draw(zpos, xform)
             else:
 
                 globj.preDraw()
-                globj.drawAll(zposes, xforms)
+                globj.drawAll(axes, zposes, xforms)
                 globj.postDraw()
 
-        if self.renderMode == 'offscreen':
+        if opts.renderMode == 'offscreen':
             rt.unbindAsRenderTarget()
             rt.restoreViewport()
             self._setViewport(invertX=False, invertY=False)
-            glroutines.clear(self.bgColour)
+            glroutines.clear(opts.bgColour)
             rt.drawOnBounds(
                 0,
-                self.displayBounds.xlo,
-                self.displayBounds.xhi,
-                self.displayBounds.ylo,
-                self.displayBounds.yHi,
-                self.xax,
-                self.yax)
-
-        self.getAnnotations().draw(self.pos.z)
+                opts.displayBounds.xlo,
+                opts.displayBounds.xhi,
+                opts.displayBounds.ylo,
+                opts.displayBounds.yHi,
+                opts.xax,
+                opts.yax)
 
         if len(self.overlayList) > 0:
-            if self.showCursor:     self._drawCursor()
-            if self.showGridLines:  self._drawGridLines()
-            if self.highlightSlice: self._drawSliceHighlight()
+            if opts.showCursor:     self._drawCursor()
+            if opts.showGridLines:  self._drawGridLines()
+            if opts.highlightSlice: self._drawSliceHighlight()
 
-        self._annotations.draw(self.pos.z, skipHold=True)
+        self.getAnnotations().draw(opts.pos[opts.zax])

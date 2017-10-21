@@ -15,7 +15,8 @@ import logging
 import                   wx
 import wx.lib.agw.aui as aui
 
-import props
+import fsl.data.image         as fslimage
+import fsleyes_props          as props
 
 import fsleyes.panel          as fslpanel
 import fsleyes.toolbar        as fsltoolbar
@@ -23,7 +24,7 @@ import fsleyes.profiles       as profiles
 import fsleyes.displaycontext as fsldisplay
 import fsleyes.strings        as strings
 import fsleyes.actions        as actions
-import fsl.data.image         as fslimage
+
 
 
 log = logging.getLogger(__name__)
@@ -36,10 +37,10 @@ class ViewPanel(fslpanel.FSLeyesPanel):
     :class:`.OverlayList`. The settings for a ``ViewPanel`` are defined by a
     :class:`.DisplayContext` instance.
 
-    
+
     **Panels and controls**
 
-    
+
     A ``ViewPanel`` class uses a ``wx.lib.agw.aui.AuiManager`` to lay out its
     children. A ``ViewPanel`` has one central panel, which contains the
     primary view; and may have one or more secondary panels, which contain
@@ -55,7 +56,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
 
     **Profiles**
 
-    
+
     Some ``ViewPanel`` classes have relatively complex mouse and keyboard
     interaction behaviour (e.g. the :class:`.OrthoPanel` and
     :class:`.LightBoxPanel`). The logic defines this interaction is provided
@@ -82,16 +83,17 @@ class ViewPanel(fslpanel.FSLeyesPanel):
        isPanelOpen
        getPanel
        getPanels
+       getTools
        removeAllPanels
        getPanelInfo
        getAuiManager
     """
-    
+
 
     profile = props.Choice()
     """The current interaction profile for this ``ViewPanel``. """
 
-    
+
     def __init__(self, parent, overlayList, displayCtx, frame):
         """Create a ``ViewPanel``. All arguments are passed through to the
         :class:`.FSLeyesPanel` constructor.
@@ -107,7 +109,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         # to the main (centre) panel on this ViewPanel.
         # It is set by sub-class implementations via
         # the setCentrePanel method.
-        # 
+        #
         # The panels dictionary stores a collection
         # of {type : instance} mappings of active
         # FSLeyes control panels that are contained
@@ -125,14 +127,15 @@ class ViewPanel(fslpanel.FSLeyesPanel):
                       aui.AUI_MGR_AERO_DOCKING_GUIDES     |
                       aui.AUI_MGR_LIVE_RESIZE))
 
+        self.__auiMgr.SetDockSizeConstraint(0.5, 0.5)
         self.__auiMgr.Bind(aui.EVT_AUI_PANE_CLOSE, self.__onPaneClose)
 
         # Use a different listener name so that subclasses
-        # can register on the same properties with self._name 
+        # can register on the same properties with self._name
         lName = 'ViewPanel_{}'.format(self._name)
-        
+
         self.addListener('profile', lName, self.__profileChanged)
-        
+
         overlayList.addListener('overlays',
                                 lName,
                                 self.__selectedOverlayChanged)
@@ -161,15 +164,16 @@ class ViewPanel(fslpanel.FSLeyesPanel):
 
         ff.Destroy()
 
-        
+
     def destroy(self):
         """Removes some property listeners, destroys all child panels,
         destroys the :class:`.ProfileManager`, and ``AuiManager``, and
         calls :meth:`.FSLeyesPanel.destroy`.
         """
-        
+
         # Make sure that any control panels are correctly destroyed
         for panelType, panel in self.__panels.items():
+            self.__auiMgr.DetachPane(panel)
             panel.destroy()
 
         # Remove listeners from the overlay
@@ -184,6 +188,8 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         self.__profileManager.destroy()
 
         # Un-initialise the AUI manager
+        self.__auiMgr.Unbind(aui.EVT_AUI_PANE_CLOSE)
+        self.__auiMgr.Update()
         self.__auiMgr.UnInit()
 
         # The AUI manager does not clear its
@@ -196,12 +202,12 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         self.__centrePanel    = None
 
         fslpanel.FSLeyesPanel.destroy(self)
-        
+
 
     def initProfile(self):
         """Must be called by subclasses, after they have initialised all
         of the attributes which may be needed by their associated
-        :class:`.Profile` instances. 
+        :class:`.Profile` instances.
         """
         self.__profileChanged()
 
@@ -215,7 +221,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         """Set the primary centre panel for this ``ViewPanel``. This method
         is only intended to be called by sub-classes.
         """
-        
+
         panel.Reparent(self)
         paneInfo = (aui.AuiPaneInfo()
                     .Name(type(panel).__name__)
@@ -231,7 +237,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         ``ViewPanel``.
 
         :arg panelType: Type of the secondary panel.
-        
+
         :arg args:      All positional arguments are passed to the
                         ``panelType`` constructor.
 
@@ -242,17 +248,17 @@ class ViewPanel(fslpanel.FSLeyesPanel):
                         be permanently floated (i.e. it will not be dockable).
 
         :arg floatPos:  If provided, and ``floatPane`` is ``True``, specifies
-                        the location of the floating panel as ``(w, h)`` 
-                        proportions between 0 and 1, relative to this view 
+                        the location of the floating panel as ``(w, h)``
+                        proportions between 0 and 1, relative to this view
                         panel.
 
         :arg closeable: If ``False``, and ``floatPane=True``, the panel will
                         not have a close button when it is floated.
-        
+
         :arg location:  If ``floatPane=False``, the initial dock position of
                         the panel - either ``wx.TOP``, ``wx.BOTTOM``,
                         ``wx.LEFT``, or ``wx.RIGHT. Defaults to ``wx.BOTTOM``.
-        
+
         :arg kwargs:    All keyword arguments, apart from ``floatPane`` and
                         ``location``, are passed to the ``panelType``
                         constructor.
@@ -260,7 +266,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         .. note::       The ``panelType`` type must be a sub-class of
                         :class:`.FSLeyesPanel` or :class:`.FSLeyesToolBar`,
                         which can be created like so::
-        
+
                             panel = panelType(parent,
                                               overlayList,
                                               displayCtx,
@@ -281,7 +287,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         floatOnly = kwargs.pop('floatOnly', False)
         closeable = kwargs.pop('closeable', True)
         floatPos  = kwargs.pop('floatPos',  (0.5, 0.5))
-        
+
         if location not in (None, wx.TOP, wx.BOTTOM, wx.LEFT, wx.RIGHT):
             raise ValueError('Invalid value for location')
 
@@ -312,12 +318,12 @@ class ViewPanel(fslpanel.FSLeyesPanel):
             if window.GetOrient() == wx.VERTICAL:
                 paneInfo.GripperTop()
 
-            # We are going to put any new toolbars on 
+            # We are going to put any new toolbars on
             # the top of the panel, below any existing
             # toolbars. This is annoyingly complicated,
             # because the AUI designer(s) decided to
             # give the innermost layer an index of 0.
-            # 
+            #
             # So in order to put a new toolbar at the
             # innermost layer, we need to adjust the
             # layers of all other existing toolbars
@@ -341,7 +347,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
             # toolbar's new size is accommodated
             window.Bind(fsltoolbar.EVT_TOOLBAR_EVENT, self.__auiMgrUpdate)
 
-        paneInfo.Caption(strings.titles[window])                
+        paneInfo.Caption(strings.titles[window])
 
         # Dock the pane at the position specified
         # by the location parameter
@@ -359,7 +365,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
             paneInfo.Direction(location)
 
         # Or, for floating panes, centre the
-        # floating pane on this ViewPanel 
+        # floating pane on this ViewPanel
         else:
 
             selfPos    = self.GetScreenPosition().Get()
@@ -375,13 +381,13 @@ class ViewPanel(fslpanel.FSLeyesPanel):
                     .Dockable(not floatOnly) \
                     .CloseButton(closeable)  \
                     .FloatingPosition(panePos)
-                    
+
 
         self.__auiMgr.AddPane(window, paneInfo)
         self.__panels[panelType] = window
         self.__auiMgrUpdate()
 
-            
+
     def isPanelOpen(self, panelType):
         """Returns ``True`` if a panel of type ``panelType`` is open,
         ``False`` otherwise.
@@ -401,7 +407,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
     def removeAllPanels(self):
         """Remove all control panels from this ``ViewPanel``."""
 
-        for panelType, instance in self.__panels.items():
+        for panelType, instance in list(self.__panels.items()):
             self.togglePanel(panelType)
 
 
@@ -409,7 +415,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         """Returns the primary (centre) panel on this ``ViewPanel``.
         """
         return self.__centrePanel
-        
+
 
     def getPanels(self):
         """Returns a list containing all control panels currently shown in this
@@ -430,7 +436,15 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         layout of this ``ViewPanel``.
         """
         return self.__auiMgr
- 
+
+
+    def getTools(self):
+        """This method should be overridden by sub-classes (if necessary), and
+        should return any ``action`` methods which should be added to the
+        :class:`.FSLeyesFrame` *Tools* menu.
+        """
+        return []
+
 
     def __selectedOverlayChanged(self, *a):
         """Called when the :class:`.OverlayList` or
@@ -447,15 +461,15 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         overlay = self._displayCtx.getSelectedOverlay()
 
         if self.__selectedOverlay not in (None, overlay):
-            try: 
+            try:
                 d = self._displayCtx.getDisplay(self.__selectedOverlay)
 
                 d.removeListener('overlayType', lName)
-                
+
             # The overlay has been removed
             except fsldisplay.InvalidOverlayError:
                 pass
-            
+
         self.__selectedOverlay = overlay
 
         if overlay is None:
@@ -473,12 +487,12 @@ class ViewPanel(fslpanel.FSLeyesPanel):
 
         self.__configureProfile()
 
-        
+
     def __configureProfile(self, *a):
         """Called by the :meth:`__selectedOverlayChanged` method. Implements
         the hacky logic described in the documentation for that method.
         """
-        
+
         overlay     = self.__selectedOverlay
         display     = self._displayCtx.getDisplay(overlay)
         profileProp = self.getProp('profile')
@@ -490,7 +504,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
 
         if not isinstance(overlay, fslimage.Image) or \
            display.overlayType not in ('volume', 'label', 'mask'):
-            
+
             # change profile if needed,
             if self.profile == 'edit':
                 self.profile = 'view'
@@ -500,7 +514,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
                       'selected overlay {}'.format(
                           type(self).__name__, overlay))
             profileProp.disableChoice('edit', self)
-            
+
         # Otherwise make sure edit
         # is enabled for volume images
         else:
@@ -508,8 +522,8 @@ class ViewPanel(fslpanel.FSLeyesPanel):
                       'selected overlay {}'.format(
                           type(self).__name__, overlay))
             profileProp.enableChoice('edit', self)
-        
-        
+
+
     def __profileChanged(self, *a):
         """Called when the current :attr:`profile` property changes. Tells the
         :class:`.ProfileManager` about the change.
@@ -520,7 +534,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
 
         self.__profileManager.changeProfile(self.profile)
 
-    
+
     def __auiMgrUpdate(self, *a):
         """Called whenever a panel is added/removed to/from this ``ViewPanel``.
 
@@ -534,14 +548,14 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         # Here, we explicitly set the position of each
         # floating frame, so the AuiManager doesn't move our
         # windows about the place.
-        # 
+        #
         # We also explicitly tell the AuiManager what the
         # current minimum and best sizes are for every panel
         for panel in self.__panels.values():
 
             if isinstance(panel, fsltoolbar.FSLeyesToolBar):
                 continue
-            
+
             paneInfo = self.__auiMgr.GetPane(panel)
             parent   = panel.GetParent()
             minSize  = panel.GetMinSize().Get()
@@ -559,19 +573,19 @@ class ViewPanel(fslpanel.FSLeyesPanel):
                 if bestSize[0] < minSize[0] or \
                    bestSize[1] < minSize[1]:
                     bestSize = panel.GetBestSize().Get()
-                    
+
             else:
                 bestSize = panel.GetBestSize().Get()
 
             # See comments in __init__ about
-            # this silly 'float offset' thing 
+            # this silly 'float offset' thing
             floatSize = (bestSize[0] + self.__floatOffset[0],
                          bestSize[1] + self.__floatOffset[1])
 
             log.debug('New size for panel {} - min: {}, '
                       'best: {}, float: {}'.format(
                           type(panel).__name__, minSize, bestSize, floatSize))
-            
+
             paneInfo.MinSize(     minSize)  \
                     .BestSize(    bestSize) \
                     .FloatingSize(floatSize)
@@ -584,7 +598,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
 
         self.__auiMgr.Update()
 
-        
+
     def __onPaneClose(self, ev=None, panel=None):
         """Called when the user closes a control (a.k.a. secondary) panel.
         Calls the
@@ -622,14 +636,14 @@ class ViewPanel(fslpanel.FSLeyesPanel):
                     panels.remove(panel)
 
                 # calling fslpanel.FSLeyesPanel.destroy()
-                # here -  wx.Destroy is done below 
+                # here -  wx.Destroy is done below
                 else:
                     log.debug('Panel closed: {}'.format(type(panel).__name__))
                     panel.destroy()
 
         # Destroy all the panels
         for panel in panels:
-                    
+
             # Even when the user closes a pane,
             # AUI does not detach said pane -
             # we have to do it manually
@@ -638,7 +652,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
 
         # Update the view panel layout
         wx.CallAfter(self.__auiMgrUpdate)
-            
+
 
 #
 # Here I am monkey patching the
@@ -670,7 +684,7 @@ def AuiFloatingFrame__init__(*args, **kwargs):
     if 'style' in kwargs:
         style = kwargs['style']
 
-    # This is the default style, as defined 
+    # This is the default style, as defined
     # in the AuiFloatingFrame constructor
     else:
         style = (wx.FRAME_TOOL_WINDOW     |
@@ -681,10 +695,10 @@ def AuiFloatingFrame__init__(*args, **kwargs):
     style &= ~wx.FRAME_TOOL_WINDOW
 
     kwargs['style'] = style
-    
+
     return AuiFloatingFrame__real__init__(*args, **kwargs)
 
-# Store a reference to the real constructor, and 
+# Store a reference to the real constructor, and
 # Patch my constructor in to the class definition.
 AuiFloatingFrame__real__init__ = aui.AuiFloatingFrame.__init__
 aui.AuiFloatingFrame.__init__  = AuiFloatingFrame__init__
@@ -698,7 +712,7 @@ def AuiDockingGuide__init__(*args, **kwargs):
     if 'style' in kwargs:
         style = kwargs['style']
 
-    # This is the default style, as defined 
+    # This is the default style, as defined
     # in the AuiDockingGuide constructor
     else:
         style = (wx.FRAME_TOOL_WINDOW |
@@ -709,7 +723,7 @@ def AuiDockingGuide__init__(*args, **kwargs):
     style &= ~wx.FRAME_TOOL_WINDOW
 
     kwargs['style'] = style
-    
+
     return AuiDockingGuide__real__init__(*args, **kwargs)
 
 

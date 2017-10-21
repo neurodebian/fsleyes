@@ -27,9 +27,9 @@ def init(self):
     """
 
     self.shader = None
-    
+
     compileShaders(   self)
-    updateShaderState(self) 
+    updateShaderState(self)
 
 
 def destroy(self):
@@ -44,7 +44,7 @@ def compileShaders(self):
     """
     if self.shader is not None:
         self.shader.destroy()
-        
+
     vertSrc  = shaders.getVertexShader(  'glvolume')
     fragSrc  = shaders.getFragmentShader('gllabel')
     textures = {
@@ -52,7 +52,10 @@ def compileShaders(self):
         'lutTexture'   : 1,
     }
 
-    self.shader = shaders.ARBPShader(vertSrc, fragSrc, textures) 
+    self.shader = shaders.ARBPShader(vertSrc,
+                                     fragSrc,
+                                     shaders.getShaderDir(),
+                                     textures)
 
 
 def updateShaderState(self):
@@ -60,38 +63,37 @@ def updateShaderState(self):
 
     if not self.ready():
         return
-    
-    opts = self.displayOpts
-    
+
+    opts = self.opts
+
     self.shader.load()
 
     voxValXform  = self.imageTexture.voxValXform
-    shape        = list(self.image.shape[:3]) + [0]
-    offsets      = opts.outlineWidth / \
-                   np.array(self.image.shape[:3], dtype=np.float32)
+    voxValXform  = [voxValXform[0, 0], voxValXform[0, 3], 0, 0]
     invNumLabels = 1.0 / (opts.lut.max() + 1)
 
-    if opts.transform == 'affine':
-        minOffset = offsets.min()
-        offsets   = np.array([minOffset] * 3)
-    else:
-        offsets[self.zax] = -1
-
-    if opts.outline: offsets = [1] + list(offsets)
-    else:            offsets = [0] + list(offsets)
-
-    self.shader.setVertParam('imageShape',   shape)
-    self.shader.setFragParam('imageShape',   shape)
     self.shader.setFragParam('voxValXform',  voxValXform)
     self.shader.setFragParam('invNumLabels', [invNumLabels, 0, 0, 0])
-    self.shader.setFragParam('outline',      offsets)
 
     self.shader.unload()
 
     return True
 
 
+def draw2D(self, zpos, axes, *args, **kwargs):
+    """Draws the label overlay in 2D. See :meth:`.GLObject.draw2D`. """
+
+    offsets = self.calculateOutlineOffsets(axes)
+
+    if self.opts.outline: offsets = [1] + list(offsets)
+    else:                 offsets = [0] + list(offsets)
+
+    self.shader.setFragParam('outline', offsets)
+
+    glvolume_funcs.draw2D(self, zpos, axes, *args, **kwargs)
+
+
 preDraw  = glvolume_funcs.preDraw
-draw     = glvolume_funcs.draw
+draw3D   = glvolume_funcs.draw3D
 drawAll  = glvolume_funcs.drawAll
 postDraw = glvolume_funcs.postDraw

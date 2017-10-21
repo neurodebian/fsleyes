@@ -13,8 +13,7 @@ import logging
 import wx
 import wx.html                            as wxhtml
 
-import pwidgets.elistbox                  as elistbox
-
+import fsleyes_widgets.elistbox           as elistbox
 import fsleyes.panel                      as fslpanel
 import fsleyes.strings                    as strings
 import fsl.utils.async                    as async
@@ -30,18 +29,18 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
     """The ``AtlasInfoPanel`` displays region information about the current
     :attr:`.DisplayContext.location` from a set of :mod:`.atlases` chosen
     by the user.
-    
+
     An ``AtlasInfoPanel`` looks something like this:
-    
+
     .. image:: images/atlasinfopanel.png
        :scale: 50%
        :align: center
-    
+
     The ``AtlasInfoPanel`` contains two main sections:
 
-      - A :class:`pwidgets.elistbox.EditableListBox` filled with
+      - A :class:`fsleyes_widgets.elistbox.EditableListBox` filled with
         :class:`AtlasListWidget` controls, one for each available atlas.
-        The user is able to choose which atlases to show information for. 
+        The user is able to choose which atlases to show information for.
 
       - A ``wx.html.HtmlWindow`` which contains information for each
         selected atlas. The information contains hyperlinks for each atlas,
@@ -49,18 +48,18 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         atlas overlays (see the :meth:`.AtlasPanel.toggleOverlay` method).
     """
 
-    
+
     def __init__(self, parent, overlayList, displayCtx, frame, atlasPanel):
         """Create an ``AtlasInfoPanel``.
 
         :arg parent:      the :mod:`wx` parent object.
-        
+
         :arg overlayList: The :class:`.OverlayList` instance.
-        
+
         :arg displayCtx:  The :class:`.DisplayContext` instance.
-        
+
         :arg frame:       The :class:`.FSLeyesFrame` instance.
-        
+
         :arg atlasPanel:  The :class:`.AtlasPanel` instance that has created
                           this ``AtlasInfoPanel``.
         """
@@ -74,7 +73,7 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         self.__infoPanel      = wxhtml.HtmlWindow(self.__contentPanel)
         self.__atlasList      = elistbox.EditableListBox(
             self.__contentPanel,
-            style=(elistbox.ELB_NO_ADD    | 
+            style=(elistbox.ELB_NO_ADD    |
                    elistbox.ELB_NO_REMOVE |
                    elistbox.ELB_NO_MOVE))
 
@@ -88,9 +87,9 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
 
         self.__contentPanel.SetMinimumPaneSize(50)
         self.__contentPanel.SplitVertically(self.__atlasList,
-                                            self.__infoPanel) 
+                                            self.__infoPanel)
         self.__contentPanel.SetSashGravity(0.4)
-        
+
         # The info panel contains clickable links
         # for the currently displayed regions -
         # when a link is clicked, the location
@@ -135,8 +134,8 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         for i, e in enumerate(enable):
             refresh = i == len(enable) - 1
             async.idle(self.enableAtlasInfo, e, refresh=refresh)
-                
-        
+
+
     def destroy(self):
         """Must be called when this :class:`AtlasInfoPanel` is to be
         destroyed. De-registers various property listeners and calls
@@ -150,7 +149,7 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         atlases.registry.deregister(self._name, 'add')
         atlases.registry.deregister(self._name, 'remove')
         fslplatform     .deregister(self._name)
-        
+
         fslpanel.FSLeyesPanel.destroy(self)
 
 
@@ -169,18 +168,18 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
 
             if not self or self.destroyed():
                 return
-    
+
             self.__enabledAtlases[atlasID] = atlas
 
             listWidget.SetValue(True)
 
             if refresh:
                 self.__locationChanged()
-                
+
             self.__atlasPanel.enableAtlasPanel()
 
         def onError(e):
-            
+
             message = strings.messages[self, 'loadAtlasError']
             message = message.format(
                 atlasID, '{} ({})'.format(type(e).__name__, str(e)))
@@ -198,8 +197,8 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
                                     onLoad=onLoad,
                                     onError=onError,
                                     matchResolution=False)
-        
-        
+
+
     def disableAtlasInfo(self, atlasID):
         """Disables information display for the atlas with the specified ID.
         """
@@ -209,7 +208,7 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         # the item index by atlasID here
         listWidget = self.__atlasList.GetItemWidget(
             self.__atlasList.IndexOf(atlasID))
-        
+
         self.__enabledAtlases.pop(atlasID)
         self.__locationChanged()
 
@@ -231,7 +230,7 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         self.__buildAtlasList()
         self.__locationChanged()
 
-    
+
     def __atlasRemoved(self, registry, topic, atlasDesc):
         """Called when an atlas is removed from the :class:`.AtlasRegistry`.
         Re-generates the atlas list.
@@ -241,7 +240,7 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
 
 
     def __buildAtlasList(self):
-        """Clears and then builds the list of available atlases. The 
+        """Clears and then builds the list of available atlases. The
         This is performed asynchronously, via the :func:`.async.run` function,
         although the atlas list widget is updated on the ``wx`` idle loop.
         """
@@ -262,7 +261,7 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         for i, atlasDesc in enumerate(atlasDescs):
 
             atlasID = atlasDesc.atlasID
-            
+
             self.__atlasList.Append(atlasDesc.name, atlasID)
 
             enabled = atlasID in enabledAtlases
@@ -282,13 +281,13 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         """Called when the :attr:`.DisplayContext.location` property changes.
         Updates the information shown in the HTML window.
         """
-        
+
         text    = self.__infoPanel
         overlay = self._displayCtx.getReferenceImage(
             self._displayCtx.getSelectedOverlay())
 
         topText = None
-        
+
         if self.__atlasList.GetCount() == 0:
             text.SetPage(strings.messages['AtlasInfoPanel.atlasDisabled'])
             return
@@ -315,7 +314,7 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         opts = self._displayCtx.getOpts(overlay)
         loc  = self._displayCtx.location
         loc  = opts.transformCoords([loc], 'display', 'world')[0]
-        
+
         # Three types of hyperlink:
         #   - one for complete (summary) label atlases,
         #   - one for a region label mask image
@@ -343,10 +342,9 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
                 if len(proportions) == 0:
                     continue
 
-                props, labels = zip(*reversed(sorted(
-                    zip(proportions, atlas.desc.labels))))
+                propslabels = zip(proportions, atlas.desc.labels)
 
-                for label, prop in zip(labels, props):
+                for prop, label in reversed(sorted(propslabels)):
                     if prop == 0.0:
                         continue
                     lines.append(probTemplate.format(prop,
@@ -355,9 +353,9 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
                                                      label.index,
                                                      atlasID,
                                                      label.index))
-            
+
             elif isinstance(atlas, atlases.LabelAtlas):
-                
+
                 labelVal = atlas.label(loc)
 
                 if labelVal is None:
@@ -385,7 +383,7 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
         # Decode the href - see comments
         # inside __locationChanged method
         showType, atlasID, labelIndex = ev.GetLinkInfo().GetHref().split()
-        
+
         try:    labelIndex = int(labelIndex)
         except: labelIndex = None
 
@@ -406,7 +404,7 @@ class AtlasInfoPanel(fslpanel.FSLeyesPanel):
                 self.GetTopLevelParent(),
                 message=message,
                 style=(wx.ICON_EXCLAMATION | wx.OK)).ShowModal()
-            self.__atlasPanel.Enable() 
+            self.__atlasPanel.Enable()
 
         self.__atlasPanel.Disable()
         self.__atlasPanel.toggleOverlay(atlasID,
@@ -462,7 +460,7 @@ class AtlasListWidget(wx.CheckBox):
     :meth:`AtlasInfoPanel.disableAtlasInfo`).
     """
 
-    
+
     def __init__(self,
                  parent,
                  listIdx,
@@ -476,10 +474,10 @@ class AtlasListWidget(wx.CheckBox):
 
         :arg listIdx:        Index of this ``AtlasListWidget`` in the
                              ``EditableListBox``.
-        
+
         :arg atlasInfoPanel: the :class:`AtlasInfoPanel` instance that owns
                              this ``AtlasListWidget``.
-        
+
         :arg atlasID:        The atlas identifier associated with this
                              ``AtlasListWidget``.
 
@@ -497,7 +495,7 @@ class AtlasListWidget(wx.CheckBox):
 
         self.Bind(wx.EVT_CHECKBOX, self.__onEnable)
 
-        
+
     def __onEnable(self, ev):
         """Called when this ``AtlasListWidget`` is clicked. Toggles
         information display for the atlas associated with this widget.

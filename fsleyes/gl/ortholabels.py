@@ -13,12 +13,11 @@ off-screen rendering (see :mod:`.render`).
 
 
 import fsl.data.constants as constants
-import fsleyes.strings    as strings
 
 
 class OrthoLabels(object):
-    """The ``OrthoLabels`` class manages anatomical orientation labels which 
-    are displayed on a set of three :class:`.SliceCanvas` instances, one for 
+    """The ``OrthoLabels`` class manages anatomical orientation labels which
+    are displayed on a set of three :class:`.SliceCanvas` instances, one for
     each plane in the display coordinate system, typically within an
     :class:`.OrthoPanel`.
 
@@ -36,18 +35,14 @@ class OrthoLabels(object):
                  overlayList,
                  displayCtx,
                  orthoOpts,
-                 xcanvas,
-                 ycanvas,
-                 zcanvas):
+                 *canvases):
         """Create an ``OrthoLabels`` instance.
 
         :arg overlayList: The :class:`.OverlayList`.
         :arg displayCtx:  The :class:`.DisplayContext`.
         :arg orthoOpts:   :class:`.OrthoOpts` instance which contains
                           display settings.
-        :arg xcanvas:     :class:`.SliceCanvas` for the X plane, or ``None``.
-        :arg ycanvas:     :class:`.SliceCanvas` for the Y plane, or ``None``.
-        :arg zcanvas:     :class:`.SliceCanvas` for the Z plane, or ``None``.
+        :arg canvases:    The :class:`.SliceCanvas` instances to be labelled.
         """
 
         self.__name        = '{}_{}'.format(type(self).__name__, id(self))
@@ -55,17 +50,11 @@ class OrthoLabels(object):
         self.__displayCtx  = displayCtx
         self.__overlayList = overlayList
 
-        # Any of the canvases may be None,
-        # so we store a list of the ones
-        # that are not None.
-        # 
         # labels is a list of dicts, one
         # for each canvas, containing Text
         # annotations to show anatomical
         # orientation
-        canvases  = [xcanvas, ycanvas, zcanvas]
-        canvases  = [c  for c in canvases if c is not None]
-        annots    = [{} for c in canvases]
+        annots = [{} for c in canvases]
 
         self.__canvases = canvases
         self.__annots   = annots
@@ -76,7 +65,7 @@ class OrthoLabels(object):
                 annot         = canvas.getAnnotations()
                 cannots[side] = annot.text('', 0, 0, width=2, hold=True)
 
-        # Initialise the display properties 
+        # Initialise the display properties
         # of each Text annotation
         for cannots in annots:
             cannots['left']  .halign = 'left'
@@ -109,7 +98,7 @@ class OrthoLabels(object):
         # that need to trigger a label
         # refresh.
         name = self.__name
- 
+
         # Make immediate so the label
         # annotations get updated before
         # a panel refresh occurs (where
@@ -122,18 +111,18 @@ class OrthoLabels(object):
         }
 
         for c in canvases:
-            c.addListener('invertX', **refreshArgs)
-            c.addListener('invertY', **refreshArgs)
+            c.opts.addListener('invertX', **refreshArgs)
+            c.opts.addListener('invertY', **refreshArgs)
 
         orthoOpts  .addListener('showLabels',       **refreshArgs)
         orthoOpts  .addListener('labelSize',        **refreshArgs)
-        orthoOpts  .addListener('labelColour',      **refreshArgs)
+        orthoOpts  .addListener('fgColour',         **refreshArgs)
         displayCtx .addListener('selectedOverlay',  **refreshArgs)
         displayCtx .addListener('displaySpace',     **refreshArgs)
         displayCtx .addListener('radioOrientation', **refreshArgs)
         overlayList.addListener('overlays', name, self.__overlayListChanged)
 
-        
+
     def destroy(self):
         """Must be called when this ``OrthoLabels`` instance is no longer
         needed.
@@ -151,18 +140,18 @@ class OrthoLabels(object):
         self.__orthoOpts   = None
         self.__canvases    = None
         self.__annots      = None
-        
+
         orthoOpts  .removeListener('showLabels',       name)
         orthoOpts  .removeListener('labelSize',        name)
-        orthoOpts  .removeListener('labelColour',      name)
+        orthoOpts  .removeListener('fgColour',         name)
         displayCtx .removeListener('selectedOverlay',  name)
         displayCtx .removeListener('displaySpace',     name)
         displayCtx .removeListener('radioOrientation', name)
         overlayList.removeListener('overlays',         name)
 
         for c in canvases:
-            c.removeListener('invertX', name)
-            c.removeListener('invertY', name)
+            c.opts.removeListener('invertX', name)
+            c.opts.removeListener('invertY', name)
 
         # The _overlayListChanged method adds
         # listeners to individual overlays,
@@ -187,12 +176,12 @@ class OrthoLabels(object):
         on the attr:.DisplayOpts.bounds` property of every overlay in the list,
         so the labels are refreshed when any overlay bounds change.
         """
-        
+
         for i, ovl in enumerate(self.__overlayList):
 
             opts = self.__displayCtx.getOpts(ovl)
 
-            # Update anatomy labels when 
+            # Update anatomy labels when
             # overlay bounds change
             opts.addListener('bounds',
                              self.__name,
@@ -214,24 +203,12 @@ class OrthoLabels(object):
         annotations on each :class:`.SliceCanvas`.
         """
 
-        displayCtx  = self.__displayCtx
-        overlayList = self.__overlayList
-        sopts       = self.__orthoOpts
-        overlay     = displayCtx.getSelectedOverlay()
-        ref         = displayCtx.getReferenceImage(overlay)
+        displayCtx = self.__displayCtx
+        sopts      = self.__orthoOpts
+        overlay    = displayCtx.getSelectedOverlay()
 
         canvases = self.__canvases
         annots   = self.__annots
-
-        # This method is called immediately
-        # on property changes, so there is
-        # the danger that it will be called
-        # when an overlay gets removed from
-        # the list, but before the rest of
-        # FSLeyes has had a chance to catch
-        # up with the fact.
-        if ref is not None and ref not in overlayList:
-            ref = None
 
         for cannots in annots:
             for text in cannots.values():
@@ -240,14 +217,17 @@ class OrthoLabels(object):
         if not sopts.showLabels or overlay is None:
             return
 
+        opts = displayCtx.getOpts(overlay)
+
         # Calculate all of the xyz
         # labels for this overlay
-        labels, orients, vertOrient  = self.__getLabels(ref)
+        labels, orients              = opts.getLabels()
         xlo, ylo, zlo, xhi, yhi, zhi = labels
+        vertOrient                   = len(xlo) > 1
 
         fontSize = sopts.labelSize
         bgColour = tuple(sopts.bgColour)
-        fgColour = tuple(sopts.labelColour)
+        fgColour = tuple(sopts.fgColour)
 
         # If any axis orientation is unknown, and the
         # the background colour is black or white,
@@ -256,34 +236,34 @@ class OrthoLabels(object):
         # to do this for any background colour.
         if constants.ORIENT_UNKNOWN in orients and \
            bgColour in ((0, 0, 0, 1), (1, 1, 1, 1)):
-            fgColour = (1, 0, 0, 1) 
+            fgColour = (1, 0, 0, 1)
 
         # A list, with one entry for each canvas,
         # and with each entry of the form:
         #
         #   [[xlo, xhi], [ylo, yhi]]
-        # 
+        #
         # containing the low/high labels for the
         # horizontal (x) and vertical (y) canvas
         # axes.
         canvasLabels = []
         for canvas in canvases:
 
-            cax = 'xyz'[canvas.zax]
-            
+            cax = 'xyz'[canvas.opts.zax]
+
             if   cax == 'x': clabels = [[ylo, yhi], [zlo, zhi]]
             elif cax == 'y': clabels = [[xlo, xhi], [zlo, zhi]]
             elif cax == 'z': clabels = [[xlo, xhi], [ylo, yhi]]
 
-            if canvas.invertX: clabels[0] = [clabels[0][1], clabels[0][0]]
-            if canvas.invertY: clabels[1] = [clabels[1][1], clabels[1][0]]
+            if canvas.opts.invertX: clabels[0] = [clabels[0][1], clabels[0][0]]
+            if canvas.opts.invertY: clabels[1] = [clabels[1][1], clabels[1][0]]
 
             canvasLabels.append(clabels)
 
         # Update the text annotation properties
         for canvas, cannots, clabels in zip(canvases, annots, canvasLabels):
 
-            cax = 'xyz'[canvas.zax]
+            cax = 'xyz'[canvas.opts.zax]
 
             cannots['left']  .text = clabels[0][0]
             cannots['right'] .text = clabels[0][1]
@@ -295,7 +275,7 @@ class OrthoLabels(object):
             elif cax == 'z': show = sopts.showZCanvas
 
             for side in ['left', 'right', 'bottom', 'top']:
-                
+
                 cannots[side].enabled  = show
                 cannots[side].fontSize = fontSize
                 cannots[side].colour   = fgColour
@@ -303,65 +283,3 @@ class OrthoLabels(object):
             if vertOrient:
                 cannots['left'] .angle = 90
                 cannots['right'].angle = 90
-
-        
-    def __getLabels(self, refImage):
-        """Generates some orientation labels to use for the given reference
-        image (assumed to be a :class:`.Nifti` overlay, or ``None``).
-
-        Returns a tuple containing:
-
-          - The ``(xlo, ylo, zlo, xhi, yhi, zhi)`` bounds
-          - The ``(xorient, yorient, zorient)`` orientations (see
-            :meth:`.Image.getOrientation`)
-          - A boolean flag which indicates whether the label should be oriented
-            vertically (``True``), or horizontally (``False``).
-        """
-
-        if refImage is None:
-            return ('??????', [constants.ORIENT_UNKNOWN] * 3, False) 
-        
-        opts = self.__displayCtx.getOpts(refImage)
-
-        vertOrient = False
-        xorient    = None
-        yorient    = None
-        zorient    = None
-        
-        # If we are displaying in voxels/scaled voxels,
-        # and this image is not the current display
-        # image, then we do not show anatomical
-        # orientation labels, as there's no guarantee
-        # that all of the loaded overlays are in the
-        # same orientation, and it can get confusing.
-        if opts.transform in ('id', 'pixdim', 'pixdim-flip') and \
-           self.__displayCtx.displaySpace != refImage:
-            xlo        = 'Xmin'
-            xhi        = 'Xmax'
-            ylo        = 'Ymin'
-            yhi        = 'Ymax'
-            zlo        = 'Zmin'
-            zhi        = 'Zmax'
-            vertOrient = True
-
-        # Otherwise we assume that all images
-        # are aligned to each other, so we
-        # estimate the current image's orientation
-        # in the display coordinate system
-        else:
-
-            xform      = opts.getTransform('display', 'world')
-            xorient    = refImage.getOrientation(0, xform)
-            yorient    = refImage.getOrientation(1, xform)
-            zorient    = refImage.getOrientation(2, xform)
-
-            xlo        = strings.anatomy['Nifti', 'lowshort',  xorient]
-            ylo        = strings.anatomy['Nifti', 'lowshort',  yorient]
-            zlo        = strings.anatomy['Nifti', 'lowshort',  zorient]
-            xhi        = strings.anatomy['Nifti', 'highshort', xorient]
-            yhi        = strings.anatomy['Nifti', 'highshort', yorient]
-            zhi        = strings.anatomy['Nifti', 'highshort', zorient]
-
-        return ((xlo, ylo, zlo, xhi, yhi, zhi), 
-                (xorient, yorient, zorient),
-                vertOrient)

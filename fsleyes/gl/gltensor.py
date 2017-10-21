@@ -29,7 +29,7 @@ class GLTensor(glvector.GLVector):
     :class:`.TensorImage` overlays.  Most of the functionality is in the
     :mod:`.gl21.gltensor_funcs` module.
 
-    
+
     .. note:: The ``GLTensor`` is not currently supported on versions of
               OpenGL older than 2.1 (and probably never will be).
 
@@ -52,23 +52,23 @@ class GLTensor(glvector.GLVector):
       ============== ================== ==================
     """
 
-    
-    def __init__(self, image, display, xax, yax):
+
+    def __init__(self, image, displayCtx, canvas, threedee):
         """Create a ``GLTensor``. Prepares the eigenvalue and eigenvector
         textures, and calls the :func:`.gl21.gltensor_funcs.init` function.
 
-        :arg image:   A :class:`.DTIFitTensor` or compatible :class:`.Image`
-                      overlay.
-        
-        :arg display: The :class:`.Display` instance associated with the
-                      ``image``.
-        
-        :arg xax:     Initial display X axis
+        :arg image:      A :class:`.DTIFitTensor` or compatible :class:`.Image`
+                         overlay.
 
-        :arg yax:     Initial display Y axis
+        :arg displayCtx: The :class:`.DisplayContext` managing the scene.
+
+        :arg canvas:     The canvas doing the drawing.
+
+        :arg threedee:   2D or 3D rendering.
         """
 
         prefilter = np.abs
+
         def prefilterRange(dmin, dmax):
             return max((0, dmin)), max((abs(dmin), abs(dmax)))
 
@@ -82,7 +82,7 @@ class GLTensor(glvector.GLVector):
             l2 = image.L2()
             l3 = image.L3()
 
-        # Or an Image with 6 volumes containing 
+        # Or an Image with 6 volumes containing
         # the unique tensor matrix elements
         else:
             decomp = dtifit.decomposeTensorMatrix(image.nibImage.get_data())
@@ -99,15 +99,15 @@ class GLTensor(glvector.GLVector):
         self.l1 = l1
         self.l2 = l2
         self.l3 = l3
- 
+
         # Create a texture for each eigenvalue/
         # vector, and add each of them as suitably
         # named attributes on this GLTensor
-        # instance.        
+        # instance.
 
         def vPrefilter(d):
             return d.transpose((3, 0, 1, 2))
-        
+
         names = ['v1', 'v2', 'v3', 'l1', 'l2', 'l3']
         imgs  = [ v1,   v2,   v3,   l1,   l2,   l3]
 
@@ -134,9 +134,9 @@ class GLTensor(glvector.GLVector):
 
         glvector.GLVector.__init__(self,
                                    image,
-                                   display,
-                                   xax,
-                                   yax,
+                                   displayCtx,
+                                   canvas,
+                                   threedee,
                                    prefilter=prefilter,
                                    prefilterRange=prefilterRange,
                                    vectorImage=v1,
@@ -150,7 +150,7 @@ class GLTensor(glvector.GLVector):
         """
         glvector.GLVector.destroy(self)
         fslgl.gltensor_funcs.destroy(self)
-        
+
         names = ['v1', 'v2', 'v3', 'l1', 'l2', 'l3']
 
         for name in names:
@@ -165,20 +165,20 @@ class GLTensor(glvector.GLVector):
         """Overrides :meth:`.GLVector.texturesReady`. Returns ``True`` if all
         of the textures are ready, ``False`` otherwise.
         """
-        return (glvector.GLVector.texturesReady(self) and 
-                self.v1Texture is not None            and 
-                self.v2Texture is not None            and 
-                self.v3Texture is not None            and 
-                self.l1Texture is not None            and 
-                self.l2Texture is not None            and 
+        return (glvector.GLVector.texturesReady(self) and
+                self.v1Texture is not None            and
+                self.v2Texture is not None            and
+                self.v3Texture is not None            and
+                self.l1Texture is not None            and
+                self.l2Texture is not None            and
                 self.l3Texture is not None            and
                 self.v1Texture.ready()                and
                 self.v2Texture.ready()                and
                 self.v3Texture.ready()                and
                 self.l1Texture.ready()                and
                 self.l2Texture.ready()                and
-                self.l3Texture.ready()) 
-    
+                self.l3Texture.ready())
+
 
     def addListeners(self):
         """Overrides :meth:`.GLVector.addListeners`. Calls the base class
@@ -189,7 +189,7 @@ class GLTensor(glvector.GLVector):
         glvector.GLVector.addListeners(self)
 
         name = self.name
-        opts = self.displayOpts
+        opts = self.opts
 
         opts.addListener('lighting',    name, self.asyncUpdateShaderState)
         opts.addListener('orientFlip',  name, self.asyncUpdateShaderState)
@@ -197,7 +197,7 @@ class GLTensor(glvector.GLVector):
         opts.addListener('tensorResolution',
                          name,
                          self.__tensorResolutionChanged)
-        
+
 
     def removeListeners(self):
         """Overrides :meth:`.GLVector.removeListeners`. Calls the base class
@@ -206,14 +206,14 @@ class GLTensor(glvector.GLVector):
         glvector.GLVector.removeListeners(self)
 
         name = self.name
-        opts = self.displayOpts
-        
+        opts = self.opts
+
         opts.removeListener('lighting',         name)
         opts.removeListener('orientFlip',       name)
         opts.removeListener('tensorResolution', name)
         opts.removeListener('tensorScale',      name)
 
-        
+
     def getDataResolution(self, xax, yax):
         """Overrides :meth:`.GLVector.getDataResolution`. Returns a pixel
         resolution suitable for off-screen rendering of this ``GLTensor``.
@@ -222,7 +222,7 @@ class GLTensor(glvector.GLVector):
         res       = list(glvector.GLVector.getDataResolution(self, xax, yax))
         res[xax] *= 20
         res[yax] *= 20
-        
+
         return res
 
 
@@ -236,11 +236,11 @@ class GLTensor(glvector.GLVector):
     def updateShaderState(self):
         """Overrides :meth:`.GLVector.updateShaderState`. Calls the
         :func:`.gl21.gltensor_funcs.updateShaderState` function.
-        """ 
+        """
         return fslgl.gltensor_funcs.updateShaderState(self)
 
-        
-    def preDraw(self):
+
+    def preDraw(self, xform=None, bbox=None):
         """Overrides :meth:`.GLVector.preDraw`. Binds the eigenvalue and
         eigenvector textures, calls the :meth:`.GLVector.preDraw` method,
         and the :func:`.gl21.gltensor_funcs.preDraw` function.
@@ -252,33 +252,40 @@ class GLTensor(glvector.GLVector):
         self.l1Texture.bindTexture(gl.GL_TEXTURE11)
         self.l2Texture.bindTexture(gl.GL_TEXTURE12)
         self.l3Texture.bindTexture(gl.GL_TEXTURE13)
-        
-        glvector.GLVector.preDraw(self)
-        fslgl.gltensor_funcs.preDraw(self)
+
+        glvector.GLVector.preDraw(self, xform, bbox)
+        fslgl.gltensor_funcs.preDraw(self, xform, bbox)
 
 
-    def draw(self, zpos, xform=None, bbox=None):
-        """Overrides :meth:`.GLVector.draw`. Calls the
-        :func:`.gl21.gltensor_funcs.draw` function.
+    def draw2D(self, *args, **kwargs):
+        """Overrides :meth:`.GLVector.draw2D`. Calls the
+        :func:`.gl21.gltensor_funcs.draw2D` function.
         """
-        fslgl.gltensor_funcs.draw(self, zpos, xform, bbox)
+        fslgl.gltensor_funcs.draw2D(self, *args, **kwargs)
 
 
-    def postDraw(self):
+    def draw3D(self, *args, **kwargs):
+        """Overrides :meth:`.GLVector.draw3D`. Calls the
+        :func:`.gl21.gltensor_funcs.draw3D` function.
+        """
+        fslgl.gltensor_funcs.draw3D(self, *args, **kwargs)
+
+
+    def postDraw(self, xform=None, bbox=None):
         """Overrides :meth:`.GLVector.postDraw`. Unbinds the eigenvalue and
         eigenvector textures, calls the :meth:`.GLVector.postDraw` method, and
         the :func:`.gl21.gltensor_funcs.postDraw` function.
         """
-    
+
         self.v1Texture.unbindTexture()
         self.v2Texture.unbindTexture()
         self.v3Texture.unbindTexture()
         self.l1Texture.unbindTexture()
         self.l2Texture.unbindTexture()
         self.l3Texture.unbindTexture()
-        
-        glvector.GLVector.postDraw(self)
-        fslgl.gltensor_funcs.postDraw(self)
+
+        glvector.GLVector.postDraw(self, xform, bbox)
+        fslgl.gltensor_funcs.postDraw(self, xform, bbox)
 
 
     def __tensorResolutionChanged(self, *a):

@@ -65,7 +65,7 @@ one or more *views*. All views are defined in the :mod:`.views` sub-package,
 and are sub-classes of the :class:`.ViewPanel` class. Currently there are two
 primary view categories - :class:`.CanvasPanel` views, which use :mod:`OpenGL`
 to display overlays, and :class:`.PlotPanel` views, which use
-:mod:`matplotlib` to plot data related to the overlays. 
+:mod:`matplotlib` to plot data related to the overlays.
 
 
 View panels may contain one or more *control* panels which provide an
@@ -86,7 +86,7 @@ The view/control panel class hierarchy is shown below:
      node [style="filled",
            fillcolor="#ffffdd",
            fontname="sans"];
-     
+
      rankdir="BT";
      1  [label="panel.FSLeyesPanel"];
      3  [label="views.viewpanel.ViewPanel"];
@@ -121,7 +121,7 @@ All toolbars inherit from the :class:`.FSLeyesToolBar` base class:
      node [style="filled",
            fillcolor="#ffffdd",
            fontname="sans"];
-     
+
      rankdir="BT";
      2  [label="toolbar.FSLeyesToolBar"];
      12 [label="controls.overlaydisplaytoolbar.OverlayDisplayToolBar"];
@@ -200,7 +200,7 @@ from   fsl.utils.platform import platform as fslplatform
 import fsl.utils.settings                 as fslsettings
 
 
-# The logger is assigned in 
+# The logger is assigned in
 # the configLogging function
 log = None
 
@@ -229,54 +229,68 @@ def canWriteToAssetDir():
 
 
 def initialise():
-    """Called when `FSLeyes`` is started as a standalone application.
+    """Called when `FSLeyes`` is started as a standalone application.  This
+    function *must* be called before most other things in *FSLeyes* are used,
+    but after a ``wx.App`` has been created.
 
     Does a few initialisation steps::
 
-      - Adjusts the :attr:`fsl.utils.settings._CONFIG_ID`.
+      - Initialises the :mod:`fsl.utils.settings` module, for persistent
+        storage  of application settings.
 
-      - Sets the :data:`assetDir` attribute. This function *must* be called
-        before most other things in *FSLeyes* are used, but after a ``wx.App``
-        has been created.
+      - Sets the :data:`assetDir` attribute.
     """
-    
-    global assetDir
-    
-    import wx
 
-    # Adjust the settings ID - the FSLeyes config
-    # file will be automatically named by the OS
-    # (via wx.Config) according to this ID.
-    fslsettings._CONFIG_ID = 'uk.ac.ox.fmrib.fsleyes'
+    global assetDir
+
+    import wx
+    import matplotlib as mpl
+
+    # Initialise the fsl.utils.settings module
+    fslsettings.initialise('fsleyes')
+
+    # Tell matplotlib what backend to use.
+    # n.b. this must be called before
+    # matplotlib.pyplot is imported.
+    mpl.use('WxAgg')
+
+    fsleyesDir = op.dirname(__file__)
+    assetDir   = None
+    options    = []
 
     # If we are running from a bundled application,
     # wx will know where the FSLeyes resources are
     if fslplatform.frozen:
 
-        # If we have a display, assume 
-        # that a wx app has been created
+        # If we have a display, assume
+        # that a wx app has been created,
+        # and let wx tell us where the
+        # directory is.
         if fslplatform.canHaveGui:
+            sp = wx.StandardPaths.Get()
+            options.append(op.join(sp.GetResourcesDir()))
 
-            sp       = wx.StandardPaths.Get()
-            assetDir = op.join(sp.GetResourcesDir())
+        # Otherwise we have to guess at
+        # the location, which will differ
+        # depending on the platform
+        options.append(op.join(fsleyesDir, '..', 'Resources'))
+        options.append(op.join(fsleyesDir, '..', 'share', 'FSLeyes'))
 
-        # Otherwise we have to guess at the location
-        elif fslplatform.os == 'Darwin':
-            assetDir = op.join(op.dirname(__file__), '..', 'Resources')
-        elif fslplatform.os == 'Linux':
-            assetDir = op.join(op.dirname(__file__), '..', 'share', 'FSLeyes')
-
-    # Otherwise we are running from a code install;
-    # assume that the resources are living alongside
-    # the fsleyes package directory.
+    # Otherwise we are running from a code install,
+    # or from a source distribution. The assets
+    # directory is either inside, or alongside, the
+    # FSLeyes package directory.
     else:
-        assetDir = op.join(op.dirname(__file__), '..')
+        options = [op.join(fsleyesDir, '..'), fsleyesDir]
 
-    assetDir = op.abspath(assetDir)
+    for opt in options:
+        if op.exists(op.join(opt, 'assets')):
+            assetDir = op.abspath(opt)
+            break
 
-    if not op.exists(assetDir):
+    if assetDir is None:
         raise RuntimeError('Could not find FSLeyes asset directory! '
-                           'It should be at {}'.format(assetDir))
+                           'Searched: {}'.format(options))
 
 
 def configLogging(namespace):
@@ -288,24 +302,15 @@ def configLogging(namespace):
     """
 
     global log
-    
-    # make numpy/matplotlib quiet
-    warnings.filterwarnings('ignore', module='matplotlib')
-    warnings.filterwarnings('ignore', module='mpl_toolkits')
-    warnings.filterwarnings('ignore', module='numpy')
+
+    # make numpy/matplotlib/nibabel quiet
+    warnings.filterwarnings('ignore',  module='matplotlib')
+    warnings.filterwarnings('ignore',  module='mpl_toolkits')
+    warnings.filterwarnings('ignore',  module='numpy')
     logging.getLogger('nibabel').setLevel(logging.CRITICAL)
 
-    # Set up my own custom logging level
-    # for tracing memory related events.
-    logging.MEMORY = 15
-    
-    def _logmemory(self, message, *args, **kwargs):
-        """Log function for my custom ``logging.MEMORY`` logging level. """
-        if self.isEnabledFor(logging.MEMORY):
-            self._log(logging.MEMORY, message, args, **kwargs)
-
-    logging.Logger.memory = _logmemory
-    logging.addLevelName(logging.MEMORY, 'MEMORY') 
+    # Show deprecations
+    warnings.filterwarnings('default', category=DeprecationWarning)
 
     # Set up the root logger
     logFormatter = logging.Formatter('%(levelname)8.8s '
@@ -315,7 +320,7 @@ def configLogging(namespace):
                                      '%(message)s')
     logHandler  = logging.StreamHandler()
     logHandler.setFormatter(logFormatter)
-    
+
     log = logging.getLogger()
     log.addHandler(logHandler)
 
@@ -333,36 +338,22 @@ def configLogging(namespace):
     if namespace.noisy is None:
         namespace.noisy = []
 
-    if namespace.verbose is None:
-        if namespace.memory:
-            class MemFilter(object):
-                def filter(self, record):
-                    if   record.name in namespace.noisy:   return 1
-                    elif record.levelno == logging.MEMORY: return 1
-                    else:                                  return 0
-
-            log.setLevel(logging.MEMORY)
-            log.handlers[0].addFilter(MemFilter())
-            log.memory('Added filter for MEMORY messages')
-            logging.getLogger('props')   .setLevel(logging.WARNING)
-            logging.getLogger('pwidgets').setLevel(logging.WARNING)            
-        
     if namespace.verbose == 1:
         log.setLevel(logging.DEBUG)
 
         # make some noisy things quiet
-        logging.getLogger('fsleyes.gl')   .setLevel(logging.MEMORY)
-        logging.getLogger('fsleyes.views').setLevel(logging.MEMORY)
-        logging.getLogger('props')        .setLevel(logging.WARNING)
-        logging.getLogger('pwidgets')     .setLevel(logging.WARNING)
+        logging.getLogger('fsleyes.gl')     .setLevel(logging.WARNING)
+        logging.getLogger('fsleyes.views')  .setLevel(logging.WARNING)
+        logging.getLogger('fsleyes_props')  .setLevel(logging.WARNING)
+        logging.getLogger('fsleyes_widgets').setLevel(logging.WARNING)
     elif namespace.verbose == 2:
         log.setLevel(logging.DEBUG)
-        logging.getLogger('props')   .setLevel(logging.WARNING)
-        logging.getLogger('pwidgets').setLevel(logging.WARNING)
+        logging.getLogger('fsleyes_props')  .setLevel(logging.WARNING)
+        logging.getLogger('fsleyes_widgets').setLevel(logging.WARNING)
     elif namespace.verbose == 3:
         log.setLevel(logging.DEBUG)
-        logging.getLogger('props')   .setLevel(logging.DEBUG)
-        logging.getLogger('pwidgets').setLevel(logging.DEBUG)
+        logging.getLogger('fsleyes_props')  .setLevel(logging.DEBUG)
+        logging.getLogger('fsleyes_widgets').setLevel(logging.DEBUG)
 
     for mod in namespace.noisy:
         logging.getLogger(mod).setLevel(logging.DEBUG)
@@ -371,6 +362,6 @@ def configLogging(namespace):
     # things if its logging level has been
     # set to DEBUG, so we import it now so
     # it can set itself up.
-    traceLogger = logging.getLogger('props.trace')
+    traceLogger = logging.getLogger('fsleyes_props.trace')
     if traceLogger.getEffectiveLevel() <= logging.DEBUG:
-        import props.trace
+        import fsleyes_props.trace

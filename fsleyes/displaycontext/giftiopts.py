@@ -31,10 +31,10 @@ class GiftiOpts(meshopts.MeshOpts):
         All arguments are passed to the :class:`.MeshOpts` constructor.
         """
 
-        self.getProp('coordSpace').setConstraint(self, 'default', 'affine')
+        self.getProp('coordSpace').setAttribute(self, 'default', 'affine')
         self.coordSpace = 'affine'
 
         vdataFiles = [None] + fslgifti.relatedFiles(overlay.dataSource)
         self.getProp('vertexData').setChoices(vdataFiles, instance=self)
-        
+
         meshopts.MeshOpts.__init__(self, overlay, *args, **kwargs)

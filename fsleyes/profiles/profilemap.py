@@ -29,6 +29,7 @@ from fsleyes.views.lightboxpanel          import LightBoxPanel
 from fsleyes.views.timeseriespanel        import TimeSeriesPanel
 from fsleyes.views.histogrampanel         import HistogramPanel
 from fsleyes.views.powerspectrumpanel     import PowerSpectrumPanel
+from fsleyes.views.scene3dpanel           import Scene3DPanel
 
 from fsleyes.profiles.orthoviewprofile    import OrthoViewProfile
 from fsleyes.profiles.orthoeditprofile    import OrthoEditProfile
@@ -37,6 +38,7 @@ from fsleyes.profiles.lightboxviewprofile import LightBoxViewProfile
 from fsleyes.profiles.plotprofile         import PlotProfile
 from fsleyes.profiles.histogramprofile    import HistogramProfile
 from fsleyes.profiles.timeseriesprofile   import TimeSeriesProfile
+from fsleyes.profiles.scene3dviewprofile  import Scene3DViewProfile
 
 
 log = logging.getLogger(__name__)
@@ -48,6 +50,7 @@ profiles  = {
     TimeSeriesPanel    : ['view'],
     HistogramPanel     : ['view'],
     PowerSpectrumPanel : ['view'],
+    Scene3DPanel       : ['view'],
 }
 """This dictionary is used by the :class:`.ProfileManager` to figure out which
 profiles are available for each :class:`.ViewPanel`. They are added as options
@@ -62,7 +65,8 @@ profileHandlers = {
     (LightBoxPanel,      'view') : LightBoxViewProfile,
     (TimeSeriesPanel,    'view') : TimeSeriesProfile,
     (HistogramPanel,     'view') : HistogramProfile,
-    (PowerSpectrumPanel, 'view') : PlotProfile
+    (PowerSpectrumPanel, 'view') : PlotProfile,
+    (Scene3DPanel,       'view') : Scene3DViewProfile,
 }
 """This dictionary is used by the :class:`.ProfileManager` class to figure out
 which :class:`.Profile` sub-class to create for a given :class:`.ViewPanel`
@@ -103,7 +107,7 @@ tempModeMap = {
         (('selint',  wx.WXK_ALT),                    'pan'),
         (('sel',     wx.WXK_CONTROL),                'zoom'),
         (('desel',   wx.WXK_CONTROL),                'zoom'),
-        (('selint',  wx.WXK_CONTROL),                'zoom'), 
+        (('selint',  wx.WXK_CONTROL),                'zoom'),
         (('sel',    (wx.WXK_CONTROL, wx.WXK_SHIFT)), 'chsize'),
         (('desel',  (wx.WXK_CONTROL, wx.WXK_SHIFT)), 'chsize'),
         (('selint', (wx.WXK_CONTROL, wx.WXK_SHIFT)), 'chthres'),
@@ -114,7 +118,7 @@ tempModeMap = {
         (('crop',  wx.WXK_SHIFT),                  'nav'),
         (('crop',  wx.WXK_CONTROL),                'zoom'),
         (('crop',  wx.WXK_ALT),                    'pan'),
-        (('crop', (wx.WXK_CONTROL, wx.WXK_SHIFT)), 'slice'), 
+        (('crop', (wx.WXK_CONTROL, wx.WXK_SHIFT)), 'slice'),
     )),
 
     LightBoxViewProfile : OrderedDict((
@@ -128,7 +132,12 @@ tempModeMap = {
 
     HistogramProfile : OrderedDict((
         (('overlayRange', wx.WXK_CONTROL), 'panzoom'),
-    )) 
+    )),
+
+    Scene3DViewProfile : OrderedDict((
+        (('rotate', wx.WXK_CONTROL), 'zoom'),
+        (('rotate', wx.WXK_ALT),     'pan'),
+    )),
 }
 """The ``tempModeMap`` dictionary defines temporary modes, for each
 :class:`Profile` sub-class which, when in a given mode, can be accessed with a
@@ -145,7 +154,7 @@ held down, the ``Profile`` should temporarily switch to ``'zoom'`` mode.
 altHandlerMap = {
 
     OrthoViewProfile : OrderedDict((
-        
+
         # in navigate, slice, and zoom mode, the
         # left mouse button navigates, the right
         # mouse button draws a zoom rectangle,
@@ -168,7 +177,7 @@ altHandlerMap = {
         # In zoom mode, the left mouse button
         # navigates, the right mouse button
         # draws a zoom rectangle, and the
-        # middle mouse button pans 
+        # middle mouse button pans
         (('zoom', 'RightMouseDown'),  ('zoom', 'RightMouseDrag')),
         (('zoom', 'LeftMouseDown'),   ('nav',  'LeftMouseDown')),
         (('zoom', 'LeftMouseDrag'),   ('nav',  'LeftMouseDrag')),
@@ -180,7 +189,7 @@ altHandlerMap = {
         # 'nav' mode by default.
 
         # When in select mode, the right
-        # mouse button allows the user 
+        # mouse button allows the user
         # to deselect voxels.
         (('sel',    'RightMouseDown'),  ('desel',  'LeftMouseDown')),
         (('sel',    'RightMouseDrag'),  ('desel',  'LeftMouseDrag')),
@@ -194,12 +203,12 @@ altHandlerMap = {
         # TODO Need a way to navigate?
         (('selint', 'RightMouseDown'),  ('desel',  'LeftMouseDown')),
         (('selint', 'RightMouseDrag'),  ('desel',  'LeftMouseDrag')),
-        (('selint', 'RightMouseUp'),    ('desel',  'LeftMouseUp')), 
+        (('selint', 'RightMouseUp'),    ('desel',  'LeftMouseUp')),
 
-        # Make the selection cursor 
+        # Make the selection cursor
         # visible in desel mode
         (('desel',  'MouseMove'),       ('sel',    'MouseMove')),
-        
+
         # Middle mouse always pans.
         (('sel',    'MiddleMouseDrag'), ('pan', 'LeftMouseDrag')),
         (('desel',  'MiddleMouseDrag'), ('pan', 'LeftMouseDrag')),
@@ -208,6 +217,13 @@ altHandlerMap = {
 
     LightBoxViewProfile : OrderedDict((
         (('view', 'LeftMouseDown'), ('view', 'LeftMouseDrag')), )),
+
+
+    Scene3DViewProfile : OrderedDict((
+        (('rotate', 'MiddleMouseDown'), ('pan', 'LeftMouseDown')),
+        (('rotate', 'MiddleMouseDrag'), ('pan', 'LeftMouseDrag')),
+        (('rotate', 'MiddleMouseUp'),   ('pan', 'LeftMouseUp')),
+    )),
 
 
     # We cannot remap mouse buttons on the

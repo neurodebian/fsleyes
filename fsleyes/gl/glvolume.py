@@ -12,24 +12,28 @@ encapsulates the data and logic required to render 2D slice of an
 
 import logging
 
-import OpenGL.GL        as gl
+import numpy                              as np
+import OpenGL.GL                          as gl
 
-import fsl.utils.async  as async
-import fsleyes.gl       as fslgl
-from . import              textures
-from . import              globject
-from . import resources as glresources
+from   fsl.utils.platform import platform as fslplatform
+import fsl.utils.async                    as async
+import fsl.utils.transform                as transform
+import fsleyes.gl                         as fslgl
+import fsleyes.gl.routines                as glroutines
+from . import                                textures
+from . import                                glimageobject
+from . import resources                   as glresources
 
 
 log = logging.getLogger(__name__)
 
 
-class GLVolume(globject.GLImageObject):
+class GLVolume(glimageobject.GLImageObject):
     """The ``GLVolume`` class is a :class:`.GLImageObject` which encapsulates
-    the data and logic required to render 2D slices of an :class:`.Image`
-    overlay.
+    the data and logic required to render  :class:`.Image` overlays in 2D and
+    3D.
 
-    
+
     A ``GLVolume`` instance may be used to render an :class:`.Image` instance
     which has a :attr:`.Display.overlayType` equal to ``volume``. It is
     assumed that this ``Image`` instance is associated with a
@@ -39,7 +43,7 @@ class GLVolume(globject.GLImageObject):
 
     **Version dependent modules**
 
-    
+
     The ``GLVolume`` class makes use of the functions defined in the
     :mod:`.gl14.glvolume_funcs` or the :mod:`.gl21.glvolume_funcs` modules,
     which provide OpenGL version specific details for creation/storage of
@@ -58,26 +62,31 @@ class GLVolume(globject.GLImageObject):
     ``updateShaderState(GLVolume)``       Updates the shader program states
                                           when display parameters are changed.
 
-    ``preDraw(GLVolume)``                 Initialise the GL state, ready for
+    ``preDraw(GLVolume, xform, bbox)``    Initialise the GL state, ready for
                                           drawing.
 
-    ``draw(GLVolume, zpos, xform=None)``  Draw a slice of the image at the
+    ``draw2D(GLVolume, zpos, xform)``     Draw a slice of the image at the
                                           given ``zpos``. If ``xform`` is not
                                           ``None``, it must be applied as a
                                           transformation on the vertex
                                           coordinates.
- 
+
+    ``draw3D(GLVolume, xform, bbox)``     Draw the image in 3D. If ``xform``
+                                          is not ``None``, it must be applied
+                                          as a transformation on the vertex
+                                          coordinates.
+
     ``drawAll(Glvolume, zposes, xforms)`` Draws slices at each of the
                                           specified ``zposes``, applying the
                                           corresponding ``xforms`` to each.
 
-    ``postDraw(GLVolume)``                Clear the GL state after drawing.
+    ``postDraw(GLVolume, xform, bbox)``   Clear the GL state after drawing.
     ===================================== =====================================
 
 
-    **Rendering**
+    **2D rendering**
 
-    
+
     Images are rendered in essentially the same way, regardless of which
     OpenGL version-specific module is used.  The image data itself is stored
     as an :class:`.ImageTexture`. This ``ImageTexture`` is managed by the
@@ -88,7 +97,7 @@ class GLVolume(globject.GLImageObject):
     rendered using six vertices, located at the respective corners of the
     image bounds.
 
-    
+
     Image voxels may be clipped according to the
     :attr:`.VolumeOpts.clippingRange` property. By default, the voxel value
     is compared against the clipping range, but the
@@ -96,7 +105,16 @@ class GLVolume(globject.GLImageObject):
     image (of the same dimensions) to be used for clipping. If specified,
     this clipping image is stored as another :class:`.ImageTexture`.
 
-    
+
+    **3D rendering**
+
+
+    In 3D, images are rendered using a ray-casting approach. The image
+    bounding box is drawn as a cuboid. Then for each pixel, a ray is cast
+    from the 'camera' through the image texture. The resulting colour
+    is generated from sampling points along the ray.
+
+
     **Textures**
 
 
@@ -104,11 +122,11 @@ class GLVolume(globject.GLImageObject):
 
      - An :class:`.ImageTexture`, a 3D texture which contains image data.
        This is bound to texture unit 0.
-    
+
      - A :class:`.ColourMapTexture`, a 1D texture which contains the
        colour map defined by the :attr:`.VolumeOpts.cmap` property.
        This is bound to texture unit 1.
-    
+
      - A :class:`.ColourMapTexture`, a 1D texture which contains the
        colour map defined by the :attr:`.VolumeOpts.negativeCmap` property.
        This is bound to texture unit 2.
@@ -134,28 +152,33 @@ class GLVolume(globject.GLImageObject):
     ``colourTexture``    The :class:`.ColourMapTexture` used to store the
                          colour map.
     ``negColourTexture`` The :class:`.ColourMapTexture` used to store the
-                         negative colour map. 
+                         negative colour map.
     ``texName``          A name used for the ``imageTexture``,
                          ``colourTexture``, and ``negColourTexture`. The
                          name for the latter is suffixed with ``'_neg'``.
     ==================== ==================================================
     """
 
-    
-    def __init__(self, image, display, xax, yax):
+
+    def __init__(self, image, displayCtx, canvas, threedee):
         """Create a ``GLVolume`` object.
 
-        :arg image:   An :class:`.Image` object.
-        
-        :arg display: A :class:`.Display` object which describes how the image
-                      is to be displayed.
+        :arg image:       An :class:`.Image` object.
 
-        :arg xax:     Initial display X axis
+        :arg displayCtx:  The :class:`.DisplayContext` object managing the
+                          scene.
 
-        :arg yax:     Initial display Y axis 
+        :arg canvas:      The canvas doing the drawing.
+
+        :arg threedee:    Set up for 2D or 3D rendering.
+
         """
 
-        globject.GLImageObject.__init__(self, image, display, xax, yax)
+        glimageobject.GLImageObject.__init__(self,
+                                             image,
+                                             displayCtx,
+                                             canvas,
+                                             threedee)
 
         # Add listeners to this image so the view can be
         # updated when its display properties are changed
@@ -183,10 +206,16 @@ class GLVolume(globject.GLImageObject):
 
         # Refs to all of the texture objects.
         self.imageTexture     = None
-        self.clipTexture      = None 
+        self.clipTexture      = None
         self.colourTexture    = textures.ColourMapTexture(self.texName)
         self.negColourTexture = textures.ColourMapTexture(
             '{}_neg'.format(self.texName))
+
+        if self.threedee:
+            self.renderTexture1 = textures.RenderTexture(
+                self.name, gl.GL_LINEAR, rttype='cd')
+            self.renderTexture2 = textures.RenderTexture(
+                self.name, gl.GL_LINEAR, rttype='cd')
 
         # This attribute is used by the
         # updateShaderState method to
@@ -198,9 +227,9 @@ class GLVolume(globject.GLImageObject):
         # If the VolumeOpts instance has
         # inherited a clipImage value,
         # make sure we're registered with it.
-        if self.displayOpts.clipImage is not None:
+        if self.opts.clipImage is not None:
             self.registerClipImage()
-            
+
         self.refreshColourTextures()
         self.refreshImageTexture()
         self.refreshClipTexture()
@@ -230,7 +259,7 @@ class GLVolume(globject.GLImageObject):
         if self.clipTexture is not None:
             self.clipTexture.deregister(self.name)
             glresources.delete(self.clipTexture.getTextureName())
-        
+
         self.colourTexture   .destroy()
         self.negColourTexture.destroy()
 
@@ -238,34 +267,40 @@ class GLVolume(globject.GLImageObject):
         self.clipTexture      = None
         self.colourTexture    = None
         self.negColourTexture = None
-        
-        fslgl.glvolume_funcs  .destroy(self)
-        globject.GLImageObject.destroy(self)
 
-        
+        if self.threedee:
+            self.renderTexture1.destroy()
+            self.renderTexture2.destroy()
+            self.renderTexture1 = None
+            self.renderTexture2 = None
+
+        fslgl.glvolume_funcs       .destroy(self)
+        glimageobject.GLImageObject.destroy(self)
+
+
     def ready(self):
         """Returns ``True`` if this ``GLVolume`` is ready to be drawn,
         ``False`` otherwise.
         """
-        return (not self.destroyed()    and 
+        return (not self.destroyed()    and
                 self.shader is not None and
                 self.texturesReady())
 
-    
+
     def texturesReady(self):
         """Returns ``True`` if the ``imageTexture`` and ``clipTexture`` (if
         applicable) are both ready to be used, ``False`` otherwise.
         """
-        imageTexReady = (self.imageTexture is not None and 
+        imageTexReady = (self.imageTexture is not None and
                          self.imageTexture.ready())
 
-        clipTexReady  = (self.clipImage is None or 
+        clipTexReady  = (self.clipImage is None or
                          (self.clipTexture is not None and
                           self.clipTexture.ready()))
 
         return imageTexReady and clipTexReady
 
-        
+
     def addDisplayListeners(self):
         """Called by :meth:`__init__`.
 
@@ -278,7 +313,7 @@ class GLVolume(globject.GLImageObject):
         """
 
         display = self.display
-        opts    = self.displayOpts
+        opts    = self.opts
         name    = self.name
 
         crPVs   = opts.getPropVal('clippingRange').getPropertyValueList()
@@ -289,7 +324,7 @@ class GLVolume(globject.GLImageObject):
 
         crPVs[0].addListener(name, self._lowClippingRangeChanged)
         crPVs[1].addListener(name, self._highClippingRangeChanged)
-        
+
         opts    .addListener('clipImage',        name, self._clipImageChanged)
         opts    .addListener('invertClipping',   name,
                              self._invertClippingChanged)
@@ -311,6 +346,24 @@ class GLVolume(globject.GLImageObject):
         opts    .addListener('overrideDataRange', name,
                              self._overrideDataRangeChanged)
 
+        # 3D-only options
+        if self.threedee:
+
+            opts.addListener('dithering',       name, self._ditheringChanged)
+            opts.addListener('numSteps',        name, self._numStepsChanged)
+            opts.addListener('numInnerSteps',   name,
+                             self._numInnerStepsChanged)
+            opts.addListener('resolution',   name,    self._resolutionChanged)
+            opts.addListener('blendFactor',     name, self._blendFactorChanged)
+            opts.addListener('showClipPlanes',  name,
+                             self._showClipPlanesChanged)
+            opts.addListener('numClipPlanes',
+                             name,
+                             self._numClipPlanesChanged)
+            opts.addListener('clipPosition',    name, self._clipping3DChanged)
+            opts.addListener('clipAzimuth',     name, self._clipping3DChanged)
+            opts.addListener('clipInclination', name, self._clipping3DChanged)
+
         # GLVolume instances need to keep track of whether
         # the volume property of their corresponding
         # VolumeOpts instance is synced to other VolumeOpts
@@ -319,7 +372,7 @@ class GLVolume(globject.GLImageObject):
         # created by another GLVolume), and we can just
         # re-use it. Otherwise we will need to create our
         # own ImageTexture.
-        # 
+        #
         # Save a flag so the removeDisplayListeners
         # method knows whether it needs to de-register
         # sync change listeners - using opts.getParent()
@@ -341,7 +394,7 @@ class GLVolume(globject.GLImageObject):
         """
 
         display = self.display
-        opts    = self.displayOpts
+        opts    = self.opts
         name    = self.name
         crPVs   = opts.getPropVal('clippingRange').getPropertyValueList()
 
@@ -363,23 +416,32 @@ class GLVolume(globject.GLImageObject):
         opts    .removeListener(          'displayXform',            name)
         opts    .removeListener(          'enableOverrideDataRange', name)
         opts    .removeListener(          'overrideDataRange',       name)
-        
+
+        if self.threedee:
+            opts.removeListener('dithering',       name)
+            opts.removeListener('numSteps',        name)
+            opts.removeListener('numClipPlanes',   name)
+            opts.removeListener('showClipPlanes',  name)
+            opts.removeListener('clipPosition',    name)
+            opts.removeListener('clipAzimuth',     name)
+            opts.removeListener('clipInclination', name)
+
         if self.__syncListenersRegistered:
             opts.removeSyncChangeListener('volume', name)
 
-        
+
     def testUnsynced(self):
         """Used by the :meth:`refreshImageTexture` method.
-        
+
         Returns ``True`` if certain critical :class:`VolumeOpts` properties
         have been unsynced from the parent instance, meaning that this
         ``GLVolume`` instance needs to create its own image texture;
         returns ``False`` otherwise.
         """
         is4D = len(self.image.shape) >= 4 and self.image.shape[3] > 1
-        
-        return (self.displayOpts.getParent() is None or
-                (is4D and not self.displayOpts.isSyncedToParent('volume')))
+
+        return (self.opts.getParent() is None or
+                (is4D and not self.opts.isSyncedToParent('volume')))
 
 
     def updateShaderState(self, *args, **kwargs):
@@ -435,7 +497,7 @@ class GLVolume(globject.GLImageObject):
                        name=self.name,
                        skipIfQueued=True)
 
-        
+
     def refreshImageTexture(self):
         """Refreshes the :class:`.ImageTexture` used to store the
         :class:`.Image` data. This is performed through the :mod:`.resources`
@@ -443,7 +505,7 @@ class GLVolume(globject.GLImageObject):
         ``GLVolume`` instances.
         """
 
-        opts     = self.displayOpts
+        opts     = self.opts
         texName  = self.texName
         unsynced = self.testUnsynced()
 
@@ -451,7 +513,7 @@ class GLVolume(globject.GLImageObject):
             texName = '{}_unsync_{}'.format(texName, id(opts))
 
         if self.imageTexture is not None:
-            
+
             if self.imageTexture.getTextureName() == texName:
                 return None
 
@@ -462,12 +524,12 @@ class GLVolume(globject.GLImageObject):
         else:                            interp = gl.GL_LINEAR
 
         self.imageTexture = glresources.get(
-            texName, 
+            texName,
             textures.ImageTexture,
             texName,
             self.image,
             interp=interp,
-            volume=opts.volume,
+            volume=opts.index()[3:],
             notify=False)
 
         self.imageTexture.register(self.name, self.__texturesChanged)
@@ -479,25 +541,25 @@ class GLVolume(globject.GLImageObject):
         associated with the new clip image, if necessary.
         """
 
-        clipImage = self.displayOpts.clipImage
+        clipImage = self.opts.clipImage
 
         if clipImage is None:
             return
 
-        clipOpts = self.displayOpts.displayCtx.getOpts(clipImage) 
+        clipOpts = self.opts.displayCtx.getOpts(clipImage)
 
         self.clipImage = clipImage
         self.clipOpts  = clipOpts
-        
+
         def updateClipTexture(*a):
-            self.clipTexture.set(volume=clipOpts.volume)
+            self.clipTexture.set(volume=clipOpts.index()[3:])
 
         clipOpts.addListener('volume',
                              self.name,
                              updateClipTexture,
                              weak=False)
 
-    
+
     def deregisterClipImage(self):
         """Called whenever the :attr:`.VolumeOpts.clipImage` property changes.
         Removes property listeners from the :class:`.NiftiOpts` instance
@@ -511,14 +573,14 @@ class GLVolume(globject.GLImageObject):
 
         self.clipImage = None
         self.clipOpts  = None
-        
+
 
     def refreshClipTexture(self):
         """Re-creates the :class:`.ImageTexture` used to store the
         :attr:`.VolumeOpts.clipImage`.
         """
         clipImage = self.clipImage
-        opts      = self.displayOpts
+        opts      = self.opts
         clipOpts  = self.clipOpts
 
         texName   = '{}_clip_{}'.format(type(self).__name__, id(clipImage))
@@ -527,7 +589,7 @@ class GLVolume(globject.GLImageObject):
             self.clipTexture.deregister(self.name)
             glresources.delete(self.clipTexture.getTextureName())
             self.clipTexture = None
-            
+
         if clipImage is None:
             return None
 
@@ -535,24 +597,24 @@ class GLVolume(globject.GLImageObject):
         else:                            interp = gl.GL_LINEAR
 
         self.clipTexture = glresources.get(
-            texName, 
+            texName,
             textures.ImageTexture,
             texName,
             clipImage,
             interp=interp,
             volume=clipOpts.volume,
             notify=False)
-        
+
         self.clipTexture.register(self.name, self.__texturesChanged)
 
-    
+
     def refreshColourTextures(self):
         """Refreshes the :class:`.ColourMapTexture` instances used to colour
         image voxels.
         """
 
         display = self.display
-        opts    = self.displayOpts
+        opts    = self.opts
         alpha   = display.alpha / 100.0
         cmap    = opts.cmap
         interp  = opts.interpolateCmaps
@@ -577,15 +639,15 @@ class GLVolume(globject.GLImageObject):
                                   alpha=alpha,
                                   resolution=res,
                                   interp=interp,
-                                  displayRange=(dmin, dmax)) 
+                                  displayRange=(dmin, dmax))
 
-        
-    def preDraw(self):
+
+    def preDraw(self, *args, **kwargs):
         """Binds the :class:`.ImageTexture` to ``GL_TEXTURE0`` and the
         :class:`.ColourMapTexture` to ``GL_TEXTURE1, and calls the
         version-dependent ``preDraw`` function.
         """
-        
+
         # Set up the image and colour textures
         self.imageTexture    .bindTexture(gl.GL_TEXTURE0)
         self.colourTexture   .bindTexture(gl.GL_TEXTURE1)
@@ -594,34 +656,81 @@ class GLVolume(globject.GLImageObject):
         if self.clipTexture is not None:
             self.clipTexture .bindTexture(gl.GL_TEXTURE3)
 
-        fslgl.glvolume_funcs.preDraw(self)
+        fslgl.glvolume_funcs.preDraw(self, *args, **kwargs)
 
-        
-    def draw(self, zpos, xform=None, bbox=None):
-        """Draws a 2D slice of the image at the given Z location in the
-        display coordinate system.
-        
-     .  This is performed via a call to the OpenGL version-dependent ``draw``
-        function, contained in one of the :mod:`.gl14.glvolume_funcs` or
-        :mod:`.gl21.glvolume_funcs` modules.
 
-        If ``xform`` is not ``None``, it is applied as an affine
-        transformation to the vertex coordinates of the rendered image data.
+    def draw2D(self, *args, **kwargs):
+        """Calls the version dependent ``draw2D`` function. """
 
-        .. note:: Calls to this method must be preceded by a call to
-                  :meth:`preDraw`, and followed by a call to :meth:`postDraw`.
-        """
-        
-        fslgl.glvolume_funcs.draw(self, zpos, xform, bbox)
+        with glroutines.enabled((gl.GL_CULL_FACE)):
+            gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
+            gl.glCullFace(gl.GL_BACK)
+            gl.glFrontFace(self.frontFace())
+            fslgl.glvolume_funcs.draw2D(self, *args, **kwargs)
 
-        
-    def drawAll(self, zposes, xforms):
+
+    def draw3D(self, *args, **kwargs):
+        """Calls the version dependent ``draw3D`` function. """
+
+        opts = self.opts
+        w, h = self.canvas.GetSize()
+        res  = self.opts.resolution / 100.0
+        w    = int(np.ceil(w * res))
+        h    = int(np.ceil(h * res))
+
+        # Initialise and resize
+        # the offscreen textures
+        for rt in [self.renderTexture1, self.renderTexture2]:
+            if rt.getSize() != (w, h):
+                rt.setSize(w, h)
+
+            rt.bindAsRenderTarget()
+            gl.glClearColor(0, 0, 0, 0)
+            gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+            rt.unbindAsRenderTarget()
+
+        if opts.resolution != 100:
+            gl.glViewport(0, 0, w, h)
+
+        # Do the render. Even though we're
+        # drawing off-screen,  we need to
+        # enable depth-testing, otherwise
+        # depth values will not get written
+        # to the depth buffer!
+        with glroutines.enabled((gl.GL_DEPTH_TEST, gl.GL_CULL_FACE)):
+            gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
+            gl.glFrontFace(gl.GL_CCW)
+            gl.glCullFace(gl.GL_BACK)
+            fslgl.glvolume_funcs.draw3D(self, *args, **kwargs)
+
+        # renderTexture1 should now
+        # contain the final result -
+        # draw it to the screen.
+        verts = np.array([[-1, -1, 0],
+                          [-1,  1, 0],
+                          [ 1, -1, 0],
+                          [ 1, -1, 0],
+                          [-1,  1, 0],
+                          [ 1,  1, 0]], dtype=np.float32)
+
+        invproj = transform.invert(self.canvas.getProjectionMatrix())
+        verts   = transform.transform(verts, invproj)
+
+        if opts.resolution != 100:
+            w, h = self.canvas.GetSize()
+            gl.glViewport(0, 0, w, h)
+
+        with glroutines.enabled((gl.GL_DEPTH_TEST)):
+            self.renderTexture1.draw(verts, useDepth=True)
+
+
+    def drawAll(self, *args, **kwargs):
         """Calls the version dependent ``drawAll`` function. """
-        
-        fslgl.glvolume_funcs.drawAll(self, zposes, xforms)
 
-        
-    def postDraw(self):
+        fslgl.glvolume_funcs.drawAll(self, *args, **kwargs)
+
+
+    def postDraw(self, *args, **kwargs):
         """Unbinds the ``ImageTexture`` and ``ColourMapTexture``, and calls the
         version-dependent ``postDraw`` function.
         """
@@ -632,14 +741,37 @@ class GLVolume(globject.GLImageObject):
 
         if self.clipTexture is not None:
             self.clipTexture.unbindTexture()
-        
-        fslgl.glvolume_funcs.postDraw(self)
+
+        fslgl.glvolume_funcs.postDraw(self, *args, **kwargs)
+
+
+    def calculateClipCoordTransform(self):
+        """Calculates a transformation matrix which will transform from the
+        image coordinate system into the :attr:`.VolumeOpts.clipImage`
+        coordinate system. If ``clipImage is None``, it will be an identity
+        transform.
+
+        This transform is used by shader programs to find the clip image
+        coordinates that correspond with specific image coordinates.
+        """
+        if self.opts.clipImage is None:
+            clipCoordXform = np.eye(4)
+        else:
+            clipCoordXform = transform.concat(
+                self.clipOpts.getTransform('display', 'texture'),
+                self.opts    .getTransform('texture', 'display'))
+
+        return clipCoordXform
 
 
     def _alphaChanged(self, *a):
         """Called when the :attr:`.Display.alpha` property changes. """
+
         self.refreshColourTextures()
-        self.notify()
+        if self.threedee:
+            self.updateShaderState(alwaysNotify=True)
+        else:
+            self.notify()
 
 
     def _displayRangeChanged(self, *a):
@@ -655,8 +787,8 @@ class GLVolume(globject.GLImageObject):
         values to avoid unnecessary duplicate refreshes in the event that the
         :attr:`.VolumeOpts.linkLowRanges` or
         :attr:`.VolumeOpts.linkHighRanges` flags are set.
-        """ 
-        if self.displayOpts.linkLowRanges:
+        """
+        if self.opts.linkLowRanges:
             return
 
         self.updateShaderState()
@@ -665,13 +797,13 @@ class GLVolume(globject.GLImageObject):
     def _highClippingRangeChanged(self, *a):
         """Called when the high :attr:`.VolumeOpts.clippingRange` property
         changes (see :meth:`_lowClippingRangeChanged`).
-        """ 
-        if self.displayOpts.linkHighRanges:
+        """
+        if self.opts.linkHighRanges:
             return
-        
+
         self.updateShaderState(self)
 
-            
+
     def _clipImageChanged(self, *a):
         """Called when the :attr:`.VolumeOpts.clipImage` property changes.
         """
@@ -679,10 +811,10 @@ class GLVolume(globject.GLImageObject):
         self.registerClipImage()
         self.refreshClipTexture()
 
-        
+
     def _invertClippingChanged(self, *a):
         """Called when the :attr:`.VolumeOpts.invertClipping` property changes.
-        """ 
+        """
         self.updateShaderState()
 
 
@@ -693,14 +825,14 @@ class GLVolume(globject.GLImageObject):
         self.refreshColourTextures()
         self.notify()
 
-        
+
     def _useNegativeCmapChanged(self, *a):
         """Called when the :attr:`.VolumeOpts.useNegativeCmap` property
         changes.
-        """ 
+        """
         self.updateShaderState()
 
-            
+
     def _invertChanged(self, *a):
         """Called when the :attr:`.VolumeOpts.invert` property changes. """
         self.refreshColourTextures()
@@ -713,13 +845,13 @@ class GLVolume(globject.GLImageObject):
         """
         self._volumeChanged()
 
-    
+
     def _overrideDataRangeChanged(self, *a):
         """Called when the :attr:`.VolumeOpts.overrideDataRange` property
         changes. Calls :meth:`_volumeChanged`, but only if
         :attr:`.VolumeOpts.enableOverrideDataRange` is ``True``.
-        """ 
-        if self.displayOpts.enableOverrideDataRange:
+        """
+        if self.opts.enableOverrideDataRange:
             self._volumeChanged()
 
 
@@ -727,8 +859,7 @@ class GLVolume(globject.GLImageObject):
         """Called when the :attr:`.NiftiOpts.volume` property changes Also
         called when other properties, which require a texture refresh, change.
         """
-        opts       = self.displayOpts
-        volume     = opts.volume
+        opts       = self.opts
         volRefresh = kwa.pop('volRefresh', False)
 
         if opts.interpolation == 'none': interp = gl.GL_NEAREST
@@ -737,7 +868,7 @@ class GLVolume(globject.GLImageObject):
         if opts.enableOverrideDataRange: normRange = opts.overrideDataRange
         else:                            normRange = None
 
-        self.imageTexture.set(volume=volume,
+        self.imageTexture.set(volume=opts.index()[3:],
                               interp=interp,
                               volRefresh=volRefresh,
                               normaliseRange=normRange)
@@ -754,7 +885,7 @@ class GLVolume(globject.GLImageObject):
 
     def _transformChanged(self, *a):
         """Called when the :attr:`.NiftiOpts.transform` property changes.
-        """ 
+        """
         self.notify()
 
 
@@ -762,14 +893,73 @@ class GLVolume(globject.GLImageObject):
         """Called when the :attr:`.NiftiOpts.displayXform` property changes.
         """
         self.notify()
- 
+
+
+    def _ditheringChanged(self, *a):
+        """Called when the :attr:`.Volume3DOpts.dithering` property changes.
+        """
+        self.notify()
+
+
+    def _numStepsChanged(self, *a):
+        """Called when the :attr:`.Volume3DOpts.numSteps` property changes.
+        """
+        self.notify()
+
+
+    def _numInnerStepsChanged(self, *a):
+        """Called when the :attr:`.Volume3DOpts.numInnerSteps` property
+        changes.
+        """
+        fslgl.glvolume_funcs.compileShaders(self)
+        self.updateShaderState(alwaysNotify=True)
+
+
+    def _resolutionChanged(self, *a):
+        """Called when the :attr:`.Volume3DOpts.resolution` property
+        changes.
+        """
+        self.notify()
+
+
+    def _numClipPlanesChanged(self, *a):
+        """Called when the :attr:`.Volume3DOpts.numClipPlanes` property
+        changes.
+        """
+        if float(fslplatform.glVersion) == 1.4:
+            fslgl.glvolume_funcs.compileShaders(self)
+        self.updateShaderState(alwaysNotify=True)
+
+
+    def _clipping3DChanged(self, *a):
+        """Called when any of the :attr:`.Volume3DOpts.clipPosition`,
+        :attr:`.Volume3DOpts.clipAzimuth`, or
+        :attr:`.Volume3DOpts.clipInclination` properties change.
+        """
+
+        self.updateShaderState(alwaysNotify=True)
+
+
+    def _showClipPlanesChanged(self, *a):
+        """Called when the :attr:`.Volume3DOpts.showClipPlanes` property
+        changes.
+        """
+        self.updateShaderState(alwaysNotify=True)
+
+
+    def _blendFactorChanged(self, *a):
+        """Called when the :attr:`.Volume3DOpts.showClipPlanes` property
+        changes.
+        """
+        self.updateShaderState(alwaysNotify=True)
+
 
     def _imageSyncChanged(self, *a):
         """Called when the synchronisation state of the
         :attr:`.NiftiOpts.volume` or :attr:`.VolumeOpts.interpolation`
         properties change.
         """
-        
+
         self.refreshImageTexture()
         self.updateShaderState(alwaysNotify=True)
 

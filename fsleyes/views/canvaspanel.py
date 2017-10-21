@@ -9,24 +9,15 @@ class for all panels which display overlays using ``OpenGL``.
 """
 
 
-import os
-import os.path as op
 import logging
 
 import wx
 
-import numpy            as np
-import matplotlib.image as mplimg
-
-import props
-
 import fsl.utils.async                             as async
-import fsl.utils.status                            as status
-import fsl.utils.settings                          as fslsettings
 from   fsl.utils.platform  import platform         as fslplatform
-import fsleyes.strings                             as strings
+import fsleyes_props                               as props
+
 import fsleyes.actions                             as actions
-import fsleyes.colourmaps                          as colourmaps
 import fsleyes.displaycontext                      as displayctx
 import fsleyes.controls.overlaylistpanel           as overlaylistpanel
 import fsleyes.controls.overlayinfopanel           as overlayinfopanel
@@ -53,22 +44,22 @@ class CanvasPanel(viewpanel.ViewPanel):
     much of its functionality. The ``SceneOpts`` instance used by a
     ``CanvasPanel`` can be accessed via the :meth:`getSceneOptions` method.
 
-    
+
     The ``CanvasPanel`` class contains settings and functionality common to
     all sub-classes, including *movie mode* (see :attr:`movieMode`), the
     ability to show a colour bar (a :class:`.ColourBarPanel`; see
     :attr:`.SceneOpts.showColourBar`), and a number of actions.
 
-    
+
     **Sub-class implementations**
 
-    
+
     Sub-classes of the ``CanvasPanel`` must do the following:
-    
+
       1. Add their content to the panel that is accessible via the
          :meth:`getContentPanel` method (see the note on
          :ref:`adding content <canvaspanel-adding-content>`).
-    
+
       2. Override the :meth:`getGLCanvases` method.
 
       3. Call the :meth:`centrePanelLayout` method in their ``__init__``
@@ -76,8 +67,8 @@ class CanvasPanel(viewpanel.ViewPanel):
 
       4. Override the :meth:`centrePanelLayout` method if any custom layout is
          necessary.
-    
-    
+
+
     **Actions**
 
 
@@ -87,7 +78,7 @@ class CanvasPanel(viewpanel.ViewPanel):
 
     .. autosummary::
        :nosignatures:
-    
+
        screenshot
        showCommandLineArgs
        toggleMovieMode
@@ -106,14 +97,14 @@ class CanvasPanel(viewpanel.ViewPanel):
 
     .. _canvaspanel-adding-content:
 
-    
+
     **Adding content**
 
-    
+
     To support colour bar and screenshot functionality, the ``CanvasPanel``
     uses a hierarchy of ``wx.Panel`` instances, depicted in the following
     containment hierarchy diagram:
-    
+
     .. graphviz::
 
        digraph canvasPanel {
@@ -124,9 +115,9 @@ class CanvasPanel(viewpanel.ViewPanel):
                shape="box",
                fillcolor="#ddffdd",
                fontname="sans"];
-     
+
          rankdir="BT";
-    
+
          1 [label="CanvasPanel"];
          2 [label="Centre panel"];
          3 [label="Custom content (for complex layouts)"];
@@ -143,12 +134,12 @@ class CanvasPanel(viewpanel.ViewPanel):
          7 -> 6;
        }
 
-    
+
     As depicted in the diagram, sub-classes need to add their content to the
     *content panel*. This panel is accessible via the :meth:`getContentPanel`
-    method. 
+    method.
 
-    
+
     The *centre panel* is what gets passed to the
     :meth:`.ViewPanel.setCentrePanel` method, and is accessible via the
     :meth:`getCentrePanel` method, if necessary. The *container panel* is
@@ -156,7 +147,7 @@ class CanvasPanel(viewpanel.ViewPanel):
     container panel will appear in screenshots (see the :meth:`screenshot`
     method).
 
-    
+
     The :meth:`centrePanelLayout` method lays out the centre panel, using the
     :meth:`layoutContainerPanel` method to lay out the colour bar and the
     content panel. The ``centrePanelLayout`` method simply adds the canvas
@@ -173,29 +164,29 @@ class CanvasPanel(viewpanel.ViewPanel):
       3. Add any other custom content to the centre panel.
     """
 
-    
+
     syncLocation = props.Boolean(default=True)
-    """If ``True`` (the default), the :attr:`.DisplayContext.location` for 
+    """If ``True`` (the default), the :attr:`.DisplayContext.location` for
     this ``CanvasPanel`` is linked to the master ``DisplayContext`` location.
     """
 
-    
+
     syncOverlayOrder = props.Boolean(default=True)
     """If ``True`` (the default), the :attr:`.DisplayContext.overlayOrder`
     for this ``CanvasPanel`` is linked to the master ``DisplayContext``
     overlay order.
-    """    
+    """
 
-    
+
     syncOverlayDisplay = props.Boolean(default=True)
-    """If ``True`` (the default), the properties of the :class:`.Display` 
+    """If ``True`` (the default), the properties of the :class:`.Display`
     and :class:`.DisplayOpts` instances for every overlay, as managed
     by the :attr:`.DisplayContext` for this ``CanvasPanel``, are linked to
     the properties of all ``Display`` and ``DisplayOpts`` instances managed
     by the master ``DisplayContext`` instance.
     """
 
-    
+
     movieMode = props.Boolean(default=False)
     """If ``True``, and the currently selected overlay (see
     :attr:`.DisplayContext.selectedOverlay`) is a :class:`.Image` instance
@@ -207,29 +198,29 @@ class CanvasPanel(viewpanel.ViewPanel):
     ``wx.CallLater``.
     """
 
-    
-    movieRate = props.Int(minval=10, maxval=500, default=250, clamped=True)
+
+    movieRate = props.Int(minval=10, maxval=500, default=400, clamped=True)
     """The movie update rate in milliseconds. The value of this property is
     inverted so that a high value corresponds to a fast rate, which makes
     more sense when displayed as an option to the user.
     """
 
-    
+
     movieAxis = props.Choice((0, 1, 2, 3), default=3)
     """Axis along which the movie should be played, relative to the
     currently selected :class:`.Image`.
     """
-    
+
 
     def __init__(self, parent, overlayList, displayCtx, frame, sceneOpts):
         """Create a ``CanvasPanel``.
 
         :arg parent:       The :mod:`wx` parent object.
-        
+
         :arg overlayList:  The :class:`.OverlayList` instance.
-        
+
         :arg displayCtx:   The :class:`.DisplayContext` instance.
-        
+
         :arg sceneOpts:    A :class:`.SceneOpts` instance for this
                            ``CanvasPanel`` - must be created by
                            sub-classes.
@@ -243,20 +234,20 @@ class CanvasPanel(viewpanel.ViewPanel):
         # Use this name for listener registration,
         # in case subclasses use the FSLeyesPanel._name
         self.__name = 'CanvasPanel_{}'.format(self._name)
-        
+
         # Bind the sync* properties of this
         # CanvasPanel to the corresponding
         # properties on the DisplayContext
-        # instance. 
+        # instance.
         if displayCtx.getParent() is not None:
             self.bindProps('syncLocation',
                            displayCtx,
-                           displayCtx.getSyncPropertyName('location'))
+                           displayCtx.getSyncPropertyName('worldLocation'))
             self.bindProps('syncOverlayOrder',
                            displayCtx,
                            displayCtx.getSyncPropertyName('overlayOrder'))
-            self.bindProps('syncOverlayDisplay', displayCtx) 
-            
+            self.bindProps('syncOverlayDisplay', displayCtx)
+
         # If the displayCtx instance does not
         # have a parent, this means that it is
         # a top level instance
@@ -289,16 +280,16 @@ class CanvasPanel(viewpanel.ViewPanel):
                                       self.__movieModeChanged)
         self             .addListener('movieAxis',
                                       self.__name,
-                                      self.__movieModeChanged) 
+                                      self.__movieModeChanged)
         self._overlayList.addListener('overlays',
                                       self.__name,
                                       self.__movieModeChanged)
         self._displayCtx .addListener('selectedOverlay',
                                       self.__name,
-                                      self.__movieModeChanged) 
+                                      self.__movieModeChanged)
 
-        # Canvas/colour bar layout is managed in
-        # the layoutColourBarAndCanvas method
+        # Canvas/colour bar layout is managed
+        # in the layoutContainerPanel method
         self.__colourBar = None
 
         self.__opts.addListener('colourBarLocation',
@@ -307,6 +298,14 @@ class CanvasPanel(viewpanel.ViewPanel):
         self.__opts.addListener('showColourBar',
                                 self.__name,
                                 self.__colourBarPropsChanged)
+        self.__opts.addListener('bgColour',
+                                self.__name,
+                                self.__bgfgColourChanged)
+        self.__opts.addListener('fgColour',
+                                self.__name,
+                                self.__bgfgColourChanged)
+
+        async.idle(self.__bgfgColourChanged)
 
 
     def destroy(self):
@@ -323,16 +322,26 @@ class CanvasPanel(viewpanel.ViewPanel):
         self._displayCtx .removeListener('selectedOverlay',   self.__name)
         self.__opts      .removeListener('colourBarLocation', self.__name)
         self.__opts      .removeListener('showColourBar',     self.__name)
-            
+        self.__opts      .removeListener('bgColour',          self.__name)
+        self.__opts      .removeListener('fgColour',          self.__name)
+
+        self.__opts = None
+
         viewpanel.ViewPanel.destroy(self)
 
 
     @actions.action
     def screenshot(self):
         """Takes a screenshot of the currently displayed scene on this
-        ``CanvasPanel``. See the :func:`_screenshot` function.
+        ``CanvasPanel``.
+
+        See the :class:`.ScreenshotAction`.
         """
-        _screenshot(self._overlayList, self._displayCtx, self)
+        from fsleyes.actions.screenshot import ScreenshotAction
+
+        ScreenshotAction(self.getOverlayList(),
+                         self.getDisplayContext(),
+                         self)()
 
 
     @actions.action
@@ -345,7 +354,7 @@ class CanvasPanel(viewpanel.ViewPanel):
 
         ShowCommandLineAction(self.getOverlayList(),
                               self.getDisplayContext(),
-                              self)() 
+                              self)()
 
 
     @actions.action
@@ -364,19 +373,19 @@ class CanvasPanel(viewpanel.ViewPanel):
     @actions.toggleAction
     def toggleMovieMode(self):
         """Toggles the value of :attr:`movieMode`. """
-        # The state of this action gets bound to 
-        # the movieMode attribute in __init__ 
+        # The state of this action gets bound to
+        # the movieMode attribute in __init__
         pass
 
 
     @actions.toggleAction
     def toggleDisplaySync(self):
         """Toggles the value of :attr:`syncOverlayDisplay`. """
-        # The state of this action gets bound to 
-        # the syncOverlayDisplay attribute in __init__ 
-        pass 
+        # The state of this action gets bound to
+        # the syncOverlayDisplay attribute in __init__
+        pass
 
-        
+
     @actions.toggleControlAction(overlaylistpanel.OverlayListPanel)
     def toggleOverlayList(self):
         """Toggles an :class:`.OverlayListPanel`. See
@@ -384,34 +393,34 @@ class CanvasPanel(viewpanel.ViewPanel):
         """
         self.togglePanel(overlaylistpanel.OverlayListPanel, location=wx.BOTTOM)
 
-    
+
     @actions.toggleControlAction(overlayinfopanel.OverlayInfoPanel)
     def toggleOverlayInfo(self, floatPane=False):
         """Toggles an :class:`.OverlayInfoPanel`. See
         :meth:`.ViewPanel.togglePanel`.
-        """        
+        """
         self.togglePanel(overlayinfopanel.OverlayInfoPanel,
                          location=wx.RIGHT,
                          floatPane=floatPane)
-    
+
 
     @actions.toggleControlAction(atlaspanel.AtlasPanel)
     def toggleAtlasPanel(self):
         """Toggles an :class:`.AtlasPanel`. See
         :meth:`.ViewPanel.togglePanel`.
         """
-        self.togglePanel(atlaspanel.AtlasPanel, location=wx.BOTTOM) 
+        self.togglePanel(atlaspanel.AtlasPanel, location=wx.BOTTOM)
 
 
     @actions.toggleControlAction(overlaydisplaytoolbar.OverlayDisplayToolBar)
     def toggleDisplayToolBar(self):
         """Toggles an :class:`.OverlayDisplayToolBar`. See
         :meth:`.ViewPanel.togglePanel`.
-        """ 
+        """
         self.togglePanel(overlaydisplaytoolbar.OverlayDisplayToolBar,
                          viewPanel=self)
 
-        
+
     @actions.toggleControlAction(overlaydisplaypanel.OverlayDisplayPanel)
     def toggleDisplayPanel(self, floatPane=False):
         """Toggles an :class:`.OverlayDisplayPanel`. See
@@ -419,8 +428,8 @@ class CanvasPanel(viewpanel.ViewPanel):
         """
         self.togglePanel(overlaydisplaypanel.OverlayDisplayPanel,
                          floatPane=floatPane,
-                         location=wx.LEFT) 
-        
+                         location=wx.LEFT)
+
 
     @actions.toggleControlAction(canvassettingspanel.CanvasSettingsPanel)
     def toggleCanvasSettingsPanel(self, floatPane=False):
@@ -428,32 +437,32 @@ class CanvasPanel(viewpanel.ViewPanel):
         :meth:`.ViewPanel.togglePanel`.
         """
         self.togglePanel(canvassettingspanel.CanvasSettingsPanel,
-                         canvasPanel=self, 
+                         canvasPanel=self,
                          floatPane=floatPane,
-                         location=wx.LEFT) 
+                         location=wx.LEFT)
 
-        
+
     @actions.toggleControlAction(locationpanel.LocationPanel)
     def toggleLocationPanel(self):
         """Toggles a :class:`.LocationPanel`. See
         :meth:`.ViewPanel.togglePanel`.
         """
-        self.togglePanel(locationpanel.LocationPanel, location=wx.BOTTOM) 
+        self.togglePanel(locationpanel.LocationPanel, location=wx.BOTTOM)
 
 
     @actions.toggleControlAction(clusterpanel.ClusterPanel)
     def toggleClusterPanel(self):
         """Toggles a :class:`.ClusterPanel`. See
         :meth:`.ViewPanel.togglePanel`.
-        """ 
-        self.togglePanel(clusterpanel.ClusterPanel, location=wx.TOP) 
+        """
+        self.togglePanel(clusterpanel.ClusterPanel, location=wx.TOP)
 
 
     @actions.toggleControlAction(lookuptablepanel.LookupTablePanel)
     def toggleLookupTablePanel(self):
         """Toggles a :class:`.LookupTablePanel`. See
         :meth:`.ViewPanel.togglePanel`.
-        """ 
+        """
         self.togglePanel(lookuptablepanel.LookupTablePanel, location=wx.RIGHT)
 
 
@@ -461,7 +470,7 @@ class CanvasPanel(viewpanel.ViewPanel):
     def toggleClassificationPanel(self):
         """Toggles a :class:`.MelodicClassificationPanel`. See
         :meth:`.ViewPanel.togglePanel`.
-        """ 
+        """
         self.togglePanel(melclasspanel.MelodicClassificationPanel,
                          location=wx.RIGHT,
                          canvasPanel=self)
@@ -472,8 +481,8 @@ class CanvasPanel(viewpanel.ViewPanel):
         ``CanvasPanel``.
         """
         return self.__opts
-                
-        
+
+
     def getCentrePanel(self):
         """Returns the ``wx.Panel`` which is passed to
         :meth:`.ViewPanel.setCentrePanel`. See the note on
@@ -481,12 +490,12 @@ class CanvasPanel(viewpanel.ViewPanel):
         """
         return self.__centrePanel
 
-    
+
     def getContentPanel(self):
         """Returns the ``wx.Panel`` to which sub-classes must add their content.
         See the note on :ref:`adding content <canvaspanel-adding-content>`.
         """
-        return self.__contentPanel 
+        return self.__contentPanel
 
 
     def getContainerPanel(self):
@@ -512,7 +521,7 @@ class CanvasPanel(viewpanel.ViewPanel):
         """If a colour bar is being displayed, this method returns
         the :class:`.ColourBarCanvas` instance which is used by the
         :class:`.ColourBarPanel` to render the colour bar.
-        
+
         Otherwise, ``None`` is returned.
         """
         if self.__colourBar is not None:
@@ -531,10 +540,10 @@ class CanvasPanel(viewpanel.ViewPanel):
         sizer = wx.BoxSizer(wx.HORIZONTAL)
         sizer.Add(self.__containerPanel, flag=wx.EXPAND, proportion=1)
         self.__centrePanel.SetSizer(sizer)
-        
+
         self.PostSizeEvent()
-        
-    
+
+
     def layoutContainerPanel(self):
         """Creates a ``wx.Sizer``, and uses it to lay out the colour bar panel
         and canvas panel. The sizer object is returned.
@@ -542,6 +551,8 @@ class CanvasPanel(viewpanel.ViewPanel):
         This method is used by the default :meth:`centrePanelLayout` method,
         and is available for custom sub-class implementations to use.
         """
+
+        sopts = self.getSceneOptions()
 
         if not self.__opts.showColourBar:
 
@@ -564,20 +575,21 @@ class CanvasPanel(viewpanel.ViewPanel):
                 self.getOverlayList(),
                 self.getDisplayContext(),
                 self.getFrame())
-            
-            bg = self.getSceneOptions().bgColour
-            fg = colourmaps.complementaryColour(bg) 
+
+            bg = sopts.bgColour
+            fg = sopts.fgColour
             self.__colourBar.getCanvas().textColour = fg
+            self.__colourBar.getCanvas().bgColour   = bg
 
         self.__opts.bindProps('colourBarLabelSide',
                               self.__colourBar,
-                              'labelSide') 
-            
+                              'labelSide')
+
         if   self.__opts.colourBarLocation in ('top', 'bottom'):
             self.__colourBar.orientation = 'horizontal'
         elif self.__opts.colourBarLocation in ('left', 'right'):
             self.__colourBar.orientation = 'vertical'
-        
+
         if self.__opts.colourBarLocation in ('top', 'bottom'):
             sizer = wx.BoxSizer(wx.VERTICAL)
         else:
@@ -598,6 +610,40 @@ class CanvasPanel(viewpanel.ViewPanel):
         :class:`.SceneOpts`). Calls :meth:`canvasPanelLayout`.
         """
         self.centrePanelLayout()
+
+
+    def __bgfgColourChanged(self, *a, **kwa):
+        """Called when the :class:`.SceneOpts.bgColour` or
+        :class:`.SceneOpts.fgColour` properties change.  Updates
+        background/foreground colours.
+
+        The :attr:`.SliceCanvasOpts.bgColour` properties are bound to
+        ``SceneOpts.bgColour``,(see :meth:`.HasProperties.bindProps`), so we
+        don't need to manually update them.
+
+        :arg refresh: Must be passed as a keyword argument. If ``True`` (the
+                      default), this ``OrthoPanel`` is refreshed.
+        """
+        refresh = kwa.pop('refresh', True)
+
+        sceneOpts = self.getSceneOptions()
+        canvases  = self.getGLCanvases()
+        cpanel    = self.getContentPanel()
+        bg        = sceneOpts.bgColour
+        fg        = sceneOpts.fgColour
+
+        cpanel.SetBackgroundColour([c * 255 for c in bg])
+        cpanel.SetForegroundColour([c * 255 for c in fg])
+
+        if self.__colourBar is not None:
+            cbCanvas = self.__colourBar.getCanvas()
+            cbCanvas.textColour = fg
+            cbCanvas.bgColour   = bg
+            canvases.append(cbCanvas)
+
+        if refresh:
+            self.Refresh()
+            self.Update()
 
 
     def __movieModeChanged(self, *a):
@@ -675,13 +721,16 @@ class CanvasPanel(viewpanel.ViewPanel):
         if isinstance(overlay, fslmesh.TriangleMesh) and \
            opts.vertexDataLen() > 1:
             return True
- 
+
         return False
 
 
-    def __doMovieUpdate(self, overlay, opts):
+    def doMovieUpdate(self, overlay, opts):
         """Called by :meth:`__movieFrame`. Updates the properties on the
         given ``opts`` instance to move forward one frame in the movie.
+
+        This method may be overridden by sub-classes for custom behaviour
+        (e.g. the :class:`.Scene3DPanel`).
         """
 
         axis = self.movieAxis
@@ -729,8 +778,8 @@ class CanvasPanel(viewpanel.ViewPanel):
                 other()
 
         def other():
-            
-            bmin, bmax = opts.bounds.getRangea(axis)
+
+            bmin, bmax = opts.bounds.getRange(axis)
             delta      = (bmax - bmin) / 75.0
 
             pos = self._displayCtx.location.getPos(axis)
@@ -760,6 +809,8 @@ class CanvasPanel(viewpanel.ViewPanel):
         :returns: ``True`` if the movie loop was started, ``False`` otherwise.
         """
 
+        from . import scene3dpanel
+
         if self.destroyed():   return False
         if not self.movieMode: return False
 
@@ -782,7 +833,7 @@ class CanvasPanel(viewpanel.ViewPanel):
             c.FreezeDraw()
             c.FreezeSwapBuffers()
 
-        self.__doMovieUpdate(overlay, opts)
+        self.doMovieUpdate(overlay, opts)
 
         # Now we get refs to *all* GLObjects managed
         # by every canvas - we have to wait until
@@ -801,9 +852,18 @@ class CanvasPanel(viewpanel.ViewPanel):
         # number of seconds to wait until
         # triggering the next frame.
         rate    = self.movieRate
-        rateMin = self.getConstraint('movieRate', 'minval')
-        rateMax = self.getConstraint('movieRate', 'maxval')
-        rate    = (rateMin + (rateMax - rate)) / 1000.0
+        rateMin = self.getAttribute('movieRate', 'minval')
+        rateMax = self.getAttribute('movieRate', 'maxval')
+
+        # Special case/hack - if this is a Scene3DPanel,
+        # and the movie axis is X/Y/Z, we always
+        # use a fast rate. Instead, the Scene3dPanel
+        # will increase/decrease the rotation angle
+        # to speed up/slow down the movie instead.
+        if isinstance(self, scene3dpanel.Scene3DPanel) and self.movieAxis < 3:
+            rate = rateMax
+
+        rate = (rateMin + (rateMax - rate)) / 1000.0
 
         # The canvas refreshes are performed by the
         # __syncMovieRefresh or __unsyncMovieRefresh
@@ -811,14 +871,21 @@ class CanvasPanel(viewpanel.ViewPanel):
         # with separate renders/buffer swaps, so we
         # have to use a shitty unsynchronised update
         # routine.
-        useSync = 'gallium' not in fslplatform.glRenderer.lower()
+        #
+        # TODO Ideally, figure out a refresh
+        #      regime that works across all
+        #      drivers. Failing this, make
+        #      this switch user controllable.
+        renderer = fslplatform.glRenderer.lower()
+        unsyncRenderers = ['gallium', 'mesa dri intel(r)']
+        useSync = not any([r in renderer for r in unsyncRenderers])
 
         if useSync: update = self.__syncMovieRefresh
         else:       update = self.__unsyncMovieRefresh
 
         # Refresh the canvases when all
         # GLObjects are ready to be drawn.
-        async.idleWhen(update, allReady, canvases, rate, pollTime=rate / 10) 
+        async.idleWhen(update, allReady, canvases, rate, pollTime=rate / 10)
 
         return True
 
@@ -834,7 +901,7 @@ class CanvasPanel(viewpanel.ViewPanel):
         done at the same time. This method is used for those drivers.
 
         :arg canvases: List of canvases to update. It is assumed that
-                       ``FreezeDraw`` and ``FreezeSwapBuffers`` has been 
+                       ``FreezeDraw`` and ``FreezeSwapBuffers`` has been
                        called on every canvas.
         :arg rate:     Delay to trigger the next movie update.
         """
@@ -851,11 +918,11 @@ class CanvasPanel(viewpanel.ViewPanel):
         """Updates all canvases in a synchronised manner. All canvases are
         refreshed, and then the front/back buffers are swapped on each of
         them.
-        
+
         :arg canvases: List of canvases to update. It is assumed that
-                       ``FreezeDraw`` and ``FreezeSwapBuffers`` has been 
+                       ``FreezeDraw`` and ``FreezeSwapBuffers`` has been
                        called on every canvas.
-        :arg rate:     Delay to trigger the next movie update. 
+        :arg rate:     Delay to trigger the next movie update.
         """
 
         for c in canvases:
@@ -867,206 +934,3 @@ class CanvasPanel(viewpanel.ViewPanel):
             c.SwapBuffers()
 
         async.idle(self.__movieLoop, after=rate)
-
-
-def _screenshot(overlayList, displayCtx, canvasPanel):
-    """Called by the :meth:`CanvasPanel.screenshot` method. Grabs a
-    screenshot of the current scene on the given :class:`.CanvasPanel`,
-    and saves it to a file specified by the user.
-
-    :arg overlayList: A :class:`.OverlayList` .
-    :arg displayCtx:  A :class:`.DisplayContext` instance.
-    :arg canvas:      A :class:`CanvasPanel` instance. 
-    """
-
-    # Ask the user where they want 
-    # the screenshot to be saved
-    fromDir = fslsettings.read('canvasPanelScreenshotLastDir',
-                               default=os.getcwd())
-    
-    dlg = wx.FileDialog(
-        canvasPanel,
-        message=strings.messages['CanvasPanel.screenshot'],
-        defaultDir=fromDir,
-        style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
-
-    if dlg.ShowModal() != wx.ID_OK:
-        return
-
-    filename = dlg.GetPath()
-
-    # Make the dialog go away before
-    # the screenshot gets taken
-    dlg.Close()
-    dlg.Destroy()
-    wx.Yield()
-
-    # We do the screenshot asynchronously,
-    # to make sure it is performed on
-    # the main thread, during idle time
-    def doScreenshot(panel):
-
-        # Make a H*W*4 bitmap array (h*w because
-        # that's how matplotlib want it). We
-        # initialise the bitmap to the current
-        # background colour, due to some sizing
-        # issues that are discussed in the
-        # osxPatch function below.
-        opts          = canvasPanel.getSceneOptions()
-        bgColour      = np.array(opts.bgColour) * 255
-
-        width, height = panel.GetClientSize().Get()
-        data          = np.zeros((height, width, 4), dtype=np.uint8)
-        data[:, :, :] = bgColour
-
-        log.debug('Creating bitmap {} * {} for {} screenshot'.format(
-            width, height, type(canvasPanel).__name__))
-
-        # The typical way to get a screen grab of a
-        # wx Window is to use a wx.WindowDC, and a
-        # wx.MemoryDC, and to 'blit' a region from
-        # the window DC into the memory DC. Then we
-        # extract the bitmap data and copy it into
-        # our array.
-        windowDC = wx.WindowDC(panel)
-        memoryDC = wx.MemoryDC()
-        bmp      = wx.EmptyBitmap(width, height)
-        
-        # Copy the contents of the canvas
-        # container to the bitmap
-        memoryDC.SelectObject(bmp)
-        memoryDC.Blit(
-            0,
-            0,
-            width,
-            height,
-            windowDC,
-            0,
-            0)
-        memoryDC.SelectObject(wx.NullBitmap)
- 
-        rgb = bmp.ConvertToImage().GetData()
-        rgb = np.fromstring(rgb, dtype=np.uint8)
-
-        data[:, :, :3] = rgb.reshape(height, width, 3)
-
-        # OSX and SSh/X11 both have complications
-        if fslplatform.inSSHSession or fslplatform.os == 'Darwin':
-            data = osxPatch(panel, data, bgColour)
-        
-        data[:, :,  3] = 255
-
-        mplimg.imsave(filename, data)
-
-
-    def osxPatch(panel, data, bgColour):
-
-        # For some unknown reason, under OSX the
-        # contents of wx.glcanvas.GLCanvas instances
-        # are not captured by the WindowDC/MemoryDC
-        # blitting process described above - they come
-        # out all black.
-        #
-        # So here, I'm manually patching in bitmaps
-        # (read from the GL front buffer) of each
-        # GLCanvas that is displayed in the canvas
-        # panel.
-
-        # Get all the wx GLCanvas instances
-        # which are displayed in the panel,
-        # including the colour bar canvas
-        glCanvases = canvasPanel.getGLCanvases()
-        glCanvases.append(canvasPanel.getColourBarCanvas())
-
-        totalWidth, totalHeight = panel.GetClientSize().Get()
-        absPosx,    absPosy     = panel.GetScreenPosition()
-
-        # Patch in bitmaps for every GL canvas
-        for glCanvas in glCanvases:
-
-            # If the colour bar is not displayed,
-            # the colour bar canvas will be None
-            if glCanvas is None:
-                continue
-
-            # Hidden wx objects will
-            # still return a size
-            if not glCanvas.IsShown():
-                continue
-
-            width, height = glCanvas.GetClientSize().Get()
-            posx, posy    = glCanvas.GetScreenPosition()
-
-            posx -= absPosx
-            posy -= absPosy
-
-            log.debug('Canvas {} position: ({}, {}); size: ({}, {})'.format( 
-                type(glCanvas).__name__, posx, posy, width, height)) 
-
-            xstart = posx
-            ystart = posy
-            xend   = xstart + width
-            yend   = ystart + height
-
-            bmp = glCanvas.getBitmap()
-
-            # Under OSX, there seems to be a size/position
-            # miscalculation  somewhere, such that if the last
-            # canvas is on the hard edge of the parent, the
-            # canvas size spills over the parent size by a
-            # couple of pixels. If this occurs, I re-size the
-            # final bitmap accordingly.
-            #
-            # n.b. This is why I initialise the bitmap array
-            #      to the canvas panel background colour.
-            if xend > totalWidth:
-                
-                oldWidth    = totalWidth
-                totalWidth  = xend
-                newData     = np.zeros((totalHeight, totalWidth, 4),
-                                       dtype=np.uint8)
-                
-                newData[:, :, :]         = bgColour
-                newData[:, :oldWidth, :] = data
-                data                     = newData
-
-                log.debug('Adjusted bitmap width: {} -> {}'.format(
-                    oldWidth, totalWidth))
-                
-            if yend > totalHeight:
-                
-                oldHeight   = totalHeight
-                totalHeight = yend
-                newData     = np.zeros((totalHeight, totalWidth, 4),
-                                       dtype=np.uint8)
-                
-                newData[:, :, :]          = bgColour
-                newData[:oldHeight, :, :] = data
-                data                      = newData
-
-                log.debug('Adjusted bitmap height: {} -> {}'.format(
-                    oldHeight, totalHeight)) 
-
-            log.debug('Patching {} in at [{} - {}], [{} - {}]'.format(
-                type(glCanvas).__name__, xstart, xend, ystart, yend))
-            
-            data[ystart:yend, xstart:xend] = bmp
-
-        return data
-
-    # The canvas panel container is the
-    # direct parent of the colour bar
-    # canvas, and an ancestor of the
-    # other GL canvases. So that's the
-    # one that we want to take a screenshot
-    # of.
-    doScreenshot = status.reportErrorDecorator(
-        strings.titles[  'CanvasPanel.screenshot.error'],
-        strings.messages['CanvasPanel.screenshot.error'])(doScreenshot)
-
-    async.idle(doScreenshot, canvasPanel.getContainerPanel())
-    
-    status.update(
-        strings.messages['CanvasPanel.screenshot.pleaseWait'].format(filename))
-
-    fslsettings.write('canvasPanelScreenshotLastDir', op.dirname(filename))

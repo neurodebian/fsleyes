@@ -6,7 +6,7 @@
 #
 """This module provides the :class:`OrthoCropProfile` class, an interaction
 :class:`.Profile` for :class:`.OrthoPanel` views.
-""" 
+"""
 
 
 import logging
@@ -15,12 +15,11 @@ import wx
 
 import numpy as np
 
-import props
-
 import fsl.data.image                     as fslimage
-import fsl.utils.dialog                   as fsldlg
 import fsl.utils.callfsl                  as callfsl
 from   fsl.utils.platform import platform as fslplatform
+import fsleyes_props                      as props
+import fsleyes_widgets.dialog             as fsldlg
 import fsleyes.strings                    as strings
 import fsleyes.actions                    as actions
 import fsleyes.gl.annotations             as annotations
@@ -51,16 +50,16 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
     image, using :class:`.Rect` annotations. Mouse handlers are also
     defined, allowing the user to adjust the box.
 
-    
+
     Once the user has selected a cropping region, the related
     :class:`.CropImagePanel` allows him/her to create a cropped copy of the
     image.
 
-    
+
     The ``OrthoCropProfile`` class defines one mode, in addition to those
     inherited from the :class:`.OrthoViewProfile` class:
 
-    
+
     ======== ===================================================
     ``crop`` Clicking and dragging allows the user to change the
              boundaries of a cropping region.
@@ -113,19 +112,19 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         self.__cachedCrops = {}
 
         # axis:   one of 0, 1, or 2 (X, Y, or Z) -
-        #         the voxel axis of the crop box 
+        #         the voxel axis of the crop box
         #         that is being adjusted
-        # 
+        #
         # limits: one of 0 or 1 (lo or hi) - the
         #         low/high limit of the crop box
         #         that is being adjusted
-        # 
+        #
         # These fields are set when the
         # user is dragging a crop box
         # boundary
         self.__dragAxis  = None
         self.__dragLimit = None
-        
+
         self.__xcanvas = viewPanel.getXCanvas()
         self.__ycanvas = viewPanel.getYCanvas()
         self.__zcanvas = viewPanel.getZCanvas()
@@ -134,15 +133,15 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         # each of the canvases, showing
         # the current cropping box.
         self.__xrect   = annotations.Rect(self.__xcanvas.getAnnotations(),
-                                          1, 2, (0, 0), 0, 0,
+                                          (0, 0), 0, 0,
                                           colour=(0.3, 0.3, 1.0),
                                           filled=True)
         self.__yrect   = annotations.Rect(self.__ycanvas.getAnnotations(),
-                                          0, 2, (0, 0), 0, 0,
+                                          (0, 0), 0, 0,
                                           colour=(0.3, 0.3, 1.0),
                                           filled=True)
         self.__zrect   = annotations.Rect(self.__zcanvas.getAnnotations(),
-                                          0, 1, (0, 0), 0, 0,
+                                          (0, 0), 0, 0,
                                           colour=(0.3, 0.3, 1.0),
                                           filled=True)
 
@@ -169,7 +168,7 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         """Must be called when this ``OrthoCropProfile`` is no longer
         needed. Removes property listeners and does some other clean up.
         """
-        
+
         self._overlayList.removeListener('overlays',        self._name)
         self._displayCtx .removeListener('selectedOverlay', self._name)
         self             .removeListener('cropBox',         self._name)
@@ -177,7 +176,7 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         self.__xcanvas.getAnnotations().dequeue(self.__xrect, hold=True)
         self.__ycanvas.getAnnotations().dequeue(self.__yrect, hold=True)
         self.__zcanvas.getAnnotations().dequeue(self.__zrect, hold=True)
-        
+
         orthoviewprofile.OrthoViewProfile.destroy(self)
 
 
@@ -194,19 +193,19 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
             result = callfsl.callFSL(
                 'robustfov', '-i', self.__overlay.dataSource)
 
-            # robustfov returns two lines, the last 
+            # robustfov returns two lines, the last
             # of which contains the limits, as:
-            # 
+            #
             #    xmin xlen ymin ylen zmin zlen
             limits = list(result.strip().split('\n')[-1].split())
             limits = [float(l) for l in limits]
-            
+
             # Convert the lens to maxes
             limits[1]      += limits[0]
             limits[3]      += limits[2]
             limits[5]      += limits[4]
             self.cropBox[:] = limits
-            
+
         except Exception as e:
             log.warning('Call to robustfov failed: {}'.format(str(e)))
 
@@ -215,28 +214,28 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         """Called by :meth:`__selectedOverlayChanged`. Clears references
         associated with the previously selected overlay, if necessary.
         """
-        
+
         if self.__overlay is None:
             return
 
         self.__cachedCrops[self.__overlay] = list(self.cropBox)
         self.__overlay = None
 
-        
+
     def __registerOverlay(self, overlay):
         """Called by :meth:`__selectedOverlayChanged`. Sets up
         references associated with the given (newly selected) overlay.
-        """ 
+        """
         self.__overlay = overlay
 
-        
+
     def __selectedOverlayChanged(self, *a):
         """Called when the :attr:`.DisplayContext.selectedOverlay` changes.
         If the overlay is a :class:`.Image` instance, it is set as the
         :attr:`.DisplayContext.displaySpace` reference, and the
         :attr:`cropBox` is configured to be relative to the newly selected
         overlay.
-        """ 
+        """
         overlay = self._displayCtx.getSelectedOverlay()
 
         if overlay is self.__overlay:
@@ -268,10 +267,10 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
                 msg   = strings.messages[self, 'imageChange']
                 hint  = strings.messages[self, 'imageChangeHint']
                 msg   = msg.format(overlay.name)
-                hint  = hint.format(overlay.name) 
+                hint  = hint.format(overlay.name)
                 cbMsg = strings.messages[self, 'imageChange.suppress']
                 title = strings.titles[  self, 'imageChange']
-                
+
                 dlg   = fsldlg.CheckBoxMessageDialog(
                     self._viewPanel,
                     title=title,
@@ -284,8 +283,8 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
 
                 dlg.ShowModal()
 
-                _suppressOverlayChangeWarning  = dlg.CheckBoxState() 
-            
+                _suppressOverlayChangeWarning  = dlg.CheckBoxState()
+
             self._displayCtx.displaySpace = overlay
 
         shape = overlay.shape[:3]
@@ -341,7 +340,7 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         self.__xrect.h    = maxs[2] - mins[2]
         self.__xrect.zmin = mins[0] - pads[0]
         self.__xrect.zmax = maxs[0] + pads[0]
-        
+
         self.__yrect.xy   = mins[0],  mins[2]
         self.__yrect.w    = maxs[0] - mins[0]
         self.__yrect.h    = maxs[2] - mins[2]
@@ -354,7 +353,7 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         self.__zrect.zmin = mins[2] - pads[2]
         self.__zrect.zmax = maxs[2] + pads[2]
 
-        # TODO Don't do this if you don't need to 
+        # TODO Don't do this if you don't need to
         self.__xcanvas.Refresh()
         self.__ycanvas.Refresh()
         self.__zcanvas.Refresh()
@@ -380,7 +379,7 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
             elif v >= s: vox[i] = s
 
         return vox
-        
+
 
     def _cropModeLeftMouseDown(self, ev, canvas, mousePos, canvasPos):
         """Called on mouse down events. Calculates the nearest crop box
@@ -389,21 +388,22 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         events (see :meth:`_cropModeLeftMouseDrag`).
         """
 
+        copts   = canvas.opts
         overlay = self.__overlay
 
         if overlay is None:
             return
 
-        # What canvas was the click on? 
-        if   canvas.zax == 0: hax, vax = 1, 2
-        elif canvas.zax == 1: hax, vax = 0, 2
-        elif canvas.zax == 2: hax, vax = 0, 1
+        # What canvas was the click on?
+        if   copts.zax == 0: hax, vax = 1, 2
+        elif copts.zax == 1: hax, vax = 0, 2
+        elif copts.zax == 2: hax, vax = 0, 1
 
         # Figure out the distances from
         # the mouse click  to each crop
         # box boundary on the clicked
         # canvas
-        vox        = self.__getVoxel(overlay, canvasPos) 
+        vox        = self.__getVoxel(overlay, canvasPos)
         hlo, hhi   = self.cropBox.getLo(hax), self.cropBox.getHi(hax)
         vlo, vhi   = self.cropBox.getLo(vax), self.cropBox.getHi(vax)
 
@@ -446,6 +446,9 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         axis, limit = np.unravel_index(np.argmin(dists), (2, 2))
         voxAxis     = [hax, vax][axis]
 
+        axis  = int(axis)
+        limit = int(limit)
+
         # Save these for the mouse drag handler
         self.__dragAxis  = voxAxis
         self.__dragLimit = limit
@@ -462,7 +465,7 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         which was clicked on (see :meth:`_cropModeLeftMouseDown`), so it
         follows the mouse location.
         """
-        
+
         if self.__overlay is None or self.__dragAxis is None:
             return
 
@@ -471,7 +474,6 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
         limit    = self.__dragLimit
         oppLimit = 1 - limit
         vox      = self.__getVoxel(self.__overlay, canvasPos)
-        
 
         newval = vox[axis]
         oppval = box.getLimit(axis, oppLimit)
@@ -484,12 +486,12 @@ class OrthoCropProfile(orthoviewprofile.OrthoViewProfile):
 
         self._displayCtx.location = canvasPos
 
-    
+
     def _cropModeLeftMouseUp(self, ev, canvas, mousePos, canvasPos):
         """Called on left mouse up events. Clears references used by the
         mouse down/drag handlers.
         """
-        
+
         if self.__overlay is None or self.__dragAxis is None:
             return
 

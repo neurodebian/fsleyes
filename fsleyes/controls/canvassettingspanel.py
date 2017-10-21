@@ -9,9 +9,10 @@ control* panel which displays settings for a :class:`.CanvasPanel`.
 """
 
 
-import props
+import collections
 
 import fsl.data.image      as fslimage
+import fsleyes_props       as props
 import fsleyes.panel       as fslpanel
 import fsleyes.tooltips    as fsltooltips
 import fsleyes.strings     as strings
@@ -37,14 +38,15 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
        ~fsleyes.displaycontext.SceneOpts
        ~fsleyes.displaycontext.OrthoOpts
        ~fsleyes.displaycontext.LightBoxOpts
+       ~fsleyes.displaycontext.Scene3DOpts
 
     The ``CanvasSettingsPanel`` divides the displayed settings into those
     which are common to all :class:`.CanvasPanel` instances, and those which
     are specific to the :class:`.CanvasPanel` sub-class (i.e.
-    :class:`.OrthoPanel` or :class:`.LightBoxPanel`).  
+    :class:`.OrthoPanel`,  :class:`.LightBoxPanel`, or :class:`.Scene3DPanel`).
     """
 
-    
+
     def __init__(self, parent, overlayList, displayCtx, frame, canvasPanel):
         """Create a ``CanvasSettingsPanel``.
 
@@ -54,7 +56,7 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
         :arg frame:       The :class:`.FSLeyesFrame` instance.
         :arg canvasPanel: The :class:`.CanvasPanel` instance.
         """
-        
+
         fslpanel.FSLeyesSettingsPanel.__init__(self,
                                                parent,
                                                overlayList,
@@ -65,38 +67,53 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
         self.__canvasPanel = canvasPanel
         self.__makeTools()
 
-        
+
+    def destroy(self):
+        """Must be called when this ``CanvasSettingsPanel`` is no longer
+        needed. Clears references and calls the base class ``destroy`` method.
+        """
+        self.__canvasPanel = None
+        super(CanvasSettingsPanel, self).destroy()
+
+
     def __makeTools(self):
 
         displayCtx  = self._displayCtx
         canvasPanel = self.__canvasPanel
         widgets     = self.getWidgetList()
 
-        canvasPanelProps = [
-            props.Widget('syncOverlayOrder'),
-            props.Widget('syncLocation'),
-            props.Widget('syncOverlayDisplay'),
-            props.Widget('movieMode'),
-            props.Widget('movieAxis',
-                         labels=strings.choices[canvasPanel, 'movieAxis']),
-            props.Widget('movieRate', spin=False, showLimits=False)]
+        canvasPanelProps = collections.OrderedDict((
+            ('syncOverlayOrder',   props.Widget('syncOverlayOrder')),
+            ('syncLocation',       props.Widget('syncLocation')),
+            ('syncOverlayDisplay', props.Widget('syncOverlayDisplay')),
+            ('movieMode',          props.Widget('movieMode')),
+            ('movieAxis',
+             props.Widget('movieAxis',
+                          labels=strings.choices[canvasPanel, 'movieAxis'])),
+            ('movieRate',
+             props.Widget('movieRate', spin=False, showLimits=False))))
 
-        sceneOptsProps = [
-            props.Widget('showCursor'),
-            props.Widget('bgColour'),
-            props.Widget('cursorColour'),
-            props.Widget('performance',
-                         spin=False,
-                         showLimits=False,
-                         labels=strings.choices['SceneOpts.performance']),
-            props.Widget('showColourBar'),
-            props.Widget('colourBarLabelSide',
-                         labels=strings.choices[
-                             'SceneOpts.colourBarLabelSide'],
-                         enabledWhen=lambda o: o.showColourBar),
-            props.Widget('colourBarLocation',
-                         labels=strings.choices['SceneOpts.colourBarLocation'],
-                         enabledWhen=lambda o: o.showColourBar)]
+        sceneOptsProps = collections.OrderedDict((
+            ('showCursor',   props.Widget('showCursor')),
+            ('bgColour',     props.Widget('bgColour')),
+            ('fgColour',     props.Widget('fgColour')),
+            ('cursorColour', props.Widget('cursorColour')),
+            ('performance',
+             props.Widget('performance',
+                          spin=False,
+                          showLimits=False,
+                          labels=strings.choices['SceneOpts.performance'])),
+            ('showColourBar', props.Widget('showColourBar')),
+            ('colourBarLabelSide',
+             props.Widget('colourBarLabelSide',
+                          labels=strings.choices[
+                              'SceneOpts.colourBarLabelSide'],
+                          enabledWhen=lambda o: o.showColourBar)),
+            ('colourBarLocation',
+             props.Widget(
+                 'colourBarLocation',
+                 labels=strings.choices['SceneOpts.colourBarLocation'],
+                 enabledWhen=lambda o: o.showColourBar))))
 
         def _displaySpaceOptionName(opt):
 
@@ -105,53 +122,73 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
             else:
                 return strings.choices['DisplayContext.displaySpace'][opt]
 
-        displayCtxProps = [
-            props.Widget('displaySpace',
-                         labels=_displaySpaceOptionName,
-                         dependencies=[(canvasPanel, 'profile')],
-                         enabledWhen=lambda i, p: p == 'view'),
-            props.Widget('radioOrientation')]
+        displayCtxProps = collections.OrderedDict((
+            ('displaySpace',
+             props.Widget('displaySpace',
+                          labels=_displaySpaceOptionName,
+                          dependencies=[(canvasPanel, 'profile')],
+                          enabledWhen=lambda i, p: p == 'view')),
+            ('radioOrientation', props.Widget('radioOrientation'))))
 
-        orthoOptsProps = [
-            props.Widget('layout', labels=strings.choices['OrthoOpts.layout']), 
-            props.Widget('zoom', showLimits=False),
-            props.Widget('showLabels'),
-            props.Widget('labelColour'),
-            props.Widget('labelSize',
-                         spin=True,
-                         showLimits=False,
-                         dependencies=['showLabels'],
-                         enabledWhen=lambda i, s: s),
-            props.Widget('cursorGap'),
-            props.Widget('showXCanvas'),
-            props.Widget('showYCanvas'),
-            props.Widget('showZCanvas')]
+        orthoOptsProps = collections.OrderedDict((
+            ('layout',
+             props.Widget('layout',
+                          labels=strings.choices['OrthoOpts.layout'])),
+            ('zoom',        props.Widget('zoom', showLimits=False)),
+            ('showLabels',  props.Widget('showLabels')),
+            ('labelSize',   props.Widget('labelSize',
+                                         spin=True,
+                                         showLimits=False,
+                                         dependencies=['showLabels'],
+                                         enabledWhen=lambda i, s: s)),
+            ('cursorGap',   props.Widget('cursorGap')),
+            ('showXCanvas', props.Widget('showXCanvas')),
+            ('showYCanvas', props.Widget('showYCanvas')),
+            ('showZCanvas', props.Widget('showZCanvas'))))
 
-        lightBoxOptsProps = [
-            props.Widget('zax', labels=strings.choices['CanvasOpts.zax']),
-            props.Widget('zoom',         showLimits=False, spin=False),
-            props.Widget('sliceSpacing', showLimits=False),
-            props.Widget('zrange',       showLimits=False),
-            props.Widget('highlightSlice'),
-            props.Widget('showGridLines')]
+        lightBoxOptsProps = collections.OrderedDict((
+            ('zax',
+             props.Widget('zax', labels=strings.choices['CanvasOpts.zax'])),
+            ('zoom',
+             props.Widget('zoom', showLimits=False, spin=False)),
+            ('sliceSpacing',   props.Widget('sliceSpacing', showLimits=False)),
+            ('zrange',         props.Widget('zrange',       showLimits=False)),
+            ('highlightSlice', props.Widget('highlightSlice')),
+            ('showGridLines',  props.Widget('showGridLines'))))
+
+        scene3dOptsProps = collections.OrderedDict((
+            ('zoom',       props.Widget('zoom', showLimits=False)),
+            ('showLegend', props.Widget('showLegend')),
+            ('light',      props.Widget('light')),
+            ('occlusion',  props.Widget('occlusion')),
+        ))
 
         import fsleyes.views.orthopanel    as orthopanel
         import fsleyes.views.lightboxpanel as lightboxpanel
+        import fsleyes.views.scene3dpanel  as scene3dpanel
 
         if isinstance(canvasPanel, orthopanel.OrthoPanel):
             panelGroup = 'ortho'
             panelProps = orthoOptsProps
-            
+
         elif isinstance(canvasPanel, lightboxpanel.LightBoxPanel):
             panelGroup = 'lightbox'
             panelProps = lightBoxOptsProps
+        elif isinstance(canvasPanel, scene3dpanel.Scene3DPanel):
+            panelGroup = '3d'
+            panelProps = scene3dOptsProps
+
+            # We hide some options in 3D
+            sceneOptsProps .pop('performance')
+            displayCtxProps.pop('displaySpace')
+            displayCtxProps.pop('radioOrientation')
 
         widgets.AddGroup('scene' ,    strings.labels[self, 'scene'])
         widgets.AddGroup( panelGroup, strings.labels[self,  panelGroup])
 
         allWidgets = []
 
-        for dispProp in canvasPanelProps:
+        for dispProp in canvasPanelProps.values():
 
             widget = props.buildGUI(widgets,
                                     canvasPanel,
@@ -167,7 +204,7 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
 
         opts = canvasPanel.getSceneOptions()
 
-        for dispProp in sceneOptsProps:
+        for dispProp in sceneOptsProps.values():
 
             widget = props.buildGUI(widgets,
                                     opts,
@@ -181,7 +218,7 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
                 tooltip=fsltooltips.properties[opts, dispProp.key],
                 groupName='scene')
 
-        for dispProp in displayCtxProps:
+        for dispProp in displayCtxProps.values():
             widget = props.buildGUI(widgets,
                                     displayCtx,
                                     dispProp,
@@ -192,9 +229,9 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
                 widget,
                 displayName=strings.properties[displayCtx, dispProp.key],
                 tooltip=fsltooltips.properties[displayCtx, dispProp.key],
-                groupName='scene')                
+                groupName='scene')
 
-        for dispProp in panelProps:
+        for dispProp in panelProps.values():
 
             widget = props.buildGUI(widgets,
                                     opts,

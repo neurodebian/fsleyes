@@ -34,8 +34,8 @@ into the following categories:
 
 import textwrap
 
-from fsl.utils.typedict import TypeDict
-import fsl.data.constants as constants
+from   fsleyes_widgets.utils.typedict import TypeDict
+import fsl.data.constants                 as constants
 
 
 messages = TypeDict({
@@ -55,10 +55,10 @@ messages = TypeDict({
                                                'perspective',
     'SavePerspectiveAction.nameIsBuiltIn'    : '"{}" is a reserved '
                                                'perspective name - '
-                                               'enter a different name.', 
+                                               'enter a different name.',
     'SavePerspectiveAction.confirmOverwrite' : 'A perspective with the name '
                                                '"{}" already exists - do '
-                                               'you want to replace it?', 
+                                               'you want to replace it?',
 
     'ClearPerspectiveAction.confirmClear' : 'All saved perspectives will be '
                                             'cleared! Are you sure you want '
@@ -70,7 +70,7 @@ messages = TypeDict({
     'An error occurred initialising the display for {}',
 
     'Texture3D.dataError'  :
-    'An error occurred updating the texture data', 
+    'An error occurred updating the texture data',
 
     'SaveOverlayAction.overwrite'      : 'Do you want to overwrite {}, or '
                                          'save the image to a new file?',
@@ -80,19 +80,24 @@ messages = TypeDict({
 
     'loadOverlays.unknownType' : 'Unknown data type',
 
-    'actions.loadcolourmap.loadcmap'    : 'Open colour map file',
-    'actions.loadcolourmap.namecmap'    : 'Enter a name for the colour map - '
-                                          'please use only letters, numbers, '
-                                          'and underscores.',
-    'actions.loadcolourmap.installcmap' : 'Do you want to install '
-                                          'this colour map permanently?',
-    'actions.loadcolourmap.alreadyinstalled' : 'A colour map with that name '
-                                               'already exists - choose a '
-                                               'different name.',
-    'actions.loadcolourmap.invalidname'      : 'Please use only letters, '
-                                               'numbers, and underscores.',
-    'actions.loadcolourmap.installerror'     : 'An error occurred while '
-                                               'installing the colour map. ',
+    'LoadColourMapAction.loadcmap'    : 'Open colour map file',
+    'LoadColourMapAction.namecmap'    : 'Enter a name for the colour map.',
+
+    'LoadColourMapAction.installcmap' :
+    'Do you want to install this colour map permanently?',
+
+    'LoadColourMapAction.alreadyinstalled' :
+    'A colour map with that name already exists - choose a different name.',
+
+    'LoadColourMapAction.installerror'     :
+    'An error occurred while installing the colour map. ',
+
+    'LookupTablePanel.newlut' :
+    'Enter a name for the lookup table.',
+    'LookupTablePanel.alreadyinstalled' :
+    'A lookup table with that name already exists - choose a different name.',
+    'LookupTablePanel.installerror' :
+    'An error occurred while installing the lookup table.',
 
     'actions.copyoverlay.createMask'  : 'Create empty mask image '
                                         'with same dimensions',
@@ -110,7 +115,7 @@ messages = TypeDict({
 
     'AtlasOverlayPanel.loadAtlasError' : 'An error occurred while trying '
                                         'to load the atlas overlay for '
-                                        '"{}":\nDetails: {}', 
+                                        '"{}":\nDetails: {}',
 
     'AtlasInfoPanel.notMNISpace'   : 'The selected overlay does not appear to '
                                      'be in MNI152 space - atlas '
@@ -122,23 +127,10 @@ messages = TypeDict({
     'AtlasInfoPanel.loadAtlasError' : 'An error occurred while trying '
                                       'to load the atlas "{}":\nDetails: {}',
 
-    'CanvasPanel.screenshot'            : 'Save screenshot',
-    'CanvasPanel.screenshot.notSaved'   : 'Overlay {} needs saving before a '
-                                          'screenshot can be taken.',
-    'CanvasPanel.screenshot.pleaseWait' : 'Saving screenshot to {}...',
-    'CanvasPanel.screenshot.error'      : 'An error occurred saving the '
-                                          'screenshot.',
-
     'CanvasPanel.showCommandLineArgs.title'   : 'Scene parameters',
     'CanvasPanel.showCommandLineArgs.message' : 'Use these parameters on the '
                                                 'command line to recreate '
                                                 'the current scene',
-
-    'PlotPanel.screenshot'              : 'Save screenshot',
-
-    'PlotPanel.screenshot.error'       : 'An error occurred while saving the '
-                                         'screenshot.\n\n'
-                                         'Details: {}',
 
     'PlotPanel.preparingData'          : 'Preparing data - please wait...',
 
@@ -146,8 +138,6 @@ messages = TypeDict({
 
     'LookupTablePanel.labelExists' : 'The {} LUT already contains a '
                                      'label with value {}',
-
-    'NewLutDialog.newLut' : 'Enter a name for the new LUT',
 
     'ClusterPanel.noOverlays'     : 'Add a FEAT overlay',
     'ClusterPanel.notFEAT'        : 'Choose a FEAT overlay',
@@ -157,22 +147,12 @@ messages = TypeDict({
                                     'check your cluster_*.txt files.',
     'ClusterPanel.loadingCluster' : 'Loading clusters for COPE{} ({}) ...',
 
-    'OrthoPanel.toggleEditTransformPanel.displaySpaceChange' :
-    'You are now transforming {}. ',
-    
-    'OrthoPanel.toggleEditTransformPanel.displaySpaceChange.hint' :
-    'Setting the display space to world coordinates - \n'
-    'this is required when transforming images.', 
-    
-    'OrthoPanel.toggleEditTransformPanel.displaySpaceChange.suppress' :
-    'Do not show this message again', 
-
     'OrthoEditProfile.imageChange'        : 'You are now editing {}. ',
     'OrthoEditProfile.imageChangeHint'    : 'Setting {} as the display '
                                             'space reference\nimage - the '
                                             'display space must match the '
-                                            'image being edited.', 
-    
+                                            'image being edited.',
+
     'OrthoEditProfile.imageChange.suppress' : 'Do not show this '
                                               'message again',
 
@@ -180,54 +160,53 @@ messages = TypeDict({
     'OrthoCropProfile.imageChangeHint'    : 'Setting {} as the display '
                                             'space reference\nimage - the '
                                             'display space must match the '
-                                            'image being cropped.', 
-    
-    'OrthoCropProfile.imageChange.suppress' : 'Do not show this '
-                                              'message again', 
+                                            'image being cropped.',
 
-    'MelodicClassificationPanel.disabled'    : 'Choose a melodic image.',
-    'MelodicClassificationPanel.loadError'   : 'An error occurred while '
-                                               'loading the file {}.'
-                                               '\n\nDetails: {}',
-    'MelodicClassificationPanel.noMelDir'    : 'The label file {} does not '
-                                               'specify a path to a Melodic '
-                                               'directory!',
-    'MelodicClassificationPanel.saveError'   : 'An error occurred while '
-                                               'saving the file {}.'
-                                               '\n\nDetails: {}', 
-    'MelodicClassificationPanel.wrongNComps' : 'The mumber of components in '
-                                               'the label file {} is greater '
-                                               'than the number of components '
-                                               'in the overlay {}!',
-    'MelodicClassificationPanel.diffMelDir'  : 'The label file {} does not '
-                                               'refer to the melodic '
-                                               'directory of the selected '
-                                               'overlay ({}). What do you '
-                                               'want to do?',
-    
-    'MelodicClassificationPanel.diffMelDir.labels'  : 'Load the overlay in '
-                                                      'the label file',
-    'MelodicClassificationPanel.diffMelDir.overlay' : 'Apply the labels to '
-                                                      'the current overlay',
+    'OrthoCropProfile.imageChange.suppress' : 'Do not show this '
+                                              'message again',
+
+    'MelodicClassificationPanel.disabled' :
+    'Choose a melodic or other 4D image.',
+    'MelodicClassificationPanel.loadError' :
+    'An error occurred while loading the file {}.',
+    'MelodicClassificationPanel.noMelDir' :
+    'The label file {} does not specify a path to a Melodic directory!',
+    'MelodicClassificationPanel.saveError' :
+    'An error occurred while saving the file {}.',
+    'MelodicClassificationPanel.wrongNComps' :
+    'The mumber of components in the label file {} is greater than the number '
+    'of components in the overlay {}!',
+    'MelodicClassificationPanel.diffMelDir' :
+    'The label file {} does not refer to the melodic directory of the '
+    'selected overlay ({}). What do you want to do?',
+    'MelodicClassificationPanel.diffMelDir.labels'  :
+    'Load the overlay in the label file',
+    'MelodicClassificationPanel.diffMelDir.overlay' :
+    'Apply the labels to the current overlay',
+
+
+    'ScreenshotAction.screenshot' : 'Save screenshot',
+    'ScreenshotAction.pleaseWait' : 'Saving screenshot to {}...',
+    'ScreenshotAction.error'      : 'An error occurred saving the screenshot.',
 
     'SaveOverlayAction.saveError' :
-    'An error occurred while saving the file {}.\n\nDetails: {} - {}',
+    'An error occurred while saving the file {}.',
 
     'removeoverlay.unsaved' :
     'This image has unsaved changes - are you sure you want to remove it?',
 
     'reloadoverlay.unsaved' :
-    'This image has unsaved changes - are you sure you want to reload it?', 
-    
+    'This image has unsaved changes - are you sure you want to reload it?',
+
     'RemoveAllOverlaysAction.unsavedOverlays' :
-    'You have unsaved images - are you sure you want to remove them all?', 
+    'You have unsaved images - are you sure you want to remove them all?',
 
     'ImportDataSeriesAction.selectFile'   :
     'Import data series from',
-    
+
     'ImportDataSeriesAction.error'        :
     'Could not load {}! Details:\n\n{}',
-    
+
     'ImportDataSeriesAction.selectXScale' :
     'Set the X axis sampling rate/scaling factor',
 
@@ -235,13 +214,24 @@ messages = TypeDict({
     'ExportDataSeriesAction.saveXColumn'  : 'Export the X axis data '
                                             'as the first column?',
 
+    'AddMaskDataSeriesAction.selectMask'  :
+    'Choose an ROI mask to extract the time series data (mean across\n'
+    'voxels, optionally weighted by mask values) from {}:',
+
+    'AddMaskDataSeriesAction.weighted'  :
+    'Calculate weighted mean using the ROI mask voxel values as weights',
+
+    'AddROIHistogramAction.selectMask' :
+    'Choose an ROI mask to plot the histogram from {} for:',
+
     'LoadAtlasAction.error'       :
     'An error occurred loading the atlas specification {}.',
 
-    'ClearSettingsAction.confirm'       :
+    'ClearSettingsAction.confirm' :
     'Are you sure you want to clear all FSLeyes settings? All preferences, '
-    'saved perspectives and loaded atlases will be lost!\n\n'
-    'You will need to restart FSLeyes for some changes to take effect.',
+    'saved perspectives, colour maps, lookup tables, and loaded atlases will '
+    'be lost!\n\nYou will need to restart FSLeyes for some changes to take '
+    'effect.',
 
     'CorrelateAction.calculating' :
     'Calculating correlation values for seed voxel [{}, {}, {}] ...',
@@ -250,10 +240,17 @@ messages = TypeDict({
     'An error occurred saving the FLIRT matrix.',
 
     'SaveFlirtXfmAction.error' :
-    'An error occurred saving the FLIRT matrix.', 
+    'An error occurred saving the FLIRT matrix.',
 
     'FlirtFileDialog.matFile'    : 'Select FLIRT transformation matrix file',
     'FlirtFileDialog.refFile'    : 'Select FLIRT reference image',
+
+    'CropImagePanel.saveCrop'  : 'Select a file to save the crop parameters',
+    'CropImagePanel.loadCrop'  : 'Select a file to load crop parameters from',
+    'CropImagePanel.saveError' :
+    'An error occurred saving the crop parameters',
+    'CropImagePanel.loadError' :
+    'An error occurred loading the crop parameters',
 
 
     'LoadVertexDataAction.loadVertexData' :
@@ -280,19 +277,20 @@ messages = TypeDict({
 
 
 titles = TypeDict({
-    
+
     'interactiveLoadOverlays.fileDialog' : 'Open overlay files',
     'interactiveLoadOverlays.dirDialog'  : 'Open overlay directories',
-    
+
     'loadOverlays.error'  : 'Error loading overlay',
 
     'FSLeyesFrame.saveLayout'      : 'Save layout',
     'FSLeyesFrame.unsavedOverlays' : 'Unsaved images',
 
     'FSLeyesApp.openURLError' : 'Error loading URL',
-    
+
     'OrthoPanel'         : 'Ortho View',
     'LightBoxPanel'      : 'Lightbox View',
+    'Scene3DPanel'       : '3D View',
     'TimeSeriesPanel'    : 'Time series',
     'PowerSpectrumPanel' : 'Power spectra',
     'HistogramPanel'     : 'Histogram',
@@ -301,11 +299,6 @@ titles = TypeDict({
     'SliceCanvas.globjectError'  : 'Error initialising display',
     'Texture3D.dataError'        : 'Error updating data',
 
-    'CanvasPanel.screenshot'          : 'Save screenshot',
-    'CanvasPanel.screenshot.notSaved' : 'Save overlay before continuing',
-    'CanvasPanel.screenshot.error'    : 'Error saving screenshot',
-
-    'PlotPanel.screenshot.error'      : 'Error saving screenshot',
 
     'AtlasInfoPanel'       : 'Atlas information',
     'AtlasOverlayPanel'    : 'Atlas search',
@@ -324,7 +317,6 @@ titles = TypeDict({
     'LightBoxToolBar'           : 'Lightbox view toolbar',
     'LookupTablePanel'          : 'Lookup tables',
     'LutLabelDialog'            : 'New LUT label',
-    'NewLutDialog'              : 'New LUT',
 
     'PlotListPanel'             : 'Plot list',
     'TimeSeriesControlPanel'    : 'Time series control',
@@ -341,14 +333,18 @@ titles = TypeDict({
     'CropImagePanel'             : 'Crop',
     'EditTransformPanel'         : 'Nudge',
 
-    'LookupTablePanel.loadLut'     : 'Select a lookup table file',
-    'LookupTablePanel.labelExists' : 'Label already exists',
+    'LookupTablePanel.newlut'       : 'Name lookup table',
+    'LookupTablePanel.loadLut'      : 'Select a lookup table file',
+    'LookupTablePanel.labelExists'  : 'Label already exists',
+    'LookupTablePanel.installerror' : 'Error installing lookup table',
 
     'MelodicClassificationPanel.loadDialog' : 'Load FIX/Melview file...',
     'MelodicClassificationPanel.saveDialog' : 'Save FIX/Melview file...',
     'MelodicClassificationPanel.loadError'  : 'Error loading FIX/Melview file',
     'MelodicClassificationPanel.saveError'  : 'Error saving FIX/Melview file',
 
+    'ScreenshotAction.screenshot'          : 'Save screenshot',
+    'ScreenshotAction.error'               : 'Error saving screenshot',
     'ClearPerspectiveAction.confirmClear'  : 'Clear all perspectives?',
     'DiagnosticReportAction.saveReport'    : 'Save diagnostic report',
     'SaveOverlayAction.overwrite'          : 'Overwrite existing file?',
@@ -356,14 +352,11 @@ titles = TypeDict({
     'SaveOverlayAction.saveError'          : 'Error saving file',
 
     'RemoveAllOverlaysAction.unsavedOverlays' : 'Unsaved images',
-    
+
     'removeoverlay.unsaved' : 'Remove unsaved image?',
     'reloadoverlay.unsaved' : 'Reload unsaved image?',
 
     'OrthoPanel.toolMenu'                 : 'Tools',
-
-    'OrthoPanel.toggleEditTransformPanel.displaySpaceChange' :
-    'Changing display space for transform',
 
     'OrthoEditProfile.imageChange'        : 'Changing edited image',
     'OrthoCropProfile.imageChange'        : 'Changing cropped image',
@@ -373,16 +366,28 @@ titles = TypeDict({
 
     'ExportDataSeriesAction.saveXColumn'  : 'Save X data?',
 
+    'CropImagePanel.loadError' : 'Error loading crop parameters',
+    'CropImagePanel.saveError' : 'Error saving crop parameters',
+
+    'AddMaskDataSeriesAction.selectMask'  :
+    'ROI time series from {}',
+
+    'AddROIHistogramAction.selectMask'  :
+    'ROI histogram from {}',
+
     'LoadAtlasAction.fileDialog'  : 'Load XML atlas specification',
     'LoadAtlasAction.error'       : 'Error loading atlas specification',
 
     'LoadVertexDataAction.error' : 'Error loading vertex data',
 
-    'SaveFlirtXfmAction.error' : 'Error saving theFLIRT matrix', 
+    'SaveFlirtXfmAction.error' : 'Error saving theFLIRT matrix',
 
     'ClearSettingsAction.confirm' : 'Clear all settings?',
 
+
+    'LoadColourMapAction.namecmap'        : 'Name colour map.',
     'LoadColourMapAction.installcmap'     : 'Install colour map?',
+    'LoadColourMapAction.installerror'    : 'Error installing colour map',
 
     'UpdateCheckAction.upToDate'            : 'FSLeyes is up to date',
     'UpdateCheckAction.newVersionAvailable' : 'New version available',
@@ -416,10 +421,12 @@ actions = TypeDict({
     'ApplyFlirtXfmAction'      : 'Load FLIRT transformation',
     'SaveFlirtXfmAction'       : 'Export FLIRT transformation',
     'PCACorrelateAction'       : 'Seed correlation (PCA)',
+    'ResampleAction'           : 'Resample image',
 
     'FSLeyesFrame.removeFocusedViewPanel'  : 'Close',
     'FSLeyesFrame.addOrthoPanel'           : 'Ortho View',
     'FSLeyesFrame.addLightBoxPanel'        : 'Lightbox View',
+    'FSLeyesFrame.addScene3DPanel'         : '3D view',
     'FSLeyesFrame.addTimeSeriesPanel'      : 'Time series',
     'FSLeyesFrame.addHistogramPanel'       : 'Histogram',
     'FSLeyesFrame.addPowerSpectrumPanel'   : 'Power spectra',
@@ -448,7 +455,7 @@ actions = TypeDict({
     'CanvasPanel.toggleClusterPanel'        : 'Cluster browser',
     'CanvasPanel.toggleOverlayInfo'         : 'Overlay information',
     'CanvasPanel.toggleClassificationPanel' : 'Melodic IC classification',
-    
+
     'OrthoPanel.toggleOrthoToolBar'       : 'Ortho toolbar',
     'OrthoPanel.toggleEditMode'           : 'Edit mode',
     'OrthoPanel.toggleCropMode'           : 'Crop',
@@ -456,6 +463,7 @@ actions = TypeDict({
     'OrthoPanel.toggleEditPanel'          : 'Edit settings panel',
     'OrthoPanel.resetDisplay'             : 'Reset display',
     'OrthoPanel.centreCursor'             : 'Centre cursor',
+    'OrthoPanel.pearsonCorrelation'       : 'Seed correlation (Pearson)',
     'OrthoPanel.centreCursorWorld'        : 'Centre cursor at (0, 0, 0)',
 
     'OrthoPanel.toggleCursor'           : 'Show/hide location cursor',
@@ -466,16 +474,21 @@ actions = TypeDict({
 
     'LightBoxPanel.toggleLightBoxToolBar' : 'Lightbox toolbar',
 
+    'Scene3DPanel.resetDisplay' : 'Reset camera',
+
     'PlotPanel.screenshot'                          : 'Take screenshot',
     'PlotPanel.importDataSeries'                    : 'Import ...',
     'PlotPanel.exportDataSeries'                    : 'Export ...',
     'OverlayPlotPanel.toggleOverlayList'            : 'Overlay list',
     'TimeSeriesPanel.togglePlotList'                : 'Time series list',
     'TimeSeriesPanel.toggleTimeSeriesControl'       : 'Time series control',
-    'TimeSeriesPanel.toggleTimeSeriesToolBar'       : 'Time series toolbar', 
+    'TimeSeriesPanel.toggleTimeSeriesToolBar'       : 'Time series toolbar',
+    'TimeSeriesPanel.addMaskDataSeries'             : 'Add time series from ROI',
     'HistogramPanel.togglePlotList'                 : 'Histogram list',
     'HistogramPanel.toggleHistogramControl'         : 'Histogram control',
     'HistogramPanel.toggleHistogramToolBar'         : 'Histogram toolbar',
+    'HistogramPanel.toggleHistogramOverlay'         : 'Histogram overlay',
+    'HistogramPanel.addROIHistogram'                : 'Add histogram from ROI',
     'PowerSpectrumPanel.togglePlotList'             : 'Power spectrum list',
     'PowerSpectrumPanel.togglePowerSpectrumControl' : 'Power spectrum control',
     'PowerSpectrumPanel.togglePowerSpectrumToolBar' : 'Power spectrum toolbar',
@@ -511,12 +524,6 @@ labels = TypeDict({
 
     'OverlayListPanel.noDataSource'       : '[in memory]',
 
-    'CanvasPanel.screenshot.notSaved.save'   : 'Save overlay now',
-    'CanvasPanel.screenshot.notSaved.skip'   : 'Skip overlay (will not appear '
-                                               'in screenshot)',
-    'CanvasPanel.screenshot.notSaved.cancel' : 'Cancel screenshot',
-
-
     'LookupTablePanel.selectAll'   : 'Select all',
     'LookupTablePanel.selectNone'  : 'Deselect all',
     'LookupTablePanel.addLabel'    : 'Add label',
@@ -525,6 +532,7 @@ labels = TypeDict({
     'LookupTablePanel.copyLut'     : 'Copy LUT',
     'LookupTablePanel.saveLut'     : 'Save LUT',
     'LookupTablePanel.loadLut'     : 'Load LUT',
+    'LookupTablePanel.newLutDefault' : 'New LUT',
 
     'LutLabelDialog.value'    : 'Value',
     'LutLabelDialog.name'     : 'Name',
@@ -532,10 +540,6 @@ labels = TypeDict({
     'LutLabelDialog.ok'       : 'Ok',
     'LutLabelDialog.cancel'   : 'Cancel',
     'LutLabelDialog.newLabel' : 'New label',
-
-    'NewLutDialog.ok'     : 'Ok',
-    'NewLutDialog.cancel' : 'Cancel',
-    'NewLutDialog.newLut' : 'New LUT',
 
 
     'PlotControlPanel.plotSettings'       : 'General plot settings',
@@ -549,7 +553,7 @@ labels = TypeDict({
     'PlotControlPanel.labels'             : 'Labels',
     'PlotControlPanel.xlabel'             : 'X',
     'PlotControlPanel.ylabel'             : 'Y',
- 
+
 
     'TimeSeriesControlPanel.customPlotSettings' : 'Time series settings',
     'TimeSeriesControlPanel.customDSSettings'   : 'FEAT settings for '
@@ -561,7 +565,7 @@ labels = TypeDict({
     'HistogramControlPanel.customPlotSettings' : 'Histogram plot settings',
     'HistogramControlPanel.customDSSettings'   : 'Histogram settings for '
                                                   'selected overlay ({})',
- 
+
     'FEATModelFitTimeSeries.full' : 'Full model fit',
     'FEATModelFitTimeSeries.cope' : 'COPE{} fit: {}',
     'FEATModelFitTimeSeries.pe'   : 'PE{} fit',
@@ -572,7 +576,7 @@ labels = TypeDict({
     'FEATResidualTimeSeries'     : 'Residuals',
 
     'ClusterPanel.clustName'     : 'Z statistics for COPE{} ({})',
-    
+
     'ClusterPanel.index'         : 'Cluster index',
     'ClusterPanel.nvoxels'       : 'Size (voxels)',
     'ClusterPanel.p'             : 'P',
@@ -583,7 +587,7 @@ labels = TypeDict({
     'ClusterPanel.copemax'       : 'COPE Max',
     'ClusterPanel.copemaxcoords' : 'COPE Max location',
     'ClusterPanel.copemean'      : 'COPE mean',
-    
+
     'ClusterPanel.addZStats'    : 'Add Z statistics',
     'ClusterPanel.addClustMask' : 'Add cluster mask',
 
@@ -597,13 +601,18 @@ labels = TypeDict({
     'OverlayDisplayPanel.MeshOpts'       : 'Mesh settings',
     'OverlayDisplayPanel.TensorOpts'     : 'Diffusion tensor settings',
     'OverlayDisplayPanel.SHOpts'         : 'Diffusion SH settings',
-    
+
+    'OverlayDisplayPanel.3d'             : '3D display settings',
+
     'OverlayDisplayPanel.loadCmap'       : 'Load colour map',
     'OverlayDisplayPanel.loadVertexData' : 'Load data',
+
+    'OverlayDisplayPanel.clipPlane#'     : 'Clip plane #{}',
 
     'CanvasSettingsPanel.scene'    : 'Scene settings',
     'CanvasSettingsPanel.ortho'    : 'Ortho view settings',
     'CanvasSettingsPanel.lightbox' : 'Lightbox settings',
+    'CanvasSettingsPanel.3d'       : '3D view settings',
 
     'OverlayInfoPanel.general'             : 'General information',
     'OverlayInfoPanel.overlayType'         : 'Displayed as',
@@ -619,9 +628,9 @@ labels = TypeDict({
                                                         '(FSL convention)',
     'OverlayInfoPanel.Nifti.displaySpace.affine'      : 'World coordinates',
     'OverlayInfoPanel.Nifti.displaySpace.world'       : 'World coordinates',
-    'OverlayInfoPanel.Nifti.displaySpace.custom'      : 'Scaled voxels '
-                                                        '({}; FSL convention)', 
-    
+    'OverlayInfoPanel.Nifti.displaySpace.reference'   : 'Scaled voxels '
+                                                        '({}; FSL convention)',
+
 
     'OverlayInfoPanel.Analyze'                  : 'ANALYZE image',
     'OverlayInfoPanel.Image'                    : 'NIFTI image',
@@ -629,9 +638,9 @@ labels = TypeDict({
                                                   '(FEAT analysis)',
     'OverlayInfoPanel.FEATImage.featInfo'       : 'FEAT information',
     'OverlayInfoPanel.MelodicImage'             : 'NIFTI image '
-                                                  '(MELODIC analysis)', 
+                                                  '(MELODIC analysis)',
     'OverlayInfoPanel.MelodicImage.melodicInfo' : 'MELODIC information',
-    
+
     'OverlayInfoPanel.TriangleMesh'                        :
     'VTK model',
     'OverlayInfoPanel.TriangleMesh.numVertices'            :
@@ -656,13 +665,13 @@ labels = TypeDict({
     'Display coordinate system',
 
     'OverlayInfoPanel.GiftiSurface' : 'GIFTI surface',
-    
+
     'OverlayInfoPanel.dataSource'               : 'Data source',
     'OverlayInfoPanel.niftiVersion'             : 'NIFTI version',
 
     'OverlayInfoPanel.DTIFitTensor'             : 'DTIFit tensor images',
     'OverlayInfoPanel.DTIFitTensor.tensorInfo'  : 'Tensor image paths ',
-    
+
     'MelodicClassificationPanel.componentTab'   : 'Components',
     'MelodicClassificationPanel.labelTab'       : 'Labels',
     'MelodicClassificationPanel.loadButton'     : 'Load labels',
@@ -692,10 +701,17 @@ labels = TypeDict({
     'CropImagePanel.cropSize.noImage' : 'Croppsed shape: n/a',
     'CropImagePanel.image'            : 'Crop {}',
     'CropImagePanel.image.noImage'    : 'Choose a NIFTI image',
-    'CropImagePanel.cropButton'       : 'Crop',
-    'CropImagePanel.robustFovButton'  : 'Robust FOV',
-    'CropImagePanel.cancelButton'     : 'Cancel',
-    
+    'CropImagePanel.crop'             : 'Crop',
+    'CropImagePanel.robustFov'        : 'Robust FOV',
+    'CropImagePanel.load'             : 'Load',
+    'CropImagePanel.save'             : 'Save',
+    'CropImagePanel.cancel'           : 'Cancel',
+
+    'EditTransformPanel.dsWarning'   :
+    'Warning: Change the display space to "World" to see\n'
+    'the effects of the transformation. You can change it\n'
+    'back in the view settings panel',
+    'EditTransformPanel.changeDS'    : 'Change display space',
     'EditTransformPanel.noOverlay'   : 'Select a NIFTI image',
     'EditTransformPanel.overlayName' : 'Transform {}',
     'EditTransformPanel.oldXform'    : 'Original transform',
@@ -713,7 +729,7 @@ labels = TypeDict({
     'FlirtFileDialog.load.message' :
     'Select a FLIRT transformation matrix\n'
     'and the corresponding reference image.',
-    
+
     'FlirtFileDialog.save.message' :
     'Specify a file name for the FLIRT transformation\n'
     'matrix, and choose the corresponding reference image.',
@@ -725,11 +741,30 @@ labels = TypeDict({
     'FlirtFileDialog.selectFile'          : 'Choose',
     'FlirtFileDialog.ok'                  : 'Ok',
     'FlirtFileDialog.cancel'              : 'Cancel',
+
+    'ResampleDialog.ok'            : 'Ok',
+    'ResampleDialog.reset'         : 'Reset',
+    'ResampleDialog.cancel'        : 'Cancel',
+    'ResampleDialog.interpolation' : 'Interpolation',
+    'ResampleDialog.smoothing'     : 'Smoothing',
+    'ResampleDialog.dtype'         : 'Data type',
+    'ResampleDialog.nearest'       : 'Nearest neighbour',
+    'ResampleDialog.linear'        : 'Linear',
+    'ResampleDialog.cubic'         : 'Cubic',
+    'ResampleDialog.uchar'         : 'Unsigned char',
+    'ResampleDialog.sshort'        : 'Signed short',
+    'ResampleDialog.sint'          : 'Signed int',
+    'ResampleDialog.float'         : 'Float',
+    'ResampleDialog.double'        : 'Double',
+    'ResampleDialog.origVoxels'    : 'Old shape',
+    'ResampleDialog.origPixdims'   : 'Old pixdims',
+    'ResampleDialog.newVoxels'     : 'New shape',
+    'ResampleDialog.newPixdims'    : 'New pixdims',
 })
 
 
 properties = TypeDict({
-    
+
     'DisplayContext.displaySpace'     : 'Display space',
     'DisplayContext.radioOrientation' : 'Display in radiological orientation',
 
@@ -744,6 +779,7 @@ properties = TypeDict({
     'SceneOpts.showCursor'         : 'Show location cursor',
     'SceneOpts.cursorGap'          : 'Show gap at cursor centre',
     'SceneOpts.bgColour'           : 'Background colour',
+    'SceneOpts.fgColour'           : 'Foreground colour',
     'SceneOpts.cursorColour'       : 'Location cursor colour',
     'SceneOpts.showColourBar'      : 'Show colour bar',
     'SceneOpts.performance'        : 'Rendering performance',
@@ -761,12 +797,16 @@ properties = TypeDict({
     'OrthoOpts.showYCanvas' : 'Show Y canvas',
     'OrthoOpts.showZCanvas' : 'Show Z canvas',
     'OrthoOpts.showLabels'  : 'Show labels',
-    'OrthoOpts.labelColour' : 'Label colour',
     'OrthoOpts.labelSize'   : 'Label size (pixels)',
     'OrthoOpts.layout'      : 'Layout',
     'OrthoOpts.xzoom'       : 'X zoom',
     'OrthoOpts.yzoom'       : 'Y zoom',
     'OrthoOpts.zzoom'       : 'Z zoom',
+
+    'Scene3DOpts.showLegend' : 'Show orientation',
+    'Scene3DOpts.light'      : 'Lighting',
+    'Scene3DOpts.lightPos'   : 'Light position',
+    'Scene3DOpts.occlusion'  : 'Volume occlusion',
 
     'PlotPanel.legend'     : 'Show legend',
     'PlotPanel.ticks'      : 'Show ticks',
@@ -780,14 +820,14 @@ properties = TypeDict({
     'PlotPanel.yLogScale'  : 'Log scale (y axis)',
     'PlotPanel.xlabel'     : 'X label',
     'PlotPanel.ylabel'     : 'Y label',
-    
+
     'TimeSeriesPanel.plotMode'         : 'Plotting mode',
     'TimeSeriesPanel.usePixdim'        : 'Use pixdims',
     'TimeSeriesPanel.plotMelodicICs'   : 'Plot component time courses for '
                                          'Melodic images',
     'TimeSeriesPanel.plotFullModelFit' : 'Plot full model fit',
     'TimeSeriesPanel.plotResiduals'    : 'Plot residuals',
-    
+
     'HistogramPanel.histType'    : 'Histogram type',
 
     'PowerSpectrumPanel.plotFrequencies' : 'Show frequencies along x axis ',
@@ -798,7 +838,7 @@ properties = TypeDict({
     'DataSeries.alpha'     : 'Line transparency',
     'DataSeries.lineWidth' : 'Line width',
     'DataSeries.lineStyle' : 'Line style',
-    
+
     'HistogramSeries.nbins'           : 'Number of bins',
     'HistogramSeries.autoBin'         : 'Automatic histogram binning',
     'HistogramSeries.ignoreZeros'     : 'Ignore zeros',
@@ -833,7 +873,7 @@ properties = TypeDict({
     'OrthoEditProfile.showSelection'          : 'Show current selection',
     'OrthoEditProfile.drawMode'               : 'Draw mode',
     'OrthoEditProfile.targetImage'            : 'Target image',
-    
+
     'Display.name'              : 'Overlay name',
     'Display.overlayType'       : 'Overlay data type',
     'Display.enabled'           : 'Enabled',
@@ -841,25 +881,36 @@ properties = TypeDict({
     'Display.brightness'        : 'Brightness',
     'Display.contrast'          : 'Contrast',
 
-    'NiftiOpts.transform'  : 'Image transform',
-    'NiftiOpts.volume'     : 'Volume',
+    'NiftiOpts.custom_volume' : 'Volume',
 
     'ColourMapOpts.displayRange'     : 'Display range',
     'ColourMapOpts.clippingRange'    : 'Clipping range',
     'ColourMapOpts.linkLowRanges'    : 'Link low display/clipping ranges',
     'ColourMapOpts.linkHighRanges'   : 'Link high display/clipping ranges',
     'ColourMapOpts.cmap'             : 'Colour map',
+    'ColourMapOpts.custom_cmap'      : 'Colour map',
     'ColourMapOpts.cmapResolution'   : 'Colour map resolution',
     'ColourMapOpts.interpolateCmaps' : 'Interpolate colour maps',
     'ColourMapOpts.negativeCmap'     : '-ve colour map',
     'ColourMapOpts.useNegativeCmap'  : '-ve colour map',
     'ColourMapOpts.invert'           : 'Invert colour map',
     'ColourMapOpts.invertClipping'   : 'Invert clipping range',
-    
-    'VolumeOpts.clipImage'               : 'Clip by',
-    'VolumeOpts.interpolation'           : 'Interpolation',
-    'VolumeOpts.enableOverrideDataRange' : 'Override image data range',
-    'VolumeOpts.overrideDataRange'       : 'Override image data range',
+
+    'VolumeOpts.clipImage'                : 'Clip by',
+    'VolumeOpts.interpolation'            : 'Interpolation',
+    'VolumeOpts.enableOverrideDataRange'  : 'Override image data range',
+    'VolumeOpts.overrideDataRange'        : 'Override image data range',
+    'VolumeOpts.custom_overrideDataRange' : 'Override image data range',
+
+    'Volume3DOpts.dithering'               : 'Dithering',
+    'Volume3DOpts.numSteps'                : 'Number of samples',
+    'Volume3DOpts.blendFactor'             : 'Blending',
+    'Volume3DOpts.resolution'              : 'Quality',
+    'Volume3DOpts.numClipPlanes'           : 'Number of clipping planes',
+    'Volume3DOpts.showClipPlanes'          : 'Show clipping planes',
+    'Volume3DOpts.clipPosition'            : 'Clip position (%)',
+    'Volume3DOpts.clipInclination'         : 'Clip Z angle',
+    'Volume3DOpts.clipAzimuth'             : 'Clip rotation',
 
     'MaskOpts.colour'         : 'Colour',
     'MaskOpts.invert'         : 'Invert',
@@ -888,15 +939,20 @@ properties = TypeDict({
     'LineVectorOpts.unitLength'  : 'Scale vectors to unit length',
     'LineVectorOpts.lengthScale' : 'Length scaling factor (%)',
 
-    'MeshOpts.colour'          : 'Colour',
-    'MeshOpts.outline'         : 'Show outline only',
-    'MeshOpts.outlineWidth'    : 'Outline width',
-    'MeshOpts.refImage'        : 'Reference image',
-    'MeshOpts.coordSpace'      : 'Mesh coordinate space',
-    'MeshOpts.vertexData'      : 'Vertex data',
-    'MeshOpts.vertexDataIndex' : 'Vertex data index',
-    'MeshOpts.showName'        : 'Show model name',
-    'MeshOpts.lut'             : 'Lookup table',
+    'MeshOpts.colour'            : 'Colour',
+    'MeshOpts.outline'           : 'Show outline only',
+    'MeshOpts.outlineWidth'      : 'Outline width',
+    'MeshOpts.refImage'          : 'Reference image',
+    'MeshOpts.coordSpace'        : 'Mesh coordinate space',
+    'MeshOpts.custom_vertexData' : 'Vertex data',
+    'MeshOpts.vertexData'        : 'Vertex data',
+    'MeshOpts.vertexDataIndex'   : 'Vertex data index',
+    'MeshOpts.showName'          : 'Show model name',
+    'MeshOpts.custom_lut'        : 'Lookup table',
+    'MeshOpts.lut'               : 'Lookup table',
+    'MeshOpts.discardClipped'    : 'Hide clipped areas',
+    'MeshOpts.wireframe'         : 'Show as wireframe',
+    'MeshOpts.lighting'          : 'Enable lighting',
 
     'LabelOpts.lut'          : 'Look-up table',
     'LabelOpts.outline'      : 'Show outline only',
@@ -960,22 +1016,22 @@ choices = TypeDict({
     'LightBoxOpts.zrange.max' : 'Max.',
 
     'ColourMapOpts.displayRange.min' : 'Min.',
-    'ColourMapOpts.displayRange.max' : 'Max.', 
+    'ColourMapOpts.displayRange.max' : 'Max.',
 
     'MaskOpts.threshold.min' : 'Min.',
-    'MaskOpts.threshold.max' : 'Max.', 
+    'MaskOpts.threshold.max' : 'Max.',
 
     'VectorOpts.displayType.line' : 'Lines',
     'VectorOpts.displayType.rgb'  : 'RGB',
 
     'VectorOpts.modulateImage.none' : 'No modulation',
     'VectorOpts.clipImage.none'     : 'No clipping',
-    
+
     'VectorOpts.clippingRange.min' : 'Clip min.',
     'VectorOpts.clippingRange.max' : 'Clip max.',
 
     'VectorOpts.modulateRange.min' : 'Mod min.',
-    'VectorOpts.modulateRange.max' : 'Mod max.', 
+    'VectorOpts.modulateRange.max' : 'Mod max.',
 
     'VectorOpts.suppressMode' : {'white'       : 'White',
                                  'black'       : 'Black',
@@ -987,7 +1043,7 @@ choices = TypeDict({
                              'pixdim'      : 'Scaled voxels',
                              'pixdim-flip' : 'Scaled voxels forced to '
                                              'radiological orientation',
-                             'id'          : 'Voxels'}, 
+                             'id'          : 'Voxels'},
 
     'TensorOpts.tensorResolution.min' : 'Low',
     'TensorOpts.tensorResolution.max' : 'High',
@@ -996,10 +1052,10 @@ choices = TypeDict({
                              'pixdim'      : 'Scaled voxels',
                              'pixdim-flip' : 'Radiological scaled voxels',
                              'id'          : 'Voxels',
-                             'custom'      : 'Custom transformation'},
+                             'reference'   : 'Reference image'},
 
-    'VolumeOpts.interpolation' : {'none'   : 'No interpolation', 
-                                  'linear' : 'Linear interpolation', 
+    'VolumeOpts.interpolation' : {'none'   : 'No interpolation',
+                                  'linear' : 'Linear interpolation',
                                   'spline' : 'Spline interpolation'},
 
 
@@ -1023,7 +1079,7 @@ choices = TypeDict({
                               '--' : 'Dashed line',
                               '-.' : 'Dash-dot line',
                               ':'  : 'Dotted line'},
-    
+
     'TimeSeriesPanel.plotMode' : {'normal'        : 'Normal - no '
                                                     'scaling/offsets',
                                   'demean'        : 'Demeaned',
@@ -1067,7 +1123,7 @@ anatomy = TypeDict({
                                                                  'anatomical',
     ('Nifti', 'space',     constants.NIFTI_XFORM_ALIGNED_ANAT) : 'Aligned '
                                                                  'anatomical',
-    ('Nifti', 'space',     constants.NIFTI_XFORM_TALAIRACH)    : 'Talairach', 
+    ('Nifti', 'space',     constants.NIFTI_XFORM_TALAIRACH)    : 'Talairach',
     ('Nifti', 'space',     constants.NIFTI_XFORM_MNI_152)      : 'MNI152',
     ('Nifti', 'space',     constants.NIFTI_XFORM_ANALYZE)      : 'ANALYZE',
 })
@@ -1076,7 +1132,7 @@ anatomy = TypeDict({
 nifti = TypeDict({
 
     'dimensions' : 'Number of dimensions',
-    
+
     'datatype'    : 'Data type',
     'vox_units'   : 'XYZ units',
     'time_units'  : 'Time units',
@@ -1272,39 +1328,41 @@ plotLabels = {
 about = {
     'title'      : 'About FSLeyes',
     'author'     : 'Paul McCarthy',
-    'email'      : 'paulmc@fmrib.ox.ac.uk',
+    'email'      : 'paul.mccarthy@ndcn.ox.ac.uk',
     'company'    : 'FMRIB Centre, Oxford, UK',
     'version'    : 'FSLeyes version: {}',
-    'vcsVersion' : 'Internal version: {}',
     'glVersion'  : 'OpenGL version: {}',
     'glCompat'   : 'OpenGL compatibility: {}',
     'glRenderer' : 'OpenGL renderer: {}',
     'fslVersion' : 'FSL version: {}',
     'fslPath'    : 'FSL directory: {}',
     'software'   : textwrap.dedent(
-    """
+    u"""
     FSLeyes was developed at the FMRIB Centre, Nuffield Department of Clinical Neurosciences, Oxford University, United Kingdom.
-    
+
     FSLeyes is a Python application which leverages the following open-source software libraries:
 
-     - indexed_gzip [0.3.1] (https://github.com/pauldmccarthy/indexed_gzip/)
+     - indexed_gzip [{}] (https://github.com/pauldmccarthy/indexed_gzip/)
      - jinja2 [{}] (http://jinja.pocoo.org)
      - matplotlib [{}] (http://www.matplotlib.org)
      - nibabel [{}] (http://nipy.org/nibabel)
      - numpy [{}] (http://www.numpy.org)
      - pillow [{}]  (http://python-pillow.org/)
-     - props [{}] (https://git.fmrib.ox.ac.uk/paulmc/props)
-     - fslpy [{}] (https://git.fmrib.ox.ac.uk/paulmc/fslpy)
+     - fsleyes-props [{}] (https://git.fmrib.ox.ac.uk/fsl/fsleyes/props)
+     - fsleyes-widgets [{}] (https://git.fmrib.ox.ac.uk/fsl/fsleyes/widgets)
+     - fslpy [{}] (https://git.fmrib.ox.ac.uk/fsl/fslpy)
      - pyopengl [{}] (http://pyopengl.sourceforge.net)
      - pyparsing [{}] (http://pyparsing.wikispaces.com/)
      - scipy [{}] (http://www.scipy.org)
      - six [{}] (https://pythonhosted.org/six/)
      - trimesh [{}] (https://github.com/mikedh/trimesh)
      - wxPython [{}] (http://www.wxpython.org)
-    
+
+    Cubic/spline interpolation routines used in FSLeyes are provided by Daniel Ruijters and Philippe Th\u00E9venaz, described at http://www.dannyruijters.nl/cubicinterpolation/.
+
     Some of the icons used in FSLeyes are derived from the Freeline icon set, by Enes Dal, available at https://www.iconfinder.com/Enesdal, and released under the Creative Commons (Attribution 3.0 Unported) license.
 
-    FSLeyes is released under Version 2.0 of the Apache Software License.
+    FSLeyes is released under Version 2.0 of the Apache Software License. Source code for FSLeyes is available at https://git.fmrib.ox.ac.uk/fsl/fsleyes/fsleyes
 
     Copyright 2016-2017 University of Oxford, Oxford, UK.
     """).strip(),
@@ -1314,9 +1372,9 @@ about = {
     # dynamically looks up the version number for
     # each of them, and inserts them into the above
     # string.
-    'libs' : [                      'jinja2',    'matplotlib',
-              'nibabel',            'numpy',     'PIL',
-              'props',              'fsl',       'OpenGL',
-              'pyparsing',          'scipy',     'six',
-              'fsleyes.gl.trimesh', 'wx'],
+    'libs' : ['indexed_gzip',  'jinja2',             'matplotlib',
+              'nibabel',       'numpy',              'PIL',
+              'fsleyes_props', 'fsleyes_widgets',    'fsl.version',
+              'OpenGL',        'pyparsing',          'scipy',
+              'six',           'fsleyes.gl.trimesh', 'wx'],
 }

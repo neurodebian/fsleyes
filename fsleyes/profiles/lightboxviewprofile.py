@@ -36,15 +36,15 @@ class LightBoxViewProfile(profiles.Profile):
     ======== ==================================================================
     """
 
-    
+
     def __init__(self, viewPanel, overlayList, displayCtx):
         """Create a ``LightBoxViewProfile``.
 
         :arg viewPanel:    A :class:`.LightBoxPanel` instance.
         :arg overlayList:  The :class:`.OverlayList` instance.
-        :arg displayCtx:   The :class:`.DisplayContext` instance.        
+        :arg displayCtx:   The :class:`.DisplayContext` instance.
         """
-        
+
         profiles.Profile.__init__(self,
                                   viewPanel,
                                   overlayList,
@@ -53,7 +53,7 @@ class LightBoxViewProfile(profiles.Profile):
 
         self.__canvas = viewPanel.getCanvas()
 
-        
+
     def getEventTargets(self):
         """Returns the :class:`.LightBoxCanvas` contained in the
         :class:`.LightBoxPanel`, which is the target for all mouse/keyboard
@@ -61,7 +61,7 @@ class LightBoxViewProfile(profiles.Profile):
         """
         return [self.__canvas]
 
-        
+
     def _viewModeMouseWheel(self,
                             ev,
                             canvas,
@@ -81,16 +81,18 @@ class LightBoxViewProfile(profiles.Profile):
         elif wheel < 0: wheel =  1
         else:           return False
 
+        opts = self.__canvas.opts
+
         # See comment in OrthoViewProfile._zoomModeMouseWheel
         # about timeout
         def update():
-            self._viewPanel.getCanvas().topRow += wheel
+            opts.topRow += wheel
 
         async.idle(update, timeout=0.1)
 
         return True
 
-        
+
     def _viewModeLeftMouseDrag(self, ev, canvas, mousePos, canvasPos):
         """Handles left mouse drags in ``view`` mode.
 
@@ -122,10 +124,12 @@ class LightBoxViewProfile(profiles.Profile):
         elif wheel < 0: wheel = -50
         else:           return False
 
+        opts = self._viewPanel.getSceneOptions()
+
         # see comment in OrthoViewProfile._zoomModeMouseWheel
         # about timeout
         def update():
-            self._viewPanel.getSceneOptions().zoom += wheel
+            opts.zoom += wheel
 
         async.idle(update, timeout=0.1)
 

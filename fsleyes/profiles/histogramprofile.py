@@ -14,7 +14,7 @@ import logging
 import numpy              as np
 import matplotlib.patches as patches
 
-import                       props
+import fsleyes_props      as props
 
 import fsleyes.overlay    as fsloverlay
 from . import                plotprofile
@@ -42,7 +42,7 @@ class HistogramProfile(plotprofile.PlotProfile):
     :class:`.HistogramOverlay`.
     """
 
-    
+
     def __init__(self, viewPanel, overlayList, displayCtx):
         """Create a ``HistogramProfile``.
 
@@ -51,7 +51,7 @@ class HistogramProfile(plotprofile.PlotProfile):
         :arg overlayList:  The :class:`.OverlayList` instance.
 
         :arg displayCtx:   The :class:`.DisplayContext` instance.
-        """ 
+        """
         plotprofile.PlotProfile.__init__(self,
                                          viewPanel,
                                          overlayList,
@@ -91,11 +91,11 @@ class HistogramProfile(plotprofile.PlotProfile):
         self._overlayList.removeListener('overlays',        self._name)
         self._displayCtx .removeListener('selectedOverlay', self._name)
 
-        for hs in self.__rangePolygons.keys():
+        for hs in list(self.__rangePolygons.keys()):
             self.__deregisterHistogramSeries(hs)
 
         self.__rangePolygons = None
-        self.__rangeOverlays = None 
+        self.__rangeOverlays = None
 
         plotprofile.PlotProfile.destroy(self)
 
@@ -137,7 +137,7 @@ class HistogramProfile(plotprofile.PlotProfile):
         self.__rangePolygons[hs] = rangePolygon
         self.__rangeOverlays[hs] = rangeOverlay
 
-    
+
     def __deregisterHistogramSeries(self, hs):
         """Called when a :class:`.HistogramSeries` is no longer to be plotted.
         Destroys the :class:`.HistogramOverlay` and :class:`.RangePolygon`
@@ -160,14 +160,14 @@ class HistogramProfile(plotprofile.PlotProfile):
         overlay = self._displayCtx.getSelectedOverlay()
         oldHs   = self.__currentHs
         newHs   = self._viewPanel.getDataSeries(overlay)
-        
+
         if oldHs == newHs:
             return
 
         self.__currentHs = newHs
 
         self.__registerHistogramSeries(newHs)
-        
+
 
     def __updateShowOverlayRange(self, datax, which=False):
         """Called by the ``overlayRange`` mouse event handlers.  Updates the
@@ -179,7 +179,7 @@ class HistogramProfile(plotprofile.PlotProfile):
                     ``showOverlayRange`` property the user is currently
                     modifying. On mouse down events, this method figures out
                     which range should be modified, and returns either
-                    ``'lo'`` or ``'hi'``. On subsequent calls to this method 
+                    ``'lo'`` or ``'hi'``. On subsequent calls to this method
                     (on mouse drag and mouse up events), that return value
                     should be passed back into this method so that the same
                     value continues to get modified.
@@ -190,19 +190,19 @@ class HistogramProfile(plotprofile.PlotProfile):
 
         if hs           is None: return
         if rangePolygon is None: return
-        
+
         rangelo, rangehi = hs.showOverlayRange
-        
+
         if   which == 'lo': newRange = [datax,   rangehi]
         elif which == 'hi': newRange = [rangelo, datax]
 
         else:
-            # Less than low range 
+            # Less than low range
             if datax < rangelo:
                 which    = 'lo'
                 newRange =  (datax, rangehi)
-                
-            # Less than high range 
+
+            # Less than high range
             elif datax > rangehi:
                 which    = 'hi'
                 newRange =  (rangelo, datax)
@@ -211,7 +211,7 @@ class HistogramProfile(plotprofile.PlotProfile):
             # is the mouse location closer
             # to the low or high range?
             else:
-                
+
                 lodist = abs(datax - rangelo)
                 hidist = abs(datax - rangehi)
 
@@ -235,7 +235,7 @@ class HistogramProfile(plotprofile.PlotProfile):
 
         # Manually refresh the histogram range polygon.
         rangePolygon.updatePolygon()
-        
+
         return which
 
 
@@ -255,21 +255,21 @@ class HistogramProfile(plotprofile.PlotProfile):
     def _overlayRangeModeLeftMouseDrag(self, ev, canvas, mousePos, canvasPos):
         """Called on mouse down events in ``overlayRange`` mode. Calls the
         :meth:`__updateShowOverlayRange` method.
-        """ 
+        """
 
         if not self.__draggingRange: return
         if canvasPos is None:        return
 
-        self.__updateShowOverlayRange(canvasPos[0], self.__draggingRange) 
+        self.__updateShowOverlayRange(canvasPos[0], self.__draggingRange)
 
-        
+
     def _overlayRangeModeLeftMouseUp(self, ev, canvas, mousePos, canvasPos):
         """Called on mouse up events in ``overlayRange`` mode. Clears
         some internal state.
         """
 
         if not self.__draggingRange:
-            return 
+            return
 
         self.__draggingRange = False
 
@@ -278,12 +278,12 @@ class RangePolygon(patches.Polygon):
     """The ``RangePolygon`` class is a ``matplotlib.patches.Polygon`` which
     is used to display a data range over a :class:`.HistogramSeries` plot.
 
-    
+
     Whenever any property on the ``HistogramSeries`` changes (and on calls to
     :meth:`updatePolygon`), the vertices of a polygon spanning the
     :attr:`.HistogramSeries.showOverlayRange` property are generated.
 
-    
+
     The ``RangePolygon`` automatically adds and removes itself to the
     :attr:`.PlotPanel.artists` list of the owning :class:`.HistogramPanel`
     according to the values of the :attr:`.HistogramSeries.showOverlay` and
@@ -334,7 +334,7 @@ class RangePolygon(patches.Polygon):
         self._rp_hs      = None
         self._rp_hsPanel = None
 
-        
+
     def updatePolygon(self, *a, **kwa):
         """Called whenever any property changes on the
         :class:`.HistogramSeries`, and called manually by the
@@ -366,7 +366,7 @@ class RangePolygon(patches.Polygon):
             except:
                 vertices = np.zeros(0)
 
-        # Otherwise we can get the data 
+        # Otherwise we can get the data
         # directly from the HistogramSeries.
         # The HS class has a method which
         # generates histogram vertices for us.
@@ -400,7 +400,7 @@ class RangePolygon(patches.Polygon):
 
             try:    xidx = np.where(histx[:] < hi)[0][-1]
             except: xidx = len(histy) - 1
-                
+
             if xidx >= len(histy):
                 xidx = -1
 
@@ -434,7 +434,7 @@ class RangePolygon(patches.Polygon):
 
         self.set_xy(vertices)
 
-        # Make sure the polygon 
+        # Make sure the polygon
         # colour is up to date
         colour = list(hs.colour)[:3]
 
@@ -453,7 +453,7 @@ class HistogramOverlay(object):
     are included in a histogram plot. The user can toggle the display of this
     overlay via the :attr:`.HistogramSeries.showOverlay` property.
     """
-    
+
     def __init__(self, histSeries, overlay, displayCtx, overlayList):
         """Create a ``HistogramOverlay``.
 
@@ -462,25 +462,34 @@ class HistogramOverlay(object):
 
         :arg overlay:     The :class:`.Image` overlay associated with this
                           ``HistogramOverlay``.
-        
+
         :arg displayCtx:  The :class:`.DisplayContext` instance.
-        
-        :arg overlayList: The :class:`.OverlayList` instance. 
+
+        :arg overlayList: The :class:`.OverlayList` instance.
         """
+
+        display = displayCtx.getDisplay(overlay)
 
         self.__name        = '{}_{}'.format(type(self).__name__, id(self))
         self.__histSeries  = histSeries
         self.__overlay     = overlay
+        self.__display     = display
+        self.__opts        = None
         self.__displayCtx  = displayCtx
         self.__overlayList = overlayList
         self.__histMask    = None
 
+        display    .addListener('overlayType',
+                                self.__name,
+                                self.__overlayTypeChanged)
         overlayList.addListener('overlays',
                                 self.__name,
                                 self.__overlayListChanged)
         histSeries.addListener('showOverlay',
                                 self.__name,
                                 self.__showOverlayChanged)
+
+        self.__overlayTypeChanged()
 
 
     def destroy(self):
@@ -490,60 +499,46 @@ class HistogramOverlay(object):
 
         self.__overlayList.removeListener('overlays',    self.__name)
         self.__histSeries .removeListener('showOverlay', self.__name)
-        
+        self.__display    .removeListener('overlayType', self.__name)
+
+        if self.__opts is not None:
+            self.__opts.removeListener('volume', self.__name)
+
+
         if self.__histMask is not None:
             self.__overlayList.remove(self.__histMask)
 
         self.__histSeries  = None
-        self.__overlay     = None 
+        self.__overlay     = None
+        self.__display     = None
+        self.__opts        = None
         self.__displayCtx  = None
         self.__overlayList = None
-        self.__histMask    = None 
+        self.__histMask    = None
 
 
-    def __showOverlayChanged(self, *a):
-        """Called when the :attr:`.HistogramSeries.showOverlay` property
-        changes.
-
-        Adds/removes a 3D mask :class:`.Image` to the :class:`.OverlayList`,
-        which highlights the voxels that have been included in the histogram.
-        The :class:`.MaskOpts.threshold` property is bound to the
-        :attr:`.HistogramSeries.showOverlayRange` property, so the masked
-        voxels are updated whenever the histogram overlay range changes, and
-        vice versa.
+    def __overlayTypeChanged(self, *a):
+        """Called when the :attr:`.Display.overlayType` changes.
+        De/re-registers a listener on the :attr:`.NiftiOpts.volume` property
+        (as ``Opts`` instances are destroyed/re-created when the
+        ``overlayType`` changes).
         """
 
-        hs = self.__histSeries
+        oldOpts     = self.__opts
+        newOpts     = self.__displayCtx.getOpts(self.__overlay)
+        self.__opts = newOpts
 
-        if      hs.showOverlay  and (self.__histMask is not None): return
-        if (not hs.showOverlay) and (self.__histMask is     None): return 
+        if oldOpts is not None:
+            oldOpts.removeListener('volume', self.__name)
 
-        if not hs.showOverlay:
+        newOpts.addListener('volume', self.__name, self.__volumeChanged)
 
-            log.debug('Removing 3D histogram overlay mask for {}'.format(
-                self.__overlay.name))
 
-            if self.__histMask in self.__overlayList:
-                self.__overlayList.remove(self.__histMask)
-                
-            self.__histMask = None
-
-        else:
-
-            log.debug('Creating 3D histogram overlay mask for {}'.format(
-                self.__overlay.name))
-            
-            self.__histMask = fsloverlay.ProxyImage(
-                self.__overlay,
-                name='{}/histogram/mask'.format(self.__overlay.name))
-
-            self.__overlayList.append(self.__histMask, overlayType='mask')
-
-            opts = self.__displayCtx.getOpts(self.__histMask)
-
-            opts.bindProps('volume',    hs)
-            opts.bindProps('colour',    hs)
-            opts.bindProps('threshold', hs, 'showOverlayRange')
+    def __volumeChanged(self, *a):
+        """Called when the :attr:`.NiftiOpts.volume` property changes. Makes
+        sure  that the 3d mask overlay is up to date (if it is being shown).
+        """
+        self.__showOverlayChanged(force=True)
 
 
     def __overlayListChanged(self, *a):
@@ -553,7 +548,7 @@ class HistogramOverlay(object):
         ``OverlayList``, the :attr:`.HistogramSeries.showOverlay` property is
         updated accordingly.
         """
-        
+
         if self.__histMask is None:
             return
 
@@ -566,3 +561,57 @@ class HistogramOverlay(object):
             with props.skip(self.__histSeries, 'showOverlay', self.__name):
                 self.__histSeries.showOverlay = False
                 self.__showOverlayChanged()
+
+
+    def __showOverlayChanged(self, *args, **kwargs):
+        """Called when the :attr:`.HistogramSeries.showOverlay` property
+        changes.
+
+        Adds/removes a 3D mask :class:`.Image` to the :class:`.OverlayList`,
+        which highlights the voxels that have been included in the histogram.
+        The :class:`.MaskOpts.threshold` property is bound to the
+        :attr:`.HistogramSeries.showOverlayRange` property, so the masked
+        voxels are updated whenever the histogram overlay range changes, and
+        vice versa.
+
+        :arg force: If ``True``, and ``HistogramSeries.showOverlay is True``,
+                    the mask overlay is recreated even if one already exists.
+        """
+
+        hs     = self.__histSeries
+        force  = kwargs.get('force', False)
+        exists = self.__histMask is not None
+
+        if      hs.showOverlay  and      exists and (not force): return
+        if (not hs.showOverlay) and (not exists):                return
+
+        # Remove any old mask overlay
+        if exists:
+
+            log.debug('Removing 3D histogram overlay mask for {}'.format(
+                self.__overlay.name))
+
+            if self.__histMask in self.__overlayList:
+                self.__overlayList.remove(self.__histMask)
+
+            self.__histMask = None
+
+        # Create a new mask overlay
+        if hs.showOverlay:
+
+            log.debug('Creating 3D histogram overlay mask for {}'.format(
+                self.__overlay.name))
+
+            opts = self.__displayCtx.getOpts(hs.overlay)
+
+            self.__histMask = fsloverlay.ProxyImage(
+                self.__overlay,
+                volume=opts.index(),
+                name='{}/histogram/mask'.format(self.__overlay.name))
+
+            self.__overlayList.append(self.__histMask, overlayType='mask')
+
+            opts = self.__displayCtx.getOpts(self.__histMask)
+
+            opts.bindProps('colour',    hs)
+            opts.bindProps('threshold', hs, 'showOverlayRange')

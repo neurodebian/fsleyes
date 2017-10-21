@@ -11,13 +11,11 @@ which renders a colour bar.
 
 import wx
 
-import props
-
-import fsl.data.image                     as fslimage
-import fsleyes.panel                      as fslpanel
-import fsleyes.displaycontext             as fsldc
-import fsleyes.displaycontext.volumeopts  as volumeopts
-import fsleyes.gl.wxglcolourbarcanvas     as cbarcanvas
+import fsleyes_props                        as props
+import fsleyes.panel                        as fslpanel
+import fsleyes.displaycontext               as fsldc
+import fsleyes.displaycontext.colourmapopts as cmapopts
+import fsleyes.gl.wxglcolourbarcanvas       as cbarcanvas
 
 
 class ColourBarPanel(fslpanel.FSLeyesPanel):
@@ -25,20 +23,20 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
     the data range of the currently selected overlay (if applicable). A
     :class:`.ColourBarCanvas` is used to render the colour bar.
 
-    
+
     .. note:: Currently, the ``ColourBarPanel`` will only display a colour bar
-              for :class:`.Image` overlays which are being displayed with a
-              ``'volume'`` overlay type (see the :class:`.VolumeOpts` class).
+              for overlays which are associated with a :class:`.ColourMapOpts`
+              instance.
     """
 
-    
+
     orientation = cbarcanvas.WXGLColourBarCanvas.orientation
     """Colour bar orientation - see :attr:`.ColourBarCanvas.orientation`. """
 
-    
+
     labelSide   = cbarcanvas.WXGLColourBarCanvas.labelSide
     """Colour bar label side - see :attr:`.ColourBarCanvas.labelSide`."""
-                  
+
 
     def __init__(self,
                  parent,
@@ -49,13 +47,13 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
         """Create a ``ColourBarPanel``.
 
         :arg parent:      The :mod:`wx` parent object.
-        
+
         :arg overlayList: The :class:`.OverlayList` instance.
-        
+
         :arg displayCtx:  The :class:`.DisplayContext` instance.
-        
+
         :arg frame:       The :class:`.FSLeyesFrame`.
-        
+
         :arg orientation: Initial orientation - either ``'horizontal'`` (the
                           default) or ``'vertical'``.
         """
@@ -63,19 +61,17 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
         fslpanel.FSLeyesPanel.__init__(
             self, parent, overlayList, displayCtx, frame)
 
-        self.__cbPanel = cbarcanvas.WXGLColourBarCanvas(self)
+        self.__cbCanvas = cbarcanvas.WXGLColourBarCanvas(self)
 
         self.__sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.SetSizer(self.__sizer)
-        self.__sizer.Add(self.__cbPanel, flag=wx.EXPAND, proportion=1)
+        self.__sizer.Add(self.__cbCanvas, flag=wx.EXPAND, proportion=1)
 
-        self.bindProps('orientation', self.__cbPanel)
-        self.bindProps('labelSide'  , self.__cbPanel)
-
-        self.SetBackgroundColour('black')
+        self.bindProps('orientation', self.__cbCanvas)
+        self.bindProps('labelSide',   self.__cbCanvas)
 
         self.addListener('orientation', self._name, self.__layout)
-        
+
         self._overlayList.addListener('overlays',
                                       self._name,
                                       self.__selectedOverlayChanged)
@@ -84,7 +80,7 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
                                       self.__selectedOverlayChanged)
 
         self.__selectedOverlay = None
-        
+
         self.__layout()
         self.__selectedOverlayChanged()
 
@@ -93,7 +89,7 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
         """Returns the :class:`.ColourBarCanvas` which displays the rendered
         colour bar.
         """
-        return self.__cbPanel
+        return self.__cbCanvas
 
 
     def destroy(self):
@@ -103,7 +99,7 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
         :class:`.DisplayContext`, and foom individual overlays.
         """
 
-        
+
         self._overlayList.removeListener('overlays',        self._name)
         self._displayCtx .removeListener('selectedOverlay', self._name)
 
@@ -114,22 +110,22 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
                 display = self._displayCtx.getDisplay(overlay)
                 opts    = display.getDisplayOpts()
 
-                if isinstance(opts, volumeopts.VolumeOpts):
+                if isinstance(opts, cmapopts.ColourMapOpts):
                     opts   .removeListener('displayRange',    self._name)
                     opts   .removeListener('cmap',            self._name)
                     opts   .removeListener('negativeCmap',    self._name)
                     opts   .removeListener('useNegativeCmap', self._name)
                     opts   .removeListener('invert',          self._name)
                     opts   .removeListener('cmapResolution',  self._name)
-                    display.removeListener('name',            self._name) 
-                    
+                    display.removeListener('name',            self._name)
+
             except fsldc.InvalidOverlayError:
                 pass
 
-        self.__cbPanel       .destroy()
+        self.__cbCanvas      .destroy()
         fslpanel.FSLeyesPanel.destroy(self)
- 
-            
+
+
     def __layout(self, *a):
         """Called when this ``ColourBarPanel`` needs to be laid out.
         Sets the panel size, and calls the :meth:`__refreshColourBar` method.
@@ -137,27 +133,25 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
 
         # Fix the minor axis of the colour bar to 75 pixels
         if self.orientation == 'horizontal':
-            self.__cbPanel.SetSizeHints(-1, 75, -1, 75, -1, -1)
+            self.__cbCanvas.SetSizeHints(-1, 60, -1, 60, -1, -1)
         else:
-            self.__cbPanel.SetSizeHints(75, -1, 75, -1, -1, -1)
+            self.__cbCanvas.SetSizeHints(60, -1, 60, -1, -1, -1)
 
         self.Layout()
         self.__refreshColourBar()
-                          
+
 
     def __selectedOverlayChanged(self, *a):
         """Called when the :class:`.OverlayList` or the
         :attr:`.DisplayContext.selectedOverlay` changes.
-        
-        If the newly selected overlay is an :class:`.Image` which is being
-        displayed as a ``'volume'``, registers some listeners on the
-        properties of the associated :class:`.Display` and
-        :class:`.VolumeOpts` instanaces, and refreshes the
-        :class:`.ColourBarCanvas`.
+
+        If the newly selected overlay is being displayed with a
+        :class:`.ColourMapOpts` instance, various property listeners are
+        registered, and the :class:`.ColourBarCanvas` is refreshed.
         """
 
         overlay = self.__selectedOverlay
-        
+
         if overlay is not None:
             try:
                 display = self._displayCtx.getDisplay(overlay)
@@ -177,11 +171,11 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
             # have been thrown away
             except fsldc.InvalidOverlayError:
                 pass
-            
+
         self.__selectedOverlay = None
-            
+
         overlay = self._displayCtx.getSelectedOverlay()
- 
+
         if overlay is None:
             self.__refreshColourBar()
             return
@@ -189,10 +183,7 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
         display = self._displayCtx.getDisplay(overlay)
         opts    = display.getDisplayOpts()
 
-        # TODO support for other overlay types
-        # TODO support for other types (where applicable)
-        if not isinstance(overlay, fslimage.Image) or \
-           not isinstance(opts,    volumeopts.VolumeOpts):
+        if not isinstance(opts, cmapopts.ColourMapOpts):
             self.__refreshColourBar()
             return
 
@@ -216,16 +207,15 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
                             self.__refreshColourBar)
         opts   .addListener('invert',
                             self._name,
-                            self.__refreshColourBar) 
+                            self.__refreshColourBar)
         opts   .addListener('cmapResolution',
                             self._name,
-                            self.__refreshColourBar) 
+                            self.__refreshColourBar)
         display.addListener('name',
                             self._name,
                             self.__refreshColourBar)
 
         self.__refreshColourBar()
-
 
 
     def __refreshColourBar(self, *a):
@@ -252,17 +242,17 @@ class ColourBarPanel(fslpanel.FSLeyesPanel):
             dmin, dmax      = opts.displayRange.x
             label           = display.name
 
-        with props.suppressAll(self.__cbPanel):
-            self.__cbPanel.cmap            = cmap
-            self.__cbPanel.negativeCmap    = negativeCmap
-            self.__cbPanel.useNegativeCmap = useNegativeCmap
-            self.__cbPanel.cmapResolution  = cmapResolution
-            self.__cbPanel.invert          = invert
-            self.__cbPanel.vrange          = dmin, dmax
-            self.__cbPanel.label           = label
+        with props.suppressAll(self.__cbCanvas):
+            self.__cbCanvas.cmap            = cmap
+            self.__cbCanvas.negativeCmap    = negativeCmap
+            self.__cbCanvas.useNegativeCmap = useNegativeCmap
+            self.__cbCanvas.cmapResolution  = cmapResolution
+            self.__cbCanvas.invert          = invert
+            self.__cbCanvas.vrange          = dmin, dmax
+            self.__cbCanvas.label           = label
 
         # Using inside knowledge about the
         # ColourBarCanvas here - it will
         # refresh itself on any property
         # change.
-        self.__cbPanel.propNotify('cmap')
+        self.__cbCanvas.propNotify('cmap')

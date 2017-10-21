@@ -8,14 +8,14 @@
 the display properties of one or more overlays to be linked.
 """
 
+
 import logging
 import copy
 
 import six
 
-import props
-
-import fsl.utils.typedict as td
+import fsleyes_props                  as props
+import fsleyes_widgets.utils.typedict as td
 
 
 log = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class OverlayGroup(props.HasProperties):
     """An ``OverlayGroup`` is a group of overlays for which the corresponding
     :class:`.Display` and :class:`.DisplayOpts` properties are synchronised.
 
-    
+
     The point of the ``OverlayGroup`` is to allow the user to define groups of
     overlays, so he/she can change display properties on the entire group,
     instead of having to change display properties on each overlay one by one.
@@ -41,7 +41,7 @@ class OverlayGroup(props.HasProperties):
     overlay is added to the group, these group properties are set to the
     display properties of this overlay. Then, the display properties of
     overlays which are subsequently added to the group will be set to the
-    group display properties. 
+    group display properties.
 
 
     .. note:: Currently, only a subset of display properties are linked
@@ -53,7 +53,7 @@ class OverlayGroup(props.HasProperties):
               ``OverlayGroup`` should be linked.
     """
 
-    
+
     overlays = props.List()
     """The list of overlays in this ``OverlayGroup``.
 
@@ -61,11 +61,19 @@ class OverlayGroup(props.HasProperties):
                 :meth:`addOverlay` and :meth:`removeOverlay` methods instead.
     """
 
-    
+
     _groupBindings = td.TypeDict({
         'Display'        : [],
         'NiftiOpts'      : ['volume'],
         'VolumeOpts'     : ['interpolation'],
+        'Volume3DOpts'   : ['dithering',
+                            'numSteps',
+                            'numInnerSteps',
+                            'resolution',
+                            'numClipPlanes',
+                            'clipPosition',
+                            'clipAzimuth',
+                            'clipInclination'],
         'LabelOpts'      : ['outline',
                             'outlineWidth'],
         'MeshOpts'       : ['outline',
@@ -90,12 +98,12 @@ class OverlayGroup(props.HasProperties):
     overlays which are in the same group.
     """
 
-    
+
     def __init__(self, displayCtx, overlayList):
         """Create an ``OverlayGroup``.
 
         :arg displayCtx:  The :class:`.DisplayContext`.
-        
+
         :arg overlayList: The :class:`.OverlayList`.
         """
 
@@ -114,6 +122,7 @@ class OverlayGroup(props.HasProperties):
             Display,        \
             NiftiOpts,      \
             VolumeOpts,     \
+            Volume3DOpts,   \
             MaskOpts,       \
             VectorOpts,     \
             RGBVectorOpts,  \
@@ -127,18 +136,18 @@ class OverlayGroup(props.HasProperties):
         # properties of this OverlayGroup
         # instance.
         for clsName, propNames in OverlayGroup._groupBindings.items():
-            
+
             cls = locals()[clsName]
 
             for propName in propNames:
                 prop = copy.copy(getattr(cls, propName))
                 self.addProperty('{}_{}'.format(clsName, propName), prop)
-                
+
                 self.__hasBeenSet[clsName, propName] = False
 
         # Special case - make sure that the NiftiOpts
         # volume property is not constrained
-        self.setConstraint('NiftiOpts_volume', 'maxval', six.MAXSIZE)
+        self.setAttribute('NiftiOpts_volume', 'maxval', six.MAXSIZE)
 
 
     def __copy__(self):
@@ -154,12 +163,12 @@ class OverlayGroup(props.HasProperties):
         """Returns a string representation of this ``OverlayGroup``."""
         return str([str(o) for o in self.overlays])
 
-    
+
     def __repr__(self):
         """Returns a string representation of this ``OverlayGroup``."""
         return '[{}]'.format(', '.join([str(o) for o in self.overlays]))
 
-            
+
     def addOverlay(self, overlay):
         """Add an overlay to this ``OverlayGroup``.
 
@@ -184,7 +193,7 @@ class OverlayGroup(props.HasProperties):
                             self.__name,
                             self.__overlayTypeChanged)
 
-            
+
     def removeOverlay(self, overlay):
         """Remove the given overlay from this ``OverlayGroup``. """
 
@@ -194,7 +203,7 @@ class OverlayGroup(props.HasProperties):
         opts    = display.getDisplayOpts()
 
         log.debug('Removing overlay {} from group {}'.format(
-            overlay.name, self.__name)) 
+            overlay.name, self.__name))
 
         self.__bindDisplayOpts(display, unbind=True)
         self.__bindDisplayOpts(opts,    unbind=True)
@@ -215,12 +224,12 @@ class OverlayGroup(props.HasProperties):
         :arg unbind: Set to ``True`` to bind the properties, ``False`` to
                      unbind them.
         """
-        
+
         # This is the first overlay to be added - the
         # group should inherit its property values
         if len(self.overlays) == 1:
             master, slave = target, self
-                        
+
         # Other overlays are already in the group - the
         # new overlay should inherit the group properties
         else:
@@ -238,7 +247,7 @@ class OverlayGroup(props.HasProperties):
                 # If the group property has not yet
                 # taken on a value, initialise it
                 # to the property value being bound.
-                # 
+                #
                 # We do this to avoid clobbering
                 # property values with un-initialised
                 # group property values.
@@ -257,7 +266,7 @@ class OverlayGroup(props.HasProperties):
                                 master,
                                 otherName,
                                 bindatt=False,
-                                unbind=unbind) 
+                                unbind=unbind)
 
 
     def __overlayTypeChanged(self, value, valid, display, name):

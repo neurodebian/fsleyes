@@ -7,24 +7,24 @@
 """This module defines keyboard shortcuts used throughout FSLeyes.
 """
 
-import fsl.utils.typedict as td
+
+import fsleyes_widgets.utils.typedict as td
 
 
 actions = td.TypeDict({
-    
+
     'LoadOverlayAction'        : 'Ctrl-O',
     'LoadOverlayFromDirAction' : 'Ctrl-D',
     'LoadStandardAction'       : 'Ctrl-S',
     'CopyOverlayAction'        : 'Ctrl-Shift-C',
     'SaveOverlayAction'        : 'Ctrl-Shift-S',
-    'PearsonCorrelateAction'   : 'Ctrl-Shift-P',
     'ReloadOverlayAction'      : 'Ctrl-Shift-R',
     'RemoveOverlayAction'      : 'Ctrl-Shift-W',
 
     'FSLeyesFrame.closeFSLeyes'           : 'Ctrl-Q',
     'FSLeyesFrame.openHelp'               : 'Ctrl-?',
     'FSLeyesFrame.removeFocusedViewPanel' : 'Ctrl-W',
-    
+
     'FSLeyesFrame.perspectives.default'   : 'Ctrl-Shift-D',
 
     'FSLeyesFrame.addOrthoPanel'          : 'Ctrl-1',
@@ -32,14 +32,15 @@ actions = td.TypeDict({
     'FSLeyesFrame.addTimeSeriesPanel'     : 'Ctrl-3',
     'FSLeyesFrame.addHistogramPanel'      : 'Ctrl-4',
     'FSLeyesFrame.addPowerSpectrumPanel'  : 'Ctrl-5',
-    'FSLeyesFrame.addShellPanel'          : 'Ctrl-6',
-    
+    'FSLeyesFrame.addScene3DPanel'        : 'Ctrl-6',
+    'FSLeyesFrame.addShellPanel'          : 'Ctrl-7',
+
     'FSLeyesFrame.selectNextOverlay'       : 'Ctrl-Up',
     'FSLeyesFrame.selectPreviousOverlay'   : 'Ctrl-Down',
     'FSLeyesFrame.toggleOverlayVisibility' : 'Ctrl-F',
 
     # Shortcuts for next/prev volume
- 
+
 
     # ViewPanel actions must use one
     # of CTRL, ALT or Shift due to
@@ -56,12 +57,12 @@ actions = td.TypeDict({
     'CanvasPanel.toggleAtlasPanel'          : 'Ctrl-Alt-6',
 
     'CanvasPanel.toggleDisplayToolBar'      : 'Ctrl-Alt-7',
-    
+
     'OrthoPanel.toggleOrthoToolBar'         : 'Ctrl-Alt-8',
 
     'CanvasPanel.toggleMovieMode'           : 'Alt-M',
     'CanvasPanel.toggleDisplaySync'         : 'Alt-S',
-    
+
     'OrthoPanel.toggleEditMode'             : 'Alt-E',
     'OrthoPanel.resetDisplay'               : 'Alt-R',
     'OrthoPanel.centreCursor'               : 'Alt-P',
@@ -71,6 +72,8 @@ actions = td.TypeDict({
     'OrthoPanel.toggleXCanvas'              : 'Alt-X',
     'OrthoPanel.toggleYCanvas'              : 'Alt-Y',
     'OrthoPanel.toggleZCanvas'              : 'Alt-Z',
+    'OrthoPanel.pearsonCorrelation'         : 'Alt-I',
+
 
     'LightBoxPanel.toggleLightBoxToolBar'   : 'Ctrl-Alt-8',
 

@@ -12,12 +12,13 @@ which reloads the currently selected overlay from disk.
 import logging
 import os.path as op
 
-import props
 
-import fsl.data.image   as fslimage
-import fsl.utils.status as status
-from . import              base
-from . import              removeoverlay
+
+import fsl.data.image               as fslimage
+import fsleyes_widgets.utils.status as status
+import fsleyes_props                as props
+from . import                          base
+from . import                          removeoverlay
 
 
 log = logging.getLogger(__name__)
@@ -27,14 +28,14 @@ class ReloadOverlayAction(base.Action):
     """The ``ReloadOverlayAction`` reloads the currently selected overlay
     from disk. Currently only :class:`.Image` overlays are supported.
     """
-    
+
     def __init__(self, overlayList, displayCtx, frame):
         """Create a ``ReloadOverlayAction``.
 
         :arg overlayList: The :class:`.OverlayList`.
         :arg displayCtx:  The :class:`.DisplayContext`.
         :arg frame:       The :class:`.FSLeyesFrame`.
-        """ 
+        """
         base.Action.__init__(self, self.__reloadOverlay)
 
         self.__overlayList = overlayList
@@ -51,7 +52,7 @@ class ReloadOverlayAction(base.Action):
 
         self.__selectedOverlayChanged()
 
-        
+
     def destroy(self):
         """Must be called when this ``ReloadOverlayAction`` is no longer
         required. Removes some property listeners, and calls
@@ -73,7 +74,7 @@ class ReloadOverlayAction(base.Action):
                        type(ovl) == fslimage.Image     and \
                        op.exists(ovl.dataSource)
 
-    
+
     def __reloadOverlay(self):
         """Reloads the currently selected overlay from disk.
         """
@@ -108,10 +109,10 @@ class ReloadOverlayAction(base.Action):
         # Turn those references into
         # {prop : value} dictionaries
         for i in range(len(displays)):
-            
+
             d = displays[i]
             o = opts[    i]
-            
+
             displayProps = d.getAllProperties()[0]
             optProps     = o.getAllProperties()[0]
 
@@ -134,8 +135,8 @@ class ReloadOverlayAction(base.Action):
         ovl = fslimage.Image(dataSource)
         self.__overlayList.insert(index, ovl)
 
-        # Make sure the overlay is selected, 
-        # and the display order is preserved 
+        # Make sure the overlay is selected,
+        # and the display order is preserved
         self.__displayCtx.selectOverlay(ovl)
         self.__displayCtx.overlayOrder = order
 

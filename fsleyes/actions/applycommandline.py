@@ -14,17 +14,16 @@ implemented.
 
 import sys
 import argparse
-import StringIO
+import six
 
 import wx
 
-import fsl.utils.dialog       as fsldlg
-import fsl.utils.status       as status
-import fsl.utils.async        as async
+import fsleyes_widgets.dialog       as fsldlg
+import fsleyes_widgets.utils.status as status
 
-import fsleyes.strings        as strings
-import fsleyes.parseargs      as parseargs
-from . import                    base
+import fsleyes.strings              as strings
+import fsleyes.parseargs            as parseargs
+from . import                          base
 
 
 class ApplyCommandLineAction(base.Action):
@@ -48,7 +47,7 @@ class ApplyCommandLineAction(base.Action):
         self.__overlayList = overlayList
         self.__displayCtx  = displayCtx
 
-        
+
     def __applyCommandLineArgs(self):
         """Called when this action is executed. Prompts the user to enter
         some command line arguments, and then passes them to the
@@ -102,14 +101,12 @@ def applyCommandLineArgs(overlayList, displayCtx, argv, panel=None):
     that ``argv`` only contains overlay arguments.
     """
 
-    import fsleyes.views.orthopanel as orthopanel 
-
     # We patch sys.stdout/stderr
     # while parseargs.parseArgs is
     # called so we can capture its
     # output.
-    stdout = StringIO.StringIO()
-    stderr = StringIO.StringIO()
+    stdout = six.StringIO()
+    stderr = six.StringIO()
 
     if argv[0] == 'fsleyes':
         argv = argv[1:]
@@ -138,16 +135,3 @@ def applyCommandLineArgs(overlayList, displayCtx, argv, panel=None):
 
     sceneOpts = panel.getSceneOptions()
     parseargs.applySceneArgs(namespace, overlayList, displayCtx, sceneOpts)
-
-    # applySceneArgs does not apply the x/y/zcentre arguments
-    def centre(vp=panel):
-        xc, yc, zc = parseargs.calcCanvasCentres(namespace,
-                                                 overlayList,
-                                                 displayCtx)
-
-        vp.getXCanvas().centreDisplayAt(*xc)
-        vp.getYCanvas().centreDisplayAt(*yc)
-        vp.getZCanvas().centreDisplayAt(*zc)
-
-    if isinstance(panel, orthopanel.OrthoPanel):
-        async.idle(centre)

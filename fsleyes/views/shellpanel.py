@@ -9,14 +9,11 @@ which contains an interactive Python shell.
 """
 
 
-import os
 import sys
-import string
 import textwrap
 
-import                      wx
 import wx.py.shell       as wxshell
-import wx.py.interpreter as wxinterpreter 
+import wx.py.interpreter as wxinterpreter
 
 import fsleyes.version           as version
 import fsleyes.actions.runscript as runscript
@@ -39,12 +36,12 @@ class ShellPanel(viewpanel.ViewPanel):
 
         :arg parent:      The :mod:`wx` parent object, assumed to be the
                           :class:`.CanvasPanel` that owns this ``ShellPanel``.
-        
+
         :arg overlayList: The :class:`.OverlayList`.
-        
+
         :arg displayCtx:  The :class:`.DisplayContext` of the
                           :class:`.CanvasPanel` that owns this ``ShellPanel``.
-        
+
         :arg frame:       The :class:`.FSLeyesFrame` that owns this
                           ``ShellPanel``.
         """
@@ -56,10 +53,10 @@ class ShellPanel(viewpanel.ViewPanel):
                                                                displayCtx)
 
         introText = textwrap.dedent("""
-          FSLeyes {} python shell
-        
+          FSLeyes {} python shell (Python {})
+
         Available items:
-        """.format(version.__version__))
+        """.format(version.__version__, sys.version.split()[0]))
 
         overrideDocs = {
             'np'  : 'numpy',
@@ -68,7 +65,7 @@ class ShellPanel(viewpanel.ViewPanel):
             'plt' : 'matplotlib.pyplot',
         }
 
-        localVars  = _locals.keys()
+        localVars  = list(_locals.keys())
         localDescs = [_locals[k].__doc__
                       if k not in overrideDocs
                       else overrideDocs[k]
@@ -87,7 +84,7 @@ class ShellPanel(viewpanel.ViewPanel):
             self,
             introText=introText,
             locals=_locals,
-            showInterpIntro=False) 
+            showInterpIntro=False)
 
         # TODO set up environment so that users can
         #
@@ -100,7 +97,7 @@ class ShellPanel(viewpanel.ViewPanel):
         #   - run scripts (add a 'load/run' button)
         #
         #   - open/close view panels, and manipulate existing view panels
-        #   
+        #
 
         font = shell.GetFont()
         shell.SetFont(font.Larger())
@@ -123,53 +120,11 @@ class ShellPanel(viewpanel.ViewPanel):
 
 # The wx.Shell code was written many years ago,
 # and there are loads of things wrong with it.
-
-# The Shell_* functions are monkey-patched into
-# the wx.py.shell.Shell class, as the originals
-# do not correctly decode pasted text under OSX.
-# Without these patches, pasting text from the
-# clipboard into the shell will result in random
-# unicode characters appearing.
-
+#
 # The Interpreter_* function is monkey-patched
 # into the wx.py.interpreter.Interpreter class,
 # because the original version is unable to
 # execute multi-line statements.
-
-
-def Shell_Paste(self):
-    if self.CanPaste() and wx.TheClipboard.Open():
-        ps2 = str(sys.ps2)
-        if wx.TheClipboard.IsSupported(wx.DataFormat(wx.DF_TEXT)):
-            data = wx.TextDataObject()
-            data.SetFormat(wx.DataFormat(wx.DF_TEXT))
-            if wx.TheClipboard.GetData(data):
-                self.ReplaceSelection('')
-                command = data.GetText()
-                command = command.encode('unicode_internal')
-                command = filter(lambda x: x in string.printable, command)
-                command = command.rstrip()
-                command = self.fixLineEndings(command)
-                command = self.lstripPrompt(text=command)
-                command = command.replace(os.linesep + ps2, '\n')
-                command = command.replace(os.linesep, '\n')
-                command = command.replace('\n', os.linesep + ps2)
-                self.write(command)
-        wx.TheClipboard.Close()
-
-
-def Shell_PasteAndRun(self):
-    text = ''
-    if wx.TheClipboard.Open():
-        if wx.TheClipboard.IsSupported(wx.DataFormat(wx.DF_TEXT)):
-            data = wx.TextDataObject()
-            if wx.TheClipboard.GetData(data):
-                text = data.GetText()
-                text = text.encode('unicode_internal')
-                text = filter(lambda x: x in string.printable, text)
-        wx.TheClipboard.Close()
-    if text:
-        self.Execute(text)
 
 
 def Interpreter_runsource(self, source):
@@ -180,13 +135,13 @@ def Interpreter_runsource(self, source):
     # otherwise compile it as 'single'
     if source.find('\n') > -1: symbol = 'exec'
     else:                      symbol = 'single'
-    
+
     stdin, stdout, stderr = sys.stdin, sys.stdout, sys.stderr
     sys.stdin, sys.stdout, sys.stderr = \
                self.stdin, self.stdout, self.stderr
-    
+
     more = InteractiveInterpreter.runsource(self, source, symbol=symbol)
-    
+
     # this was a cute idea, but didn't work...
     # more = self.runcode(compile(source,'',
     #               ('exec' if self.useExecMode else 'single')))
@@ -210,5 +165,3 @@ def Interpreter_runsource(self, source):
 
 
 wxinterpreter.Interpreter.runsource = Interpreter_runsource
-wxshell.Shell.Paste                 = Shell_Paste
-wxshell.Shell.PasteAndRun           = Shell_PasteAndRun

@@ -26,11 +26,11 @@ class ToggleControlPanelAction(base.ToggleAction):
     widgets (most likely menu items) are updated whenever the control panel
     managed by a ``ToggleControlPanelAction`` is added/removed.
     """
-    
+
     def __init__(self, func, instance, cpType):
         """Create a ``ToggleControlPanelAction``.
 
-        :arg func:     The function which toggles the 
+        :arg func:     The function which toggles the
         :arg instance: The :class:`.ViewPanel` instance.
         :arg cpType:   The type of the control panel being managed by this
                        ``ToggleControlPanelAction``.
@@ -53,6 +53,14 @@ class ToggleControlPanelAction(base.ToggleAction):
         auiMgr.Bind(aui.EVT_AUI_PERSPECTIVE_CHANGED, self.__viewPanelChanged)
 
 
+    def destroy(self):
+        """Must be called when this ``ToggleControlPanelAction`` is no longer
+        used. Clears references, and calls the base-class ``destroy`` method.
+        """
+        base.ToggleAction.destroy(self)
+        self.__viewPanel = None
+
+
     def __viewPanelChanged(self, ev):
         """Called whenever a control panel is added to/removed from the
         :class:`.ViewPanel` that owns this ``ToggleControlPanelAction``.
@@ -61,6 +69,6 @@ class ToggleControlPanelAction(base.ToggleAction):
         ev.Skip()
 
         controlPanels = self.__viewPanel.getPanels()
-        controlPanels = map(type, controlPanels)
+        controlPanels = [type(cp) for cp in controlPanels]
 
         self.toggled = self.__cpType in controlPanels

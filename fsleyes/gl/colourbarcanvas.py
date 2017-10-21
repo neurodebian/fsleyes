@@ -9,7 +9,7 @@
 The :class:`ColourBarCanvas` contains logic to draw a colour bar (with
 labels), and then renders said colour bar as a texture using OpenGL.
 
-See the :mod:`~fsl.utils.colourbarbitmap` module for details on how
+See the :mod:`~fsleyes_widgets.colourbarbitmap` module for details on how
 the colour bar is created.
 """
 
@@ -18,10 +18,9 @@ import logging
 import OpenGL.GL as gl
 import numpy     as np
 
-import props
-
-import fsl.utils.colourbarbitmap as cbarbmp
-import fsleyes.gl.textures       as textures
+import fsleyes_props                         as props
+import fsleyes_widgets.utils.colourbarbitmap as cbarbmp
+import fsleyes.gl.textures                   as textures
 
 
 log = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ class ColourBarCanvas(props.HasProperties):
     negativeCmap = props.ColourMap()
     """Negative colour map to use, if :attr:`useNegativeCmap` is ``True``."""
 
-    
+
     useNegativeCmap = props.Boolean(default=False)
     """Whether or not to use the :attr:`negativeCmap`.
     """
@@ -51,30 +50,34 @@ class ColourBarCanvas(props.HasProperties):
     invert = props.Boolean(default=False)
     """Invert the colour map(s). """
 
-    
+
     vrange = props.Bounds(ndims=1)
     """The minimum/maximum values to display."""
 
-    
+
     label = props.String()
     """A label to display under the centre of the colour bar."""
 
-    
+
     orientation = props.Choice(('horizontal', 'vertical'))
     """Whether the colour bar should be vertical or horizontal. """
 
-    
+
     labelSide = props.Choice(('top-left', 'bottom-right'))
     """Whether the colour bar labels should be on the top/left, or bottom/right
     of the colour bar (depending upon whether the colour bar orientation is
     horizontal/vertical).
     """
 
-    
+
     textColour = props.Colour(default=(1, 1, 1, 1))
     """Colour to use for the colour bar label. """
 
-    
+
+    bgColour = props.Colour(default=(0, 0, 0, 1))
+    """Colour to use for the background. """
+
+
     def __init__(self):
         """Adds a few listeners to the properties of this object, to update
         the colour bar when they change.
@@ -85,11 +88,11 @@ class ColourBarCanvas(props.HasProperties):
 
         self.addGlobalListener(self._name, self.__updateTexture)
 
-            
+
     def __updateTexture(self, *a):
         self._genColourBarTexture()
         self.Refresh()
-        
+
 
     def _initGL(self):
         """Called automatically by the OpenGL canvas target superclass (see the
@@ -118,11 +121,10 @@ class ColourBarCanvas(props.HasProperties):
         if not self._setGLContext():
             return
 
-        w, h = self._getSize()
+        w, h = self.GetSize()
 
-        if w == 0 or h == 0:
-            if self.orientation == 'horizontal': w, h = 600, 200
-            else:                                w, h = 200, 600
+        if w < 50 or h < 50:
+            return
 
         if self.orientation == 'horizontal':
             if  self.labelSide == 'top-left': labelSide = 'top'
@@ -149,7 +151,7 @@ class ColourBarCanvas(props.HasProperties):
                 tickalign  = ['left', 'right']
                 ticklabels = ['{:0.2f}'.format(self.vrange.xlo),
                               '{:0.2f}'.format(self.vrange.xhi)]
-            
+
             bitmap = cbarbmp.colourBarBitmap(
                 cmap=self.cmap,
                 negCmap=negCmap,
@@ -173,7 +175,7 @@ class ColourBarCanvas(props.HasProperties):
         # Texture2D instance needs it in shape
         # 4*W*H
         bitmap = np.fliplr(bitmap).transpose([2, 0, 1])
-            
+
         self._tex.setData(bitmap)
         self._tex.refresh()
 
@@ -183,8 +185,8 @@ class ColourBarCanvas(props.HasProperties):
 
         if not self._setGLContext():
             return
-        
-        width, height = self._getSize()
+
+        width, height = self.GetSize()
 
         # viewport
         gl.glViewport(0, 0, width, height)
@@ -194,6 +196,7 @@ class ColourBarCanvas(props.HasProperties):
         gl.glMatrixMode(gl.GL_MODELVIEW)
         gl.glLoadIdentity()
 
+        gl.glClearColor(*self.bgColour)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)

@@ -14,9 +14,9 @@ import six
 import wx
 import wx.glcanvas as wxgl
 
-import props
+from   fsl.utils.platform import platform
+import fsleyes_props      as     props
 
-from   fsl.utils.platform import platform 
 import fsleyes.gl         as     fslgl
 from   .                  import slicecanvas
 
@@ -45,7 +45,16 @@ class WXGLSliceCanvas(six.with_metaclass(fslgl.WXGLMetaClass,
 
         self.Bind(wx.EVT_SIZE, self.__onResize)
 
-    
+
+    def destroy(self):
+        """Must be called when this ``WXGLSliceCanvas`` is no longer needed.
+        Clears some event listeners and calls the base class ``destroy``
+        method.
+        """
+        self.Unbind(wx.EVT_SIZE)
+        super(WXGLSliceCanvas, self).destroy()
+
+
     def __onResize(self, ev):
         """Called on ``wx.EVT_SIZE`` events, when the canvas is resized. When
         the canvas is resized, we have to update the display bounds to preserve
@@ -53,7 +62,7 @@ class WXGLSliceCanvas(six.with_metaclass(fslgl.WXGLMetaClass,
         """
         ev.Skip()
 
-        with props.skip(self, 'displayBounds', self.name):
+        with props.skip(self.opts, 'displayBounds', self.name):
             centre = self.getDisplayCentre()
             self._updateDisplayBounds()
             self.centreDisplayAt(*centre)
@@ -78,7 +87,7 @@ class WXGLSliceCanvas(six.with_metaclass(fslgl.WXGLMetaClass,
         # show/hide normally.
         if not platform.inSSHSession:
             wxgl.GLCanvas.Show(self, show)
-            
+
         elif not show:
             self.SetMinSize((0, 0))
             self.SetMaxSize((0, 0))

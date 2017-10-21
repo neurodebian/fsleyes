@@ -17,7 +17,7 @@ import platform
 from collections import OrderedDict
 
 from   fsl.utils.platform import platform as fslplatform
-import fsl.utils.status                   as status
+import fsleyes_widgets.utils.status       as status
 import fsleyes.strings                    as strings
 import fsleyes.state                      as fslstate
 from . import                                base
@@ -34,7 +34,7 @@ class DiagnosticReportAction(base.Action):
     location.
     """
 
-    
+
     def __init__(self, overlayList, displayCtx, frame):
         """Create a ``DiagnosticReportAction``.
 
@@ -65,7 +65,7 @@ class DiagnosticReportAction(base.Action):
 
         import wx
 
-        dlg = wx.FileDialog( 
+        dlg = wx.FileDialog(
             self.__frame,
             message=strings.titles[self, 'saveReport'],
             defaultDir=os.getcwd(),
@@ -98,7 +98,7 @@ class DiagnosticReportAction(base.Action):
 
         report   = OrderedDict()
         overlays = []
-        
+
         for i, ovl in enumerate(self.__overlayList):
             overlays.append(OrderedDict([
                 ('type',   type(ovl).__name__),
@@ -109,7 +109,6 @@ class DiagnosticReportAction(base.Action):
         report['Python']      = '{}  {}'.format(platform.python_version(),
                                                 platform.python_compiler())
         report['Version']     = version.__version__
-        report['VCS Version'] = version.__vcs_version__
         report['OpenGL']      = self.__openGLReport()
         report['Settings']    = self.__settingsReport()
 
@@ -125,34 +124,15 @@ class DiagnosticReportAction(base.Action):
         """Creates and returns a dictionary containing:
 
          - *FSLeyes* settings stored via the :mod:`.settings` module
-         - Saved perspectives stored via the :mod:`.perspectives` module.
         """
 
-        import fsleyes.perspectives as perspectives
-        import fsl.utils.settings   as fslsettings
-        
+        import fsl.utils.settings as fslsettings
+
         report   = OrderedDict()
-
-        # TODO When you update the fsl.utils.settings module,
-        #      use its functionality to read out *all* saved
-        #      settings, instead of hard coding them here.
-        settings = ['fsldir',
-                    'fsleyes.frame.layout',
-                    'fsleyes.frame.position',
-                    'fsleyes.frame.size']
-        settings = {s : fslsettings.read(s) for s in settings}
-
-        persps   = perspectives.getAllPerspectives()
-        persps   = {p : fslsettings.read('fsleyes.perspectives.{}'.format(p))
-                    for p in persps}
+        settings = fslsettings.readAll()
 
         for k, v in settings.items():
-            report[k] = str(v)
-
-        report['perspectives'] = ','.join(persps)
-
-        for k, v in persps:
-            report['perspectives.{}'.format(k)] = str(v)
+            report[k] = v
 
         return report
 
@@ -166,15 +146,19 @@ class DiagnosticReportAction(base.Action):
 
         report = OrderedDict()
 
-        report['Version']       = gl.glGetString( gl.GL_VERSION)
+        version    = gl.glGetString( gl.GL_VERSION)   .decode('ascii')
+        renderer   = gl.glGetString( gl.GL_RENDERER)  .decode('ascii')
+        extensions = gl.glGetString( gl.GL_EXTENSIONS).decode('ascii')
+
+        report['Version']       = version
         report['Compatibility'] = fslplatform.glVersion
-        report['Renderer']      = gl.glGetString( gl.GL_RENDERER)
+        report['Renderer']      = renderer
         report['Texture size']  = str(gl.glGetInteger(gl.GL_MAX_TEXTURE_SIZE))
-        report['Extensions']    = gl.glGetString( gl.GL_EXTENSIONS).split(' ')
+        report['Extensions']    = extensions.split(' ')
 
         return report
 
-    
+
     def __formatReport(self, reportDict):
         """Converts the given hierarchical dictionary to a JSON-formatted
         string.

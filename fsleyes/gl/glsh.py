@@ -48,7 +48,7 @@ class GLSH(glvector.GLVectorBase):
     retrieved via the :meth:`.SHOpts.getVertices` and
     :meth:`.SHOpts.getIndices` methods.
 
-    
+
     These radii are calculated on every call to :meth:`draw` (via the
     :meth:`updateRadTexture` method), and stored in a :class:`.Texture3D`
     instance, which is available as an attribute called ``radTexture``. This
@@ -68,59 +68,63 @@ class GLSH(glvector.GLVectorBase):
     ============== =====================================================
     ``radTexture`` :class:`.Texture3D` containing radius values for each
                     vertex to be displayed in the current draw call.
-    
+
     ``vertices``   ``numpy`` array of shape ``(N, 3)`` which comprise a
-                   tessellated sphere. The vertex shader will apply 
-                   the radii to the vertices contained in this array, 
+                   tessellated sphere. The vertex shader will apply
+                   the radii to the vertices contained in this array,
                    to form the FODs at every voxel.
-    
+
     ``indices``    Indices into ``vertices`` defining the faces of the
                    sphere.
-    
+
     ``nVertices``  Total number of rendered vertices (equal to
                    ``len(indices)``).
-    
+
     ``vertIdxs``   Indices for each vertex (equal to
                    ``np.arange(vertices.shape[0])``).
     ============== =====================================================
     """
 
 
-    def __init__(self, image, display, xax, yax):
+    def __init__(self, image, displayCtx, canvas, threedee):
         """Create a ``GLSH`` object.
 
 
         Creates a :class:`.Texture3D` instance to store vertex radii, adds
         property listeners to the :class:`.Display` and :class:`.SHOpts`
-        instances, and calls :func:`.glsh_funcs.init`.
-        
+        instances, and sets up shaders.
 
-        :arg image:   The :class:`.Image` instance
-        :arg display: The associated :class:`.Display` instance.
-        :arg xax:     Horizontal display axis
-        :arg yax:     Vertical display axis
+
+        :arg image:      The :class:`.Image` instance
+        :arg displayCtx: The :class:`.DisplayContext` managing the scene.
+        :arg canvas:     The canvas doing the drawing.
+        :arg threedee:   Set up for 2D or 3D rendering.
         """
-        
+
         self.shader     = None
         self.radTexture = None
-
-        glvector.GLVectorBase.__init__(
-            self,
-            image,
-            display,
-            xax,
-            yax,
-            init=lambda: fslgl.glsh_funcs.init(self))
-
-        self.__shStateChanged()
 
         # This texture gets updated on
         # draw calls, so we want it to
         # run on the main thread.
-        self.radTexture = textures.Texture3D('{}_radTexture'.format(self.name),
+        self.radTexture = textures.Texture3D('{}_radTexture'.format('fuck'),
                                              threaded=False)
 
-        
+        # Usin preinit here (see GLVectorBase)
+        # because the GLObject init has to be
+        # called before compileShaders can be
+        # called, and shStateChanged has to be
+        # called after everything else is called.
+        glvector.GLVectorBase.__init__(
+            self,
+            image,
+            displayCtx,
+            canvas,
+            threedee,
+            preinit=self.compileShaders,
+            init=self.__shStateChanged)
+
+
     def destroy(self):
         """Removes property listeners, destroys textures, and calls
         :func:`.glsh_funcs.destroy`.
@@ -148,20 +152,20 @@ class GLSH(glvector.GLVectorBase):
 
         glvector.GLVectorBase.addListeners(self)
 
-        opts = self.displayOpts
+        opts = self.opts
         name = self.name
 
         opts.addListener('shResolution' ,   name, self.__shStateChanged,
                          immediate=True)
         opts.addListener('shOrder'      ,   name, self.__shStateChanged,
-                         immediate=True) 
+                         immediate=True)
         opts.addListener('size',            name, self.updateShaderState)
         opts.addListener('lighting',        name, self.updateShaderState)
         opts.addListener('orientFlip',      name, self.updateShaderState)
         opts.addListener('radiusThreshold', name, self.notify)
         opts.addListener('colourMode',      name, self.updateShaderState)
 
-    
+
     def removeListeners(self):
         """Overrides :meth:`.GLVectorBase.removeListeners`. Called by
         :meth:`destroy`. Removes listeners added by :meth:`addListeners`.
@@ -169,7 +173,7 @@ class GLSH(glvector.GLVectorBase):
 
         glvector.GLVectorBase.removeListeners(self)
 
-        opts = self.displayOpts
+        opts = self.opts
         name = self.name
 
         opts.removeListener('shResolution',    name)
@@ -187,28 +191,28 @@ class GLSH(glvector.GLVectorBase):
         """
         fslgl.glsh_funcs.compileShaders(self)
 
-        
+
     def updateShaderState(self, *a, **kwa):
         """Overrides :meth:`.GLVectorBase.updateShaderState`. Calls
         :func:`.glsh_funcs.updateShaderState`.
         """
         alwaysNotify = kwa.pop('alwaysNotify', False)
-        
+
         if fslgl.glsh_funcs.updateShaderState(self) or alwaysNotify:
             self.notify()
             return True
         return False
 
-        
+
     def __shStateChanged(self, *a):
         """Called when the :attr:`.SHOpts.shResolution` property changes.
         Re-loads the SH parameters from disk, and attaches them as an
         attribute called ``__shParams``.
         """
 
-        opts = self.displayOpts
-        
-        self.__shParams = self.displayOpts.getSHParameters()
+        opts = self.opts
+
+        self.__shParams = opts.getSHParameters()
         self.vertices   = opts.getVertices()
         self.indices    = opts.getIndices()
         self.nVertices  = len(self.indices)
@@ -230,7 +234,7 @@ class GLSH(glvector.GLVectorBase):
 
         For a symmetric SH image (which only contains SH functions of even
         order), each volume corresponds to
-        
+
         ======  =============  =====
         Volume  Maximum order  Order
         ------  -------------  -----
@@ -281,7 +285,7 @@ class GLSH(glvector.GLVectorBase):
         ...     ...            ...
         ======  =============  =====
         """
-        opts      = self.displayOpts
+        opts      = self.opts
         maxOrder  = opts.maxOrder
         dispOrder = opts.shOrder
         shType    = opts.shType
@@ -292,14 +296,14 @@ class GLSH(glvector.GLVectorBase):
 
         if shType == 'sym':
             for o in range(dispOrder + 2, maxOrder + 2, 2):
-                nvols -= 2 * o + 1 
+                nvols -= 2 * o + 1
 
         elif shType == 'asym':
             for o in range(dispOrder + 1, maxOrder + 1):
                 nvols -= 2 * o + 1
 
         return slice(nvols)
-    
+
 
     def updateRadTexture(self, voxels):
         """Called by :func:`.glsh_funcs.draw`. Updates the radius texture to
@@ -311,18 +315,18 @@ class GLSH(glvector.GLVectorBase):
         ``voxels`` array.
 
         This function returns a tuple containing:
-        
+
           - The ``voxels`` array. If ``SHOpts.radiusThreshold == 0``,
             this will be the same as the input. Otherwise, this will
             be a new array with sub-threshold voxels removed.
             If no voxels are to be rendered (all out of bounds, or below
             the radius threshold), this will be an empty list.
-        
+
           - The adjusted shape of the radius texture.
         """
 
-        opts = self.displayOpts
-        
+        opts = self.opts
+
         # Remove out-of-bounds voxels
         shape   = self.image.shape[:3]
         x, y, z = voxels.T
@@ -394,9 +398,9 @@ class GLSH(glvector.GLVectorBase):
 
             # If we can't evenly reshape the texture
             # dimensions, we have to increase the
-            # texture size - the radius data will 
+            # texture size - the radius data will
             # only take up a portion of the allocated
-            # texture size. 
+            # texture size.
             else:
                 divisor            = 2
                 radTexShape[imax] += 1
@@ -404,12 +408,12 @@ class GLSH(glvector.GLVectorBase):
             radTexShape[imax] /= divisor
             radTexShape[imin] *= divisor
 
-        # Resize and reshape the 
+        # Resize and reshape the
         # radius array as needed
         radTexSize = np.prod(radTexShape)
         if radTexSize != radii.size:
             radii.resize(radTexSize)
-            
+
         radii = radii.reshape(radTexShape, order='F')
 
         # Copy the data to the texture
@@ -428,31 +432,37 @@ class GLSH(glvector.GLVectorBase):
                 glvector.GLVectorBase.texturesReady(self))
 
 
-    def preDraw(self):
+    def preDraw(self, xform=None, bbox=None):
         """Overrides :meth:`.GLVectorBase.preDraw`.  Binds textures, and calls
         :func:`.glsh_funcs.preDraw`.
         """
-        
+
         # The radTexture needs to be bound *last*,
         # because the updateRadTexture method will
         # be called through draw, and if radTexture
         # is not the most recently bound texture,
         # the update will fail.
-        glvector.GLVectorBase.preDraw(self)
+        glvector.GLVectorBase.preDraw(self, xform, bbox)
         self.radTexture.bindTexture(gl.GL_TEXTURE4)
-        fslgl.glsh_funcs.preDraw(self)
+        fslgl.glsh_funcs.preDraw(self, xform, bbox)
 
 
-    def draw(self, zpos, xform=None, bbox=None):
+    def draw2D(self, *args, **kwargs):
         """Overrides :meth:`.GLObject.draw`. Calls :func:`.glsh_funcs.draw`.
         """
-        fslgl.glsh_funcs.draw(self, zpos, xform, bbox)
+        fslgl.glsh_funcs.draw2D(self, *args, **kwargs)
 
 
-    def postDraw(self):
+    def draw3D(self, *args, **kwargs):
+        """Overrides :meth:`.GLObject.draw`. Calls :func:`.glsh_funcs.draw`.
+        """
+        fslgl.glsh_funcs.draw3D(self, *args, **kwargs)
+
+
+    def postDraw(self, xform=None, bbox=None):
         """Overrides :meth:`.GLVectorBase.postDraw`.  Unbinds textures, and
         calls :func:`.glsh_funcs.postDraw`.
         """
-        glvector.GLVectorBase.postDraw(self)
+        glvector.GLVectorBase.postDraw(self, xform, bbox)
         self.radTexture.unbindTexture()
-        fslgl.glsh_funcs.postDraw(self)
+        fslgl.glsh_funcs.postDraw(self, xform, bbox)

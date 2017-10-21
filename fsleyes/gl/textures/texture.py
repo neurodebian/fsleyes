@@ -30,11 +30,11 @@ class Texture(object):
 
     .. autosummary::
        :nosignatures:
-    
+
        getTextureName
        getTextureHandle
 
-    
+
     The :meth:`bindTexture` and :meth:`unbindTexture` methods allow you to
     bind a texture object to a GL texture unit. For example, let's say we
     have a texture object called ``tex``, and we want to use it::
@@ -52,7 +52,7 @@ class Texture(object):
                            gl.GL_NEAREST)
         gl.glTexParameteri(gl.GL_TEXTURE_2D,
                            gl.GL_TEXTURE_MAG_FILTER,
-                           gl.GL_NEAREST) 
+                           gl.GL_NEAREST)
 
         tex.unbindTexture()
 
@@ -81,7 +81,7 @@ class Texture(object):
     resources.
     """
 
-    
+
     def __init__(self, name, ndims):
         """Create a ``Texture``.
 
@@ -97,16 +97,16 @@ class Texture(object):
         self.__name        = name
         self.__ndims       = ndims
         self.__bound       = False
-        
+
         self.__textureUnit = None
 
         if   ndims == 1: self.__ttype = gl.GL_TEXTURE_1D
         elif ndims == 2: self.__ttype = gl.GL_TEXTURE_2D
         elif ndims == 3: self.__ttype = gl.GL_TEXTURE_3D
-        
+
         else:            raise ValueError('Invalid number of dimensions')
 
-        log.memory('{}.init ({})'.format(type(self).__name__, id(self))) 
+        log.debug('{}.init ({})'.format(type(self).__name__, id(self)))
         log.debug('Created {} ({}) for {}: {}'.format(type(self).__name__,
                                                       id(self),
                                                       self.__name,
@@ -116,9 +116,9 @@ class Texture(object):
     def __del__(self):
         """Prints a log message."""
         if log:
-            log.memory('{}.del ({})'.format(type(self).__name__, id(self)))
-        
-        
+            log.debug('{}.del ({})'.format(type(self).__name__, id(self)))
+
+
     def destroy(self):
         """Must be called when this ``Texture`` is no longer needed. Deletes
         the texture handle.
@@ -128,7 +128,7 @@ class Texture(object):
                                                        id(self),
                                                        self.__name,
                                                        self.__texture))
- 
+
         gl.glDeleteTextures(self.__texture)
         self.__texture = None
 
@@ -139,7 +139,7 @@ class Texture(object):
         """
         return self.__name
 
-        
+
     def getTextureHandle(self):
         """Returns the GL texture handle for this texture. """
         return self.__texture
@@ -164,7 +164,7 @@ class Texture(object):
 
         if textureUnit is not None:
             gl.glActiveTexture(textureUnit)
-            
+
         gl.glBindTexture(self.__ttype, self.__texture)
 
         self.__bound       = True
@@ -176,7 +176,7 @@ class Texture(object):
 
         if self.__textureUnit is not None:
             gl.glActiveTexture(self.__textureUnit)
-            
+
         gl.glBindTexture(self.__ttype, 0)
 
         self.__bound       = False
@@ -195,15 +195,26 @@ class Texture2D(Texture):
         sub-class of ``Texture2D``).
     """
 
-    def __init__(self, name, interp=gl.GL_NEAREST):
+    def __init__(self, name, interp=gl.GL_NEAREST, dtype=None):
         """Create a ``Texture2D`` instance.
 
         :arg name:   Unique name for this ``Texture2D``.
-        
-        :arg interp: Initial interpolation - ``GL_NEAREST`` or ``GL_LINEAR``.
-                     This can be changed later on via the
+
+        :arg interp: Initial interpolation - ``GL_NEAREST`` (the default)
+                     or ``GL_LINEAR``. This can be changed later on via the
                      :meth:`setInterpolation` method.
+
+        :arg dtype:  Sized internal GL data format to use for the texture.
+                     Currently only ``gl.GL_RGBA8`` (the default) and
+                     ``gl.GL_DEPTH_COMPONENT24`` are supported.
         """
+
+        if dtype is None:
+            dtype = gl.GL_RGBA8
+
+        if dtype not in (gl.GL_RGBA8, gl.GL_DEPTH_COMPONENT24):
+            raise ValueError('Invalid dtype: {}'.format(dtype))
+
         Texture.__init__(self, name, 2)
 
         self.__data      = None
@@ -213,8 +224,9 @@ class Texture2D(Texture):
         self.__oldHeight = None
         self.__border    = None
         self.__interp    = interp
+        self.__dtype     = dtype
 
-        
+
     def setInterpolation(self, interp):
         """Change the texture interpolation - valid values are ``GL_NEAREST``
         or ``GL_LINEAR``.
@@ -222,14 +234,14 @@ class Texture2D(Texture):
         self.__interp = interp
         self.refresh()
 
-        
+
     def setBorder(self, border):
-        """Change the border colour - set to a tuple of four values in the 
+        """Change the border colour - set to a tuple of four values in the
         range 0 to 1, or ``None`` for no border (in which case the texture
         coordinates will be clamped to edges).
         """
         self.__border = border
-        self.refresh() 
+        self.refresh()
 
 
     def setSize(self, width, height):
@@ -244,9 +256,9 @@ class Texture2D(Texture):
 
         self.__setSize(width, height)
         self.__data = None
-        
+
         self.refresh()
-        
+
 
     def __setSize(self, width, height):
         """Sets the width/height attributes for this texture, and saves a
@@ -256,7 +268,32 @@ class Texture2D(Texture):
         self.__oldWidth  = self.__width
         self.__oldHeight = self.__height
         self.__width     = width
-        self.__height    = height        
+        self.__height    = height
+
+
+    @classmethod
+    def getDataTypeParams(cls, dtype):
+        """Returns a tuple containing information about the given sized
+        internal GL texture data format:
+          - The base GL internal format
+          - The GL external data format
+          - The equivalent ``numpy`` data type
+          - The number of channels
+        """
+
+        if dtype == gl.GL_RGBA8:
+            intFmt = gl.GL_RGBA
+            extFmt = gl.GL_UNSIGNED_BYTE
+            ndtype = np.uint8
+            size   = 4
+
+        elif dtype == gl.GL_DEPTH_COMPONENT24:
+            intFmt = gl.GL_DEPTH_COMPONENT
+            extFmt = gl.GL_UNSIGNED_INT
+            ndtype = np.uint32
+            size   = 1
+
+        return intFmt, extFmt, ndtype, size
 
 
     def getSize(self):
@@ -285,23 +322,20 @@ class Texture2D(Texture):
         if not bound:
             self.bindTexture()
 
-        data = gl.glGetTexImage(
-            gl.GL_TEXTURE_2D,
-            0,
-            gl.GL_RGBA,
-            gl.GL_UNSIGNED_BYTE,
-            None)
+        intFmt, extFmt, ndtype, size = self.getDataTypeParams(self.__dtype)
+
+        data = gl.glGetTexImage(gl.GL_TEXTURE_2D, 0, intFmt, extFmt, None)
 
         if not bound:
             self.unbindTexture()
 
-        data = np.fromstring(data, dtype=np.uint8)
-        data = data.reshape((self.__height, self.__width, 4))
+        data = np.fromstring(data, dtype=ndtype)
+        data = data.reshape((self.__height, self.__width, size))
         data = np.flipud(data)
 
         return data
 
-        
+
     def refresh(self):
         """Configures this ``Texture2D``. This includes setting up
         interpolation, and setting the texture size and data.
@@ -314,10 +348,13 @@ class Texture2D(Texture):
             raise ValueError('Invalid size: {}'.format((self.__width,
                                                         self.__height)))
 
+        dtype                  = self.__dtype
+        intFmt, extFmt, ndtype = self.getDataTypeParams(dtype)[:3]
+
         data = self.__data
 
         if data is not None:
-            data = data.ravel('F')
+            data = np.array(data.ravel('F'), dtype=ndtype, copy=False)
 
         self.bindTexture()
         gl.glPixelStorei(gl.GL_PACK_ALIGNMENT,   1)
@@ -346,7 +383,7 @@ class Texture2D(Texture):
                                gl.GL_CLAMP_TO_EDGE)
             gl.glTexParameteri(gl.GL_TEXTURE_2D,
                                gl.GL_TEXTURE_WRAP_T,
-                               gl.GL_CLAMP_TO_EDGE) 
+                               gl.GL_CLAMP_TO_EDGE)
 
         log.debug('Configuring {} ({}) with size {}x{}'.format(
             type(self).__name__,
@@ -359,46 +396,46 @@ class Texture2D(Texture):
         if self.__width  == self.__oldWidth  and \
            self.__height == self.__oldHeight:
 
-            # But we can use glTexSubImage2D 
+            # But we can use glTexSubImage2D
             # if we have data to upload
             if data is not None:
                 gl.glTexSubImage2D(gl.GL_TEXTURE_2D,
-                                   0, 
+                                   0,
                                    0,
                                    0,
                                    self.__width,
                                    self.__height,
-                                   gl.GL_RGBA,
-                                   gl.GL_UNSIGNED_BYTE,
+                                   intFmt,
+                                   extFmt,
                                    data)
-                
+
         # If the width and/or height have
         # changed, we need to re-define
         # the texture properties
         else:
             gl.glTexImage2D(gl.GL_TEXTURE_2D,
                             0,
-                            gl.GL_RGBA8,
+                            dtype,
                             self.__width,
                             self.__height,
                             0,
-                            gl.GL_RGBA,
-                            gl.GL_UNSIGNED_BYTE,
+                            intFmt,
+                            extFmt,
                             data)
         self.unbindTexture()
 
-        
+
     def draw(self, vertices, xform=None):
         """Draw the contents of this ``Texture2D`` to a region specified by
-        the given vertices.
+        the given vertices. The texture is bound to texture unit 0.
 
         :arg vertices: A ``numpy`` array of shape ``6 * 3`` specifying the
                        region, made up of two triangles, to which this
-                       ``Texture2D`` should be rendered.
+                       ``Texture2D`` should be drawn.
 
         :arg xform:    A transformation to be applied to the vertices.
         """
-        
+
         if vertices.shape != (6, 3):
             raise ValueError('Six vertices must be provided')
 
@@ -419,28 +456,35 @@ class Texture2D(Texture):
         vertices  = vertices .ravel('C')
         texCoords = texCoords.ravel('C')
 
-        gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
-
         self.bindTexture(gl.GL_TEXTURE0)
 
         gl.glClientActiveTexture(gl.GL_TEXTURE0)
-        
+
         gl.glTexEnvf(gl.GL_TEXTURE_ENV,
                      gl.GL_TEXTURE_ENV_MODE,
                      gl.GL_REPLACE)
-        
+
         with glroutines.enabled((gl.GL_TEXTURE_2D,
                                  gl.GL_TEXTURE_COORD_ARRAY,
                                  gl.GL_VERTEX_ARRAY)):
 
             gl.glVertexPointer(  3, gl.GL_FLOAT, 0, vertices)
             gl.glTexCoordPointer(2, gl.GL_FLOAT, 0, texCoords)
-            gl.glDrawElements(gl.GL_TRIANGLES, 6, gl.GL_UNSIGNED_INT, indices) 
+            gl.glDrawElements(gl.GL_TRIANGLES, 6, gl.GL_UNSIGNED_INT, indices)
 
         self.unbindTexture()
- 
-        
-    def drawOnBounds(self, zpos, xmin, xmax, ymin, ymax, xax, yax, xform=None):
+
+
+    def drawOnBounds(self,
+                     zpos,
+                     xmin,
+                     xmax,
+                     ymin,
+                     ymax,
+                     xax,
+                     yax,
+                     *args,
+                     **kwargs):
         """Draws the contents of this ``Texture2D`` to a rectangle.  This is a
         convenience method which creates a set of vertices, and passes them to
         the :meth:`draw` method.
@@ -455,7 +499,8 @@ class Texture2D(Texture):
                     axis.
         :arg yax:   Display space axis which maps to the vertical screen
                     axis.
-        :arg xform: Transformation matrix to apply to the vertices.
+
+        All other arguments are passed to the :meth:`draw` method.
         """
 
         zax              = 3 - xax - yax
@@ -469,4 +514,4 @@ class Texture2D(Texture):
         vertices[ 4, [xax, yax]] = [xmin, ymax]
         vertices[ 5, [xax, yax]] = [xmax, ymax]
 
-        self.draw(vertices, xform)
+        self.draw(vertices, *args, **kwargs)

@@ -10,6 +10,9 @@ by the :class:`.SliceCanvas` class to store a collection of off-screen
 :class:`.GLObject` instances.
 """
 
+
+from __future__ import division
+
 import logging
 
 import numpy     as np
@@ -46,7 +49,7 @@ class RenderTextureStack(object):
               will be refreshed before they need to be drawn.
     """
 
-    
+
     def __init__(self, globj):
         """Create a ``RenderTextureStack``. An update listener is registered
         on the ``GLObject``, so that the textures can be refreshed whenever it
@@ -75,15 +78,15 @@ class RenderTextureStack(object):
 
         async.idle(self.__textureUpdateLoop)
 
-        log.memory('{}.init ({})'.format(type(self).__name__, id(self)))
+        log.debug('{}.init ({})'.format(type(self).__name__, id(self)))
 
-        
+
     def __del__(self):
         """Prints a log message."""
         if log:
-            log.memory('{}.del ({})'.format(type(self).__name__, id(self)))
+            log.debug('{}.del ({})'.format(type(self).__name__, id(self)))
 
-        
+
     def destroy(self):
         """Must be called when this ``RenderTextureStack`` is no longer needed.
         Calls the :meth:`__destroyTextures` method.
@@ -97,7 +100,7 @@ class RenderTextureStack(object):
         """
         return self.__globj
 
-    
+
     def draw(self, zpos, xform=None):
         """Draws the pre-generated :class:`.RenderTexture` which corresponds
         to the  specified Z position.
@@ -131,7 +134,7 @@ class RenderTextureStack(object):
         texture.drawOnBounds(
             zpos, lo[xax], hi[xax], lo[yax], hi[yax], xax, yax, xform)
 
-    
+
     def setAxes(self, xax, yax):
         """This method must be called when the display orientation of the
         :class:`.GLObject` changes. It destroys and re-creates all
@@ -152,14 +155,15 @@ class RenderTextureStack(object):
             numTextures = self.__maxNumTextures
 
         self.__destroyTextures()
-        
+
         for i in range(numTextures):
-            self.__textures.append(
-                rendertexture.RenderTexture('{}_{}'.format(self.name, i)))
+            rt = rendertexture.RenderTexture(
+                '{}_{}'.format(self.name, i), rttype='c')
+            self.__textures.append(rt)
 
         self.onGLObjectUpdate()
 
-        
+
     def __destroyTextures(self):
         """Destroys all :class:`.RenderTexture` instances. This is performed
         asynchronously, via the ``.async.idle`` function.
@@ -177,7 +181,7 @@ class RenderTextureStack(object):
         updated. Re-calculates the display space Z-axis range, and marks
         all render textures as dirty.
         """
-        
+
         lo, hi      = self.__globj.getDisplayBounds()
         self.__zmin = lo[self.__zax]
         self.__zmax = hi[self.__zax]
@@ -189,7 +193,7 @@ class RenderTextureStack(object):
 
         self.__refreshAllTextures()
 
-            
+
     def __refreshAllTextures(self, *a):
         """Marks all :class:`.RenderTexture`  instances as *dirty*, so that
         they will be refreshed by the :meth:`.__textureUpdateLoop`.
@@ -198,19 +202,19 @@ class RenderTextureStack(object):
         if self.__lastDrawnTexture is not None:
             lastIdx = self.__lastDrawnTexture
         else:
-            lastIdx = len(self.__textures) / 2
-            
-        aboveIdxs = range(lastIdx, len(self.__textures))
-        belowIdxs = range(lastIdx - 1, -1, -1)
+            lastIdx = len(self.__textures) // 2
+
+        aboveIdxs = list(range(lastIdx, len(self.__textures)))
+        belowIdxs = list(range(lastIdx - 1, -1, -1))
 
         idxs = [0] * len(self.__textures)
 
         for i in range(len(self.__textures)):
-            
+
             if len(aboveIdxs) > 0 and len(belowIdxs) > 0:
                 if i % 2: idxs[i] = belowIdxs.pop(0)
                 else:     idxs[i] = aboveIdxs.pop(0)
-                
+
             elif len(aboveIdxs) > 0: idxs[i] = aboveIdxs.pop(0)
             else:                    idxs[i] = belowIdxs.pop(0)
 
@@ -239,16 +243,16 @@ class RenderTextureStack(object):
         if self.__textureDirty[idx]:
 
             tex = self.__textures[idx]
-        
+
             log.debug('Refreshing texture slice {} (zax {})'.format(
                 idx, self.__zax))
-        
+
             self.__refreshTexture(tex, idx)
 
         if len(self.__updateQueue) > 0:
             async.idle(self.__textureUpdateLoop)
 
-        
+
     def __refreshTexture(self, tex, idx):
         """Refreshes the given :class:`.RenderTexture`.
 
@@ -260,6 +264,7 @@ class RenderTextureStack(object):
         zpos  = self.__indexToZpos(idx)
         xax   = self.__xax
         yax   = self.__yax
+        axes  = (self.__xax, self.__yax, self.__zax)
 
         if not globj.ready():
             return
@@ -293,11 +298,11 @@ class RenderTextureStack(object):
 
         with glroutines.disabled(gl.GL_BLEND):
             globj.preDraw()
-            globj.draw(zpos)
+            globj.draw2D(zpos, axes)
             globj.postDraw()
 
         tex.unbindAsRenderTarget()
-        
+
         gl.glViewport(*oldSize)
         gl.glMatrixMode(gl.GL_PROJECTION)
         gl.glLoadMatrixf(oldProjMat)
@@ -310,20 +315,20 @@ class RenderTextureStack(object):
     def __zposToIndex(self, zpos):
         """Converts a Z location in the display coordinate system into a
         ``RenderTexture`` index.
-        """        
+        """
         zmin  = self.__zmin
         zmax  = self.__zmax
         ntexs = len(self.__textures)
         step  = (zmax - zmin) / float(ntexs)
 
         # Round to avoid floating
-        # point imprecision. 
+        # point imprecision.
         index = np.around((zpos - zmin) / step, 5)
 
         # Be a little bit lenient at the boundariese
         if   abs(index)         < 0.01: index =  0
         elif abs(index - ntexs) < 0.01: index = ntexs - 1
-        
+
         # But make sure that negative indices stay
         # negative, as otherwise, values between
         # -0.5 and 0 will be rounded to 0 in the
@@ -332,7 +337,7 @@ class RenderTextureStack(object):
 
         return int(index)
 
-    
+
     def __indexToZpos(self, index):
         """Converts a ``RenderTexture`` index into a Z location in the display
         coordinate system.
@@ -341,5 +346,5 @@ class RenderTextureStack(object):
         zmax  = self.__zmax
         ntexs = len(self.__textures)
         step  = (zmax - zmin) / float(ntexs)
-        
+
         return index * (zmax - zmin) / ntexs + (zmin + 0.5 * step)
