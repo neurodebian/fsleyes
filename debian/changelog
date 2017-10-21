@@ -1,3 +1,9 @@
+fsleyes (0.15.1-1) neurodebian; urgency=medium
+
+  * New upstream release (missed many).
+
+ -- Michael Hanke <mih@debian.org>  Sat, 21 Oct 2017 13:25:55 +0200
+
 fsleyes (0.10.1-2) neurodebian; urgency=medium
 
   * Added missing dependency to python-jinja2. Thanks to Chris Adamson for

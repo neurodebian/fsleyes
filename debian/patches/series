@@ -1,3 +1,4 @@
-trim_deps
+#trim_deps
 no_phonehome
 debian_paths
+sane_deps

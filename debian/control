@@ -7,6 +7,7 @@ Build-Depends: debhelper (>= 9),
                dh-python,
                python-all,
                python-setuptools,
+               python-six (>= 1.0~),
 Standards-Version: 3.9.8
 X-Python-Version: >= 2.7
 
@@ -22,6 +23,7 @@ Depends: python-fsl,
          python-matplotlib,
          python-numpy,
          python-opengl (>= 3.1~),
+         python-six (>= 1.0~),
          ${misc:Depends},
          ${python:Depends},
 Provides: ${python:Provides}

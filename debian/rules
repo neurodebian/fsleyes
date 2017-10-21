@@ -22,6 +22,9 @@ clean::
 	# Ahhhhhhh!
 	rm -rf .pybuild build
 	-rm -rf fsleyes.egg-info/
+	-rm -rf userdoc/html apidoc/html
+	-find . -name '*.pyc' -delete
+	-rm -rf fsleyes/assets fsleyes/userdoc
 
 # make orig tarball from repository content
 get-orig-source:
