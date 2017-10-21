@@ -14,7 +14,7 @@ Package: fsleyes
 Architecture: all
 Section: science
 Depends: python-fsl,
-         python-props,
+         python-fsleyes-props,
          python-wxgtk3.0,
          python-six,
          python-jinja2,
