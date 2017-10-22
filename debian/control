@@ -8,6 +8,9 @@ Build-Depends: debhelper (>= 9),
                python-all,
                python-setuptools,
                python-six (>= 1.0~),
+               python-mock,
+               python-sphinx,
+               python-sphinx-rtd-theme,
 Standards-Version: 3.9.8
 X-Python-Version: >= 2.7
 
@@ -16,6 +19,7 @@ Architecture: all
 Section: science
 Depends: python-fsl,
          python-fsleyes-props,
+         python-fsleyes-widgets,
          python-wxgtk3.0,
          python-six,
          python-jinja2,

@@ -1,3 +1,9 @@
+fsleyes (0.15.1-2) neurodebian; urgency=medium
+
+  * Add missing dependency on fsleyes-widgets.
+
+ -- Michael Hanke <mih@debian.org>  Sun, 22 Oct 2017 21:06:08 +0200
+
 fsleyes (0.15.1-1) neurodebian; urgency=medium
 
   * New upstream release (missed many).
