@@ -1,3 +1,10 @@
+fsleyes (0.15.2-1) neurodebian; urgency=medium
+
+  * Upstream bugfix releases, various wx3 compatibility fixes that caused
+    faulty GUI behavior.
+
+ -- Michael Hanke <mih@debian.org>  Fri, 24 Nov 2017 06:52:18 +0100
+
 fsleyes (0.15.1-2) neurodebian; urgency=medium
 
   * Add missing dependency on fsleyes-widgets.
