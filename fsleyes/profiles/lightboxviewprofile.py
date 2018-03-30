@@ -11,7 +11,7 @@
 import logging
 
 import fsleyes.profiles as profiles
-import fsl.utils.async  as async
+import fsl.utils.idle   as idle
 
 
 log = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ class LightBoxViewProfile(profiles.Profile):
         def update():
             opts.topRow += wheel
 
-        async.idle(update, timeout=0.1)
+        idle.idle(update, timeout=0.1)
 
         return True
 
@@ -103,7 +103,7 @@ class LightBoxViewProfile(profiles.Profile):
         if canvasPos is None:
             return False
 
-        self._displayCtx.location.xyz = canvasPos
+        self.displayCtx.location.xyz = canvasPos
 
         return True
 
@@ -124,13 +124,13 @@ class LightBoxViewProfile(profiles.Profile):
         elif wheel < 0: wheel = -50
         else:           return False
 
-        opts = self._viewPanel.getSceneOptions()
+        opts = self.viewPanel.sceneOpts
 
         # see comment in OrthoViewProfile._zoomModeMouseWheel
         # about timeout
         def update():
             opts.zoom += wheel
 
-        async.idle(update, timeout=0.1)
+        idle.idle(update, timeout=0.1)
 
         return True

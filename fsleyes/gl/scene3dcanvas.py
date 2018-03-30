@@ -4,7 +4,8 @@
 #
 # Author: Paul McCarthy <pauldmccarthy@gmail.com>
 #
-"""
+"""This module provides the :class:`.Scene3DCanvas` class, which is used by
+FSLeyes for its 3D view.
 """
 
 
@@ -15,7 +16,7 @@ import OpenGL.GL as gl
 
 import fsl.data.mesh       as fslmesh
 import fsl.data.image      as fslimage
-import fsl.utils.async     as async
+import fsl.utils.idle      as idle
 import fsl.utils.transform as transform
 
 import fsleyes.gl.routines               as glroutines
@@ -32,14 +33,16 @@ class Scene3DCanvas(object):
 
     def __init__(self, overlayList, displayCtx):
 
-        self.__name          = '{}_{}'.format(type(self).__name__, id(self))
-        self.__opts          = canvasopts.Scene3DCanvasOpts()
-        self.__overlayList   = overlayList
-        self.__displayCtx    = displayCtx
-        self.__viewMat       = np.eye(4)
-        self.__projMat       = np.eye(4)
-        self.__resetLightPos = True
-        self.__glObjects     = {}
+        self.__name           = '{}_{}'.format(type(self).__name__, id(self))
+        self.__opts           = canvasopts.Scene3DCanvasOpts()
+        self.__overlayList    = overlayList
+        self.__displayCtx     = displayCtx
+        self.__viewMat        = np.eye(4)
+        self.__projMat        = np.eye(4)
+        self.__invViewProjMat = np.eye(4)
+        self.__viewport       = None
+        self.__resetLightPos  = True
+        self.__glObjects      = {}
 
         overlayList.addListener('overlays',
                                 self.__name,
@@ -113,63 +116,122 @@ class Scene3DCanvas(object):
         self.opts.lightPos = centre + [b.xlen, b.ylen, 0]
 
 
-    def getViewMatrix(self):
+    @property
+    def viewMatrix(self):
+        """Returns the view matrix for the current scene - this is an affine
+        matrix which encodes the current :attr:`.Scene3DCanvasOpts.offset`,
+        :attr:`.Scene3DCanvasOpts.zoom`,
+        :attr:`.Scene3DCanvasOpts.rotation` and camera settings.
+
+        See :meth:`__genViewMatrix`.
+        """
         return self.__viewMat
 
 
-    def getViewScale(self):
+    @property
+    def viewScale(self):
+        """Returns an affine matrix which encodes the current
+        :attr:`.Scene3DCanvasOpts.zoom` setting.
+        """
         return self.__viewScale
 
 
-    def getViewOffset(self):
+    @property
+    def viewOffset(self):
+        """Returns an affine matrix which encodes the current
+        :attr:`.Scene3DCanvasOpts.offset` setting.
+        """
         return self.__viewOffset
 
 
-    def getViewRotation(self):
+    @property
+    def viewRotation(self):
+        """Returns an affine matrix which encodes the current
+        :attr:`.Scene3DCanvasOpts.rotation` setting.
+        """
         return self.__viewRotate
 
 
-    def getViewCamera(self):
+    @property
+    def viewCamera(self):
+        """Returns an affine matrix which encodes the current camera.
+        transformation. The initial camera orientation in the view shown by a
+        :class:`Scene3DCanvas` is located on the positive Y axis, is oriented
+        towards the positive Z axis, and is pointing towards the centre of the
+        :attr:`.DisplayContext.displayBounds`.
+        """
         return self.__viewCamera
 
 
-    def getProjectionMatrix(self):
+    @property
+    def projectionMatrix(self):
+        """Returns the projection matrix. This is an affine matrix which
+        converts from normalised device coordinates (NDCs, coordinates between
+        -1 and +1) into viewport coordinates. The initial viewport for a
+        :class:`Scene3DCanvas` is configured by the :func:`.routines.ortho`
+        function.
+
+        See :meth:`__setViewport`.
+        """
         return self.__projMat
 
 
-    def canvasToWorld(self, xpos, ypos):
+    @property
+    def invViewProjectionMatrix(self):
+        """Returns the inverse of the model-view-projection matrix, the
+        equivalent of:
+
+        ``invert(projectionMatrix * viewMatrix)``
+        """
+        return self.__invViewProjMat
+
+
+    @property
+    def viewport(self):
+        """Returns a list of three ``(min, max)`` tuples which specify the
+        viewport limits of the currently displayed scene.
+        """
+        return self.__viewport
+
+
+    def canvasToWorld(self, xpos, ypos, near=True):
         """Transform the given x/y canvas coordinates into the display
-        coordinate system.
+        coordinate system. The calculated coordinates will be located on
+        the near clipping plane.
+
+        :arg near: If ``True`` (the default), the returned coordinate will
+                   be located on the near clipping plane. Otherwise, the
+                   coordinate will be located on the far clipping plane.
         """
 
-        b             = self.__displayCtx.bounds
         width, height = self.GetSize()
 
-        # The first step is to invert the mouse
-        # coordinates w.r.t. the viewport.
-        #
-        # The canvas x axis corresponds to
-        # (-xhalf, xhalf), and the canvas y
-        # corresponds to (-yhalf, yhalf) -
-        # see routines.show3D.
-        xlen, ylen = glroutines.adjust(b.xlen, b.ylen, width, height)
-        xhalf      = 0.5 * xlen
-        yhalf      = 0.5 * ylen
+        # Normalise pixels to [-1, 1]
+        xp = -1 + 2.0 * xpos / width
+        yp = -1 + 2.0 * ypos / height
 
-        # Pixels to viewport coordinates
-        xpos = xlen * (xpos / float(width))  - xhalf
-        ypos = ylen * (ypos / float(height)) - yhalf
+        # We set the Z coord so the resulting
+        # coordinates will be located on either
+        # the  near or clipping planes.
+        if near: pos = [xp, yp, -1]
+        else:    pos = [xp, yp,  1]
+
+        # The first step is to convert mouse
+        # coordinates from [-1, 1] to viewport
+        # coodinates via the inverse projection
+        # matrix.
 
         # The second step is to transform from
         # viewport coords into model-view coords.
         # This is easy - transform by the inverse
         # MV matrix.
-        #
-        # z=-1 because the camera is offset by 1
-        # on the depth axis (see __setViewport).
-        pos   = np.array([xpos, ypos, -1])
-        xform = transform.invert(self.__viewMat)
-        pos   = transform.transform(pos, xform)
+
+        # We perform both of these steps in one
+        # by concatenating then inverting the
+        # view/projection matrices. This is
+        # calculated and cached for us in the
+        # __setViewport method.
+        pos = transform.transform(pos, self.__invViewProjMat)
 
         return pos
 
@@ -195,7 +257,7 @@ class Scene3DCanvas(object):
 
         overlays = self.__displayCtx.getOrderedOverlays()
 
-        surfs = [o for o in overlays if isinstance(o, fslmesh.TriangleMesh)]
+        surfs = [o for o in overlays if isinstance(o, fslmesh.Mesh)]
         vols  = [o for o in overlays if isinstance(o, fslimage.Image)]
         other = [o for o in overlays if o not in surfs and o not in vols]
 
@@ -286,7 +348,7 @@ class Scene3DCanvas(object):
         """
         """
 
-        if not isinstance(overlay, (fslmesh.TriangleMesh, fslimage.Image)):
+        if not isinstance(overlay, (fslmesh.Mesh, fslimage.Image)):
             return
 
         log.debug('Registering overlay {}'.format(overlay))
@@ -331,7 +393,7 @@ class Scene3DCanvas(object):
 
         display = self.__displayCtx.getDisplay(overlay)
 
-        if display.overlayType not in ('volume', 'mesh', 'giftimesh'):
+        if display.overlayType not in ('volume', 'mesh'):
             return False
 
         self.__glObjects[overlay] = False
@@ -351,6 +413,7 @@ class Scene3DCanvas(object):
             log.debug('Creating GLObject for {}'.format(overlay))
 
             globj = globject.createGLObject(overlay,
+                                            self.__overlayList,
                                             self.__displayCtx,
                                             self,
                                             True)
@@ -359,7 +422,7 @@ class Scene3DCanvas(object):
                 globj.register(self.__name, self.Refresh)
                 self.__glObjects[overlay] = globj
 
-        async.idle(create)
+        idle.idle(create)
         return True
 
 
@@ -367,7 +430,7 @@ class Scene3DCanvas(object):
         """
         """
 
-        overlay = display.getOverlay()
+        overlay = display.overlay
         globj   = self.__glObjects.pop(overlay, None)
 
         if globj is not None:
@@ -467,7 +530,12 @@ class Scene3DCanvas(object):
 
         # Generate the view and projection matrices
         self.__genViewMatrix()
-        self.__projMat = glroutines.ortho(blo, bhi, width, height, zoom)
+        projmat, viewport     = glroutines.ortho(blo, bhi, width, height, zoom)
+        self.__projMat        = projmat
+        self.__viewport       = viewport
+        self.__invViewProjMat = transform.concat(self.__projMat,
+                                                 self.__viewMat)
+        self.__invViewProjMat = transform.invert(self.__invViewProjMat)
 
         gl.glViewport(0, 0, width, height)
         gl.glMatrixMode(gl.GL_PROJECTION)
@@ -531,6 +599,18 @@ class Scene3DCanvas(object):
 
         if opts.showLegend:
             self.__drawLegend()
+
+        # Testing click-to-near/far clipping plane transformation
+        if hasattr(self, 'points'):
+            colours = [(1, 0, 0, 1), (0, 0, 1, 1)]
+            gl.glPointSize(5)
+
+            gl.glBegin(gl.GL_LINES)
+            for i, p in enumerate(self.points):
+                gl.glColor4f(*colours[i % 2])
+                p = transform.transform(p, self.viewMatrix)
+                gl.glVertex3f(*p)
+            gl.glEnd()
 
 
     def __drawCursor(self):

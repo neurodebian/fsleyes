@@ -32,7 +32,7 @@ import os.path as op
 
 import numpy   as np
 
-import fsl.utils.async              as async
+import fsl.utils.idle               as idle
 import fsl.utils.notifier           as notifier
 import fsl.utils.settings           as fslsettings
 import fsleyes_widgets.utils.status as status
@@ -99,21 +99,30 @@ def makeWildcard(allowedExts=None, descs=None):
     the the displayed file types to supported overlay file types.
     """
 
-    import fsl.data.mesh  as fslmesh
-    import fsl.data.image as fslimage
-    import fsl.data.gifti as fslgifti
+    import fsl.data.image      as fslimage
+    import fsl.data.mghimage   as fslmgh
+    import fsl.data.vtk        as fslvtk
+    import fsl.data.gifti      as fslgifti
+    import fsl.data.freesurfer as fslfs
 
     # Hack - the wx wildcard logic doesn't support
     # files with multiple extensions (e.g. .nii.gz).
-    # So I'm adding support for '.gz' extensions here.
-    if allowedExts is None: allowedExts  = fslimage.ALLOWED_EXTENSIONS     + \
-                                           fslmesh .ALLOWED_EXTENSIONS     + \
-                                           fslgifti.ALLOWED_EXTENSIONS     + \
-                                           ['.gz']
-    if descs       is None: descs        = fslimage.EXTENSION_DESCRIPTIONS + \
-                                           fslmesh .EXTENSION_DESCRIPTIONS + \
-                                           fslgifti.EXTENSION_DESCRIPTIONS + \
-                                           ['Compressed images']
+    # So I'm adding support for '.gz' and '.gii'
+    # extensions here.
+    if allowedExts is None:
+        allowedExts  = (fslimage.ALLOWED_EXTENSIONS  +
+                        fslvtk  .ALLOWED_EXTENSIONS  +
+                        fslmgh  .ALLOWED_EXTENSIONS  +
+                        fslgifti.ALLOWED_EXTENSIONS  +
+                        fslfs   .CORE_GEOMETRY_FILES +
+                        ['.gz', '.gii'])
+    if descs is None:
+        descs        = (fslimage.EXTENSION_DESCRIPTIONS     +
+                        fslvtk  .EXTENSION_DESCRIPTIONS     +
+                        fslmgh  .EXTENSION_DESCRIPTIONS     +
+                        fslgifti.EXTENSION_DESCRIPTIONS     +
+                        fslfs   .CORE_GEOMETRY_DESCRIPTIONS +
+                        ['Compressed images', 'GIFTI surfaces'])
 
     exts  = ['*{}'.format(ext) for ext in allowedExts]
     exts  = [';'.join(exts)]        + exts
@@ -133,7 +142,7 @@ def loadOverlays(paths,
     """Loads all of the overlays specified in the sequence of files
     contained in ``paths``.
 
-    .. note:: The overlays are loaded asynchronously via :func:`.async.idle`.
+    .. note:: The overlays are loaded asynchronously via :func:`.idle.idle`.
               Use the ``onLoad`` argument if you wish to be notified when
               the overlays have been loaded.
 
@@ -201,7 +210,7 @@ def loadOverlays(paths,
         try:
             if   issubclass(dtype, fslimage.Image):
                 overlay = loadImage(dtype, path, inmem=inmem)
-            elif issubclass(dtype, fslmesh.TriangleMesh):
+            elif issubclass(dtype, fslmesh.Mesh):
                 overlay = dtype(path, fixWinding=True)
             else:
                 overlay = dtype(path)
@@ -239,9 +248,9 @@ def loadOverlays(paths,
 
     # Load the images
     for path in paths:
-        async.idle(loadPath, path)
+        idle.idle(loadPath, path)
 
-    async.idle(realOnLoad)
+    idle.idle(realOnLoad)
 
 
 def loadImage(dtype, path, inmem=False):

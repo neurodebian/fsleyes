@@ -27,9 +27,9 @@ import            functools
 
 import            wx
 
-import fsl.utils.async                    as async
-from   fsl.utils.platform import platform as fslplatform
+import fsl.utils.idle                     as idle
 import fsleyes_props                      as props
+import fsleyes_widgets                    as fwidgets
 import fsleyes_widgets.utils.typedict     as td
 import fsleyes.strings                    as strings
 import fsleyes.colourmaps                 as fslcm
@@ -165,7 +165,6 @@ def _init3DPropertyList_VolumeOpts():
     return ['blendFactor',
             'resolution',
             'numSteps',
-            'dithering',
             'custom_clipPlanes']
 
 
@@ -173,7 +172,10 @@ def _initPropertyList_MaskOpts(threedee):
     return ['custom_volume',
             'colour',
             'invert',
-            'threshold']
+            'threshold',
+            'interpolation',
+            'outline',
+            'outlineWidth']
 
 
 def _initPropertyList_VectorOpts(threedee):
@@ -217,6 +219,7 @@ def _initPropertyList_MeshOpts(threedee):
              'outline',
              'outlineWidth',
              'colour',
+             'custom_vertexSet',
              'custom_vertexData',
              'vertexDataIndex',
              'custom_lut',
@@ -249,6 +252,14 @@ def _initPropertyList_GiftiOpts(threedee):
 
 
 def _init3DPropertyList_GiftiOpts():
+    return []
+
+
+def _initPropertyList_FreesurferOpts(threedee):
+    return []
+
+
+def _init3DPropertyList_FreesurferOpts():
     return []
 
 
@@ -361,8 +372,6 @@ def _initWidgetSpec_VolumeOpts(threedee):
 def _init3DWidgetSpec_VolumeOpts():
 
     return {
-        'dithering'         : props.Widget('dithering',
-                                           showLimits=False),
         'numSteps'          : props.Widget('numSteps',
                                            showLimits=False),
         'blendFactor'       : props.Widget('blendFactor',
@@ -372,6 +381,9 @@ def _init3DWidgetSpec_VolumeOpts():
         'numClipPlanes'     : props.Widget('numClipPlanes',
                                            slider=False,
                                            showLimits=False),
+        'clipMode'          : props.Widget(
+            'clipMode',
+            labels=strings.choices['Volume3DOpts.clipMode']),
         'showClipPlanes'    : props.Widget('showClipPlanes'),
         'clipPosition'      : props.Widget('clipPosition',
                                            showLimits=False),
@@ -397,9 +409,14 @@ def _initWidgetSpec_MaskOpts(threedee):
             slider=False,
             enabledWhen=lambda o: o.overlay.ndims > 4,
             spinWidth=2),
-        'colour'     : props.Widget('colour'),
-        'invert'     : props.Widget('invert'),
-        'threshold'  : props.Widget('threshold', showLimits=False),
+        'interpolation'  : props.Widget(
+            'interpolation',
+            labels=strings.choices['VolumeOpts.interpolation']),
+        'colour'       : props.Widget('colour'),
+        'invert'       : props.Widget('invert'),
+        'threshold'    : props.Widget('threshold', showLimits=False),
+        'outline'      : props.Widget('outline'),
+        'outlineWidth' : props.Widget('outlineWidth', showLimits=False),
     }
 
 
@@ -590,7 +607,7 @@ def _initWidgetSpec_MeshOpts(threedee):
         if img is None: return 'None'
         else:           return img.name
 
-    def vertexDataName(vdata):
+    def pathName(vdata):
         if vdata is None: return 'None'
         else:             return op.basename(vdata)
 
@@ -619,10 +636,14 @@ def _initWidgetSpec_MeshOpts(threedee):
             labels=strings.choices['MeshOpts.coordSpace'],
             dependencies=['refImage']),
         'colour'       : props.Widget('colour'),
-        'custom_vertexData' : _MeshOpts_VertexDataWidget,
+        'custom_vertexData' : _MeshOpts_vertexDataWidget,
+        'custom_vertexSet'  : _MeshOpts_vertexSetWidget,
+        'vertexSet'    : props.Widget(
+            'vertexSet',
+            labels=pathName),
         'vertexData'   : props.Widget(
             'vertexData',
-            labels=vertexDataName),
+            labels=pathName),
         'vertexDataIndex' : props.Widget(
             'vertexDataIndex',
             showLimits=False,
@@ -704,6 +725,12 @@ def _init3DWidgetSpec_MeshOpts():
 def _initWidgetSpec_GiftiOpts(threedee):
     return {}
 def _init3DWidgetSpec_GiftiOpts():
+    return {}
+
+
+def _initWidgetSpec_FreesurferOpts(threedee):
+    return {}
+def _init3DWidgetSpec_FreesurferOpts():
     return {}
 
 
@@ -831,9 +858,9 @@ def _VolumeOpts_3DClipPlanes(
     #
     # TODO what is the lifespan of this listener?
     def numClipPlanesChanged(*a):
-        if fslplatform.isWidgetAlive(panel) and \
-           fslplatform.isWidgetAlive(parent):
-            async.idle(panel.updateWidgets, target, '3d')
+        if fwidgets.isalive(panel) and \
+           fwidgets.isalive(parent):
+            idle.idle(panel.updateWidgets, target, '3d')
 
     name = '{}_{}_VolumeOpts_3DClipPlanes'.format(
         target.name, id(panel))
@@ -844,22 +871,22 @@ def _VolumeOpts_3DClipPlanes(
                        overwrite=True,
                        weak=False)
 
+    numPlanes    = target.numClipPlanes
     numPlaneSpec = get3DWidgetSpecs(target)['numClipPlanes']
+    clipMode     = get3DWidgetSpecs(target)['clipMode']
     showPlanes   = get3DWidgetSpecs(target)['showClipPlanes']
     position     = get3DWidgetSpecs(target)['clipPosition']
     azimuth      = get3DWidgetSpecs(target)['clipAzimuth']
     inclination  = get3DWidgetSpecs(target)['clipInclination']
 
-    numPlanes = target.numClipPlanes
+    specs = [numPlaneSpec, showPlanes, clipMode]
 
     if numPlanes == 0:
-        return [numPlaneSpec, showPlanes], None
+        return specs, None
 
     positions    = [copy.deepcopy(position)    for i in range(numPlanes)]
     azimuths     = [copy.deepcopy(azimuth)     for i in range(numPlanes)]
     inclinations = [copy.deepcopy(inclination) for i in range(numPlanes)]
-
-    specs = [numPlaneSpec, showPlanes]
 
     for i in range(numPlanes):
 
@@ -875,7 +902,7 @@ def _VolumeOpts_3DClipPlanes(
     return specs, None
 
 
-def _MeshOpts_VertexDataWidget(
+def _MeshOpts_vertexDataWidget(
         target,
         parent,
         panel,
@@ -897,6 +924,38 @@ def _MeshOpts_VertexDataWidget(
     sizer = wx.BoxSizer(wx.HORIZONTAL)
 
     vdata = getWidgetSpecs(target, threedee)['vertexData']
+    vdata = props.buildGUI(parent, target, vdata)
+
+    sizer.Add(vdata,      flag=wx.EXPAND, proportion=1)
+    sizer.Add(loadButton, flag=wx.EXPAND)
+
+    return sizer, [vdata]
+
+
+def _MeshOpts_vertexSetWidget(
+        target,
+        parent,
+        panel,
+        overlayList,
+        displayCtx,
+        threedee):
+    """Builds a panel which contains a widget for controlling the
+    :attr:`.MeshOpts.vertexSet` property, and also has a button
+    which opens a file dialog, allowing the user to select other
+    data.
+    """
+
+    loadAction = loadvdata.LoadVertexDataAction(overlayList,
+                                                displayCtx,
+                                                vertices=True)
+    loadButton = wx.Button(parent)
+    loadButton.SetLabel(strings.labels[panel, 'loadVertices'])
+
+    loadAction.bindToWidget(panel, wx.EVT_BUTTON, loadButton)
+
+    sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+    vdata = getWidgetSpecs(target, threedee)['vertexSet']
     vdata = props.buildGUI(parent, target, vdata)
 
     sizer.Add(vdata,      flag=wx.EXPAND, proportion=1)

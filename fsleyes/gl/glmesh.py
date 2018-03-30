@@ -5,7 +5,7 @@
 # Author: Paul McCarthy <pauldmccarthy@gmail.com>
 #
 """This module provides the :class:`GLMesh` class, a :class:`.GLObject` used
-to render :class:`.TriangleMesh` overlays.
+to render :class:`.Mesh` overlays.
 """
 
 
@@ -16,7 +16,6 @@ import OpenGL.GL    as gl
 from . import                 globject
 import fsl.utils.transform as transform
 import fsleyes.gl          as fslgl
-import fsleyes.gl.trimesh  as trimesh
 import fsleyes.gl.routines as glroutines
 import fsleyes.gl.textures as textures
 
@@ -24,8 +23,8 @@ import fsleyes.gl.textures as textures
 class GLMesh(globject.GLObject):
     """The ``GLMesh`` class is a :class:`.GLObject` which encapsulates the
     logic required to draw 2D slices, and 3D renderings, of a
-    :class:`.TriangleMesh` overlay.  The ``GLMesh`` class assumes that the
-    :class:`.Display` instance associated with the ``TriangleMesh`` overlay
+    :class:`.Mesh` overlay.  The ``GLMesh`` class assumes that the
+    :class:`.Display` instance associated with the ``Mesh`` overlay
     holds a reference to a :class:`.MeshOpts` instance, which contains
     ``GLMesh`` specific display settings.
 
@@ -60,10 +59,19 @@ class GLMesh(globject.GLObject):
     *Outlines*
 
 
-    If ``outline is True or vertexData is not None``, the
-    :func:`.trimesh.mesh_plane` function is used to calculate the intersection
-    of the mesh triangles with the viewing plane. Theese lines are then
+    If ``outline is True or vertexData is not None``, the intersection of the
+    mesh triangles with the viewing plane is calculated. These lines are then
     rendered as ``GL_LINES`` primitives.
+
+
+    When a mesh outline is drawn on a canvas, the calculated line vertices,
+    and corresponding mesh faces (triangles) are cached via the
+    :meth:`.OverlayList.setData` method. This is so that other parts of
+    FSLeyes can access this information if necessary (e.g. the
+    :class:`.OrthoViewProfile` provides mesh-specific interaction). For a
+    canvas which is showing a plane orthogonal to display axis X, Y or Z, this
+    data will be given a key of ``'crosssection_0'``, ``'crosssection_1'``, or
+    ``'crosssection_2'`` respectively.
 
 
     *Colouring*
@@ -107,8 +115,8 @@ class GLMesh(globject.GLObject):
 
      - ``preDraw(GLMesh)``: Prepare for drawing (e.g. load shaders)
 
-     - ``draw(GLMesh, glType, vertices, indices=None, normals=None,
-         vdata=None)``: Draws mesh using shaders.
+     - ``draw(GLMesh, glType, vertices, indices=None, normals=None, vdata=None)``:  # noqa
+        Draws mesh using shaders.
 
      - ``postDraw(GLMesh)``: Clean up after drawing
 
@@ -121,20 +129,21 @@ class GLMesh(globject.GLObject):
     Whether the 3D mesh is coloured with a flat colour, or according to vertex
     data, shader programs are used which colour the mesh, and also apply a
     simple lighting effect.
-
     """
 
 
-    def __init__(self, overlay, displayCtx, canvas, threedee):
+    def __init__(self, overlay, overlayList, displayCtx, canvas, threedee):
         """Create a ``GLMesh``.
 
-        :arg overlay:    A :class:`.TriangleMesh` overlay.
-        :arg displayCtx: The :class:`.DisplayContext` managing the scene.
-        :arg canvas:     The canvas drawing this ``GLMesh``.
-        :arg threedee:   2D or 3D rendering.
+        :arg overlay:     A :class:`.Mesh` overlay.
+        :arg overlayList: The :class:`.OverlayList`
+        :arg displayCtx:  The :class:`.DisplayContext` managing the scene.
+        :arg canvas:      The canvas drawing this ``GLMesh``.
+        :arg threedee:    2D or 3D rendering.
         """
 
-        globject.GLObject.__init__(self, overlay, displayCtx, canvas, threedee)
+        globject.GLObject.__init__(
+            self, overlay, overlayList, displayCtx, canvas, threedee)
 
         self.flatShader   = None
         self.dataShader   = None
@@ -237,6 +246,7 @@ class GLMesh(globject.GLObject):
         def refresh(*a):
             self.notify()
 
+        self.overlay.register(name, vertices, 'vertices')
         opts   .addListener('bounds',           name, vertices,    weak=False)
         opts   .addListener('colour',           name, shader,      weak=False)
         opts   .addListener('outline',          name, refresh,     weak=False)
@@ -271,6 +281,7 @@ class GLMesh(globject.GLObject):
         """Called by :meth:`destroy`. Removes all of the listeners added by
         the :meth:`addListeners` method.
         """
+        self.overlay.deregister(self.name, 'vertices')
         self.opts   .removeListener('bounds',           self.name)
         self.opts   .removeListener('colour',           self.name)
         self.opts   .removeListener('outline',          self.name)
@@ -332,7 +343,7 @@ class GLMesh(globject.GLObject):
         vertices = overlay.vertices
         indices  = overlay.indices
         normals  = self.overlay.vnormals
-        xform    = self.opts.getCoordSpaceTransform()
+        xform    = self.opts.getTransform('mesh', 'display')
 
         if not np.all(np.isclose(xform, np.eye(4))):
             vertices = transform.transform(vertices, xform)
@@ -341,8 +352,8 @@ class GLMesh(globject.GLObject):
                 nmat    = transform.invert(xform).T
                 normals = transform.transform(normals, nmat, vector=True)
 
-        self.vertices = np.array(vertices,          dtype=np.float32)
-        self.indices  = np.array(indices.flatten(), dtype=np.uint32)
+        self.vertices = np.asarray(vertices,          dtype=np.float32)
+        self.indices  = np.asarray(indices.flatten(), dtype=np.uint32)
 
         if self.threedee:
             self.normals = np.array(normals, dtype=np.float32)
@@ -363,7 +374,7 @@ class GLMesh(globject.GLObject):
         # transform, thus we are assuming that
         # the MVP matrix does not have any
         # negative scales.
-        xform = self.opts.getCoordSpaceTransform()
+        xform = self.opts.getTransform('mesh', 'display')
 
         if npla.det(xform) > 0: return gl.GL_CCW
         else:                   return gl.GL_CW
@@ -377,6 +388,27 @@ class GLMesh(globject.GLObject):
                 self.opts.bounds.getHi())
 
 
+    def draw2DOutlineEnabled(self):
+        """Only relevent for 2D rendering. Returns ``True`` if outline mode
+        should be used, ``False`` otherwise.
+        """
+
+        opts    = self.opts
+        overlay = self.overlay
+
+        return ((overlay.trimesh is not None) and
+                (opts.outline or opts.vertexData is not None))
+
+
+    def needShader(self):
+        """Returns ``True`` if a shader should be loaded, ``False`` otherwise.
+        Relevant for both 2D and 3D rendering.
+        """
+        return (self.threedee or
+                (self.draw2DOutlineEnabled() and
+                 self.opts.vertexData is not None))
+
+
     def preDraw(self, xform=None, bbox=None):
         """Overrides :meth:`.GLObject.preDraw`. Performs some pre-drawing
         configuration, which might involve loading shaders, and/or setting the
@@ -384,21 +416,24 @@ class GLMesh(globject.GLObject):
         current viewport size.
         """
 
-        opts       = self.opts
-        flat       = self.opts.vertexData is None
-        useShader  = self.threedee or (opts.vertexData is not None)
-        useTexture = not (self.threedee or opts.outline or useShader)
+        useShader  = self.needShader()
+        outline    = self.draw2DOutlineEnabled()
+        useTexture = not (self.threedee or outline)
 
+        # A shader program is used either in 3D, or
+        # in 2D when some vertex data is being shown
         if useShader:
             fslgl.glmesh_funcs.preDraw(self)
 
-            if not flat:
+            if self.opts.vertexData is not None:
                 if self.opts.useLut:
                     self.lutTexture.bindTexture(gl.GL_TEXTURE0)
                 else:
                     self.cmapTexture   .bindTexture(gl.GL_TEXTURE0)
                     self.negCmapTexture.bindTexture(gl.GL_TEXTURE1)
 
+        # An off-screen texture is used when
+        # drawing off-screen textures in 2D
         if useTexture:
             size   = gl.glGetIntegerv(gl.GL_VIEWPORT)
             width  = size[2]
@@ -412,18 +447,13 @@ class GLMesh(globject.GLObject):
 
     def draw2D(self, zpos, axes, xform=None, bbox=None):
         """Overrids :meth:`.GLObject.draw2D`. Draws a 2D slice of the
-        :class:`.TriangleMesh`, at the specified Z location.
+        :class:`.Mesh`, at the specified Z location.
         """
 
-        opts          = self.opts
+        overlay       = self.overlay
         lo,  hi       = self.getDisplayBounds()
         xax, yax, zax = axes
-
-        # If vertexData is set, we ignore
-        # the outline setting - meshes can
-        # only be coloured by vertexData
-        # in outline mode
-        outline = opts.outline or opts.vertexData is not None
+        outline       = self.draw2DOutlineEnabled()
 
         # Mesh is 2D, and is
         # perpendicular to
@@ -437,6 +467,12 @@ class GLMesh(globject.GLObject):
         # regardless of the zpos
         if not is2D and (zpos < lo[zax] or zpos > hi[zax]):
             return
+
+        # the calculateIntersection method caches
+        # cross section vertices - make sure they're
+        # cleared in case we are not doing an outline
+        # draw.
+        self.overlayList.setData(overlay, 'crosssection_{}'.format(zax), None)
 
         if is2D:
             self.draw2DMesh(xform, bbox)
@@ -507,10 +543,7 @@ class GLMesh(globject.GLObject):
         :func:`.gl21.glmesh_funcs.postDraw` function.
         """
 
-        opts      = self.opts
-        useShader = self.threedee or (opts.vertexData is not None)
-
-        if useShader:
+        if self.needShader():
             fslgl.glmesh_funcs.postDraw(self)
 
             if self.opts.vertexData is not None:
@@ -578,13 +611,13 @@ class GLMesh(globject.GLObject):
 
     def draw2DMesh(self, xform=None, bbox=None):
         """Not to be confused with :meth:`draw2D`.  Called by :meth:`draw2D`
-        for :class:`.TriangleMesh` overlays which are actually 2D (with a flat
+        for :class:`.Mesh` overlays which are actually 2D (with a flat
         third dimension).
         """
 
         opts      = self.opts
         vdata     = opts.getVertexData()
-        useShader = vdata is not None
+        useShader = self.needShader()
         vertices  = self.vertices
         faces     = self.indices
 
@@ -692,7 +725,7 @@ class GLMesh(globject.GLObject):
         # has a negative determinant, it means
         # the back faces will be facing the camera,
         # so we need to render the back faces first.
-        if npla.det(opts.getCoordSpaceTransform()) > 0:
+        if npla.det(opts.getTransform('mesh', 'display')) > 0:
             faceOrder = [gl.GL_FRONT, gl.GL_BACK]
         else:
             faceOrder = [gl.GL_BACK,  gl.GL_FRONT]
@@ -784,9 +817,9 @@ class GLMesh(globject.GLObject):
 
 
     def calculateIntersection(self, zpos, axes, bbox=None):
-        """Uses the :func:`.trimesh.mesh_plane` and
-        :func:`.trimesh.points_to_barycentric` functions to calculate the
-        intersection of the mesh with the viewing plane at the given ``zpos``.
+        """Uses the :func:`.Mesh.planeIntersection` method to
+        calculate the intersection of the mesh with the viewing plane at
+        the given ``zpos``.
 
         :arg zpos:  Z axis coordinate at which the intersection is to be
                     calculated
@@ -802,7 +835,7 @@ class GLMesh(globject.GLObject):
                      a line for every intersected face (triangle) in the mesh.
 
                    - A ``(n, 3)`` array containing the intersected faces
-                     (indices into the :attr:`.TriangleMesh.vertices` array).
+                     (indices into the :attr:`.Mesh.vertices` array).
 
                    - A ``(n, 2, 3)`` array containing the barycentric
                      coordinates of the intersection line vertices.
@@ -811,6 +844,12 @@ class GLMesh(globject.GLObject):
                      for transforming the line vertices into the display
                      coordinate system. May be ``None``, indicating that
                      no transformation is necessary.
+
+        .. note:: The line vertices, and corresponding mesh triangle face
+                  indices, which make up the cross section are saved
+                  via the :meth:`.OverlayList.setData` method, with a key
+                  ``'crosssection_[zax]'``, where ``[zax]`` is set to the
+                  index of the display Z axis.
         """
 
         overlay     = self.overlay
@@ -821,41 +860,29 @@ class GLMesh(globject.GLObject):
         origin[zax] = zpos
         normal[zax] = 1
 
-        if opts.refImage is not None:
+        vertXform = opts.getTransform(           'mesh',    'display')
+        origin    = opts.transformCoords(origin, 'display', 'mesh')
+        normal    = opts.transformCoords(normal, 'display', 'mesh',
+                                         vector=True)
 
-            ropts  = opts.displayCtx.getOpts(opts.refImage)
-            origin = ropts.transformCoords(origin,
-                                           ropts.transform,
-                                           opts.coordSpace)
+        # TODO use bbox to constrain? This
+        #      would be nice, but is not
+        #      supported by trimesh.
+        lines, faces, dists = overlay.planeIntersection(
+            normal, origin, distances=True)
 
-            vertXform = ropts.getTransform(opts.coordSpace, ropts.transform)
+        lines = np.asarray(lines, dtype=np.float32)
+        faces = np.asarray(faces, dtype=np.uint32)
 
-        else:
-            vertXform = None
-
-        # TODO use bbox to constrain?
-        lines, faces = trimesh.mesh_plane(
-            overlay.vertices,
-            overlay.indices,
-            plane_normal=normal,
-            plane_origin=origin,
-            return_faces=True)
+        # cache the line vertices for other
+        # things which might be interested.
+        # See, for example, OrthoViewProfile
+        # pick mode methods.
+        self.overlayList.setData(overlay,
+                                 'crosssection_{}'.format(zax),
+                                 (lines, faces))
 
         faces = overlay.indices[faces]
-
-        # Calculate the barycentric coordinates
-        # (distance from triangle vertices) for
-        # each intersection line - this is used
-        # for interpolating vertex colours.
-
-        triangles = overlay.vertices[faces].repeat(2, axis=0)
-        points    = lines.reshape((-1, 3))
-
-        if triangles.size > 0:
-            dists = trimesh.points_to_barycentric(triangles, points)
-            dists = dists.reshape((-1, 2, 3))
-        else:
-            dists = np.zeros((0, 2, 3))
 
         return lines, faces, dists, vertXform
 
@@ -883,7 +910,7 @@ class GLMesh(globject.GLObject):
         vdata = vdata[faces].repeat(2, axis=0).reshape(-1, 2, 3)
         vdata = (vdata * dists).reshape(-1, 3).sum(axis=1)
 
-        return vdata
+        return np.asarray(vdata, np.float32)
 
 
     def refreshCmapTextures(self, *a, **kwa):

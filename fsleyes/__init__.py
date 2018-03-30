@@ -230,8 +230,7 @@ def canWriteToAssetDir():
 
 def initialise():
     """Called when `FSLeyes`` is started as a standalone application.  This
-    function *must* be called before most other things in *FSLeyes* are used,
-    but after a ``wx.App`` has been created.
+    function *must* be called before most other things in *FSLeyes* are used.
 
     Does a few initialisation steps::
 
@@ -243,8 +242,10 @@ def initialise():
 
     global assetDir
 
-    import wx
     import matplotlib as mpl
+
+    # implement various hacks and workarounds
+    _hacksAndWorkarounds()
 
     # Initialise the fsl.utils.settings module
     fslsettings.initialise('fsleyes')
@@ -258,23 +259,15 @@ def initialise():
     assetDir   = None
     options    = []
 
-    # If we are running from a bundled application,
-    # wx will know where the FSLeyes resources are
+    # If we are running from a bundled
+    # application, we'll guess at the
+    # location, which will differ depending
+    # on the platform
     if fslplatform.frozen:
-
-        # If we have a display, assume
-        # that a wx app has been created,
-        # and let wx tell us where the
-        # directory is.
-        if fslplatform.canHaveGui:
-            sp = wx.StandardPaths.Get()
-            options.append(op.join(sp.GetResourcesDir()))
-
-        # Otherwise we have to guess at
-        # the location, which will differ
-        # depending on the platform
-        options.append(op.join(fsleyesDir, '..', 'Resources'))
-        options.append(op.join(fsleyesDir, '..', 'share', 'FSLeyes'))
+        mac = op.join(fsleyesDir, '..', '..', '..', '..', 'Resources')
+        lnx = op.join(fsleyesDir, '..', 'share', 'FSLeyes')
+        options.append(op.normpath(mac))
+        options.append(op.normpath(lnx))
 
     # Otherwise we are running from a code install,
     # or from a source distribution. The assets
@@ -293,21 +286,73 @@ def initialise():
                            'Searched: {}'.format(options))
 
 
-def configLogging(namespace):
+def _hacksAndWorkarounds():
+    """Called by :func:`initialise`. Implements hacks and workarounds for
+    various things.
+    """
+
+    # Under wxPython/Phoenix, the
+    # wx.html package must be imported
+    # before a wx.App has been created
+    import wx.html  # noqa
+
+    # PyInstaller 3.2.1 forces matplotlib to use a
+    # temporary directory for its settings and font
+    # cache, and then deletes the directory on exit.
+    # This is silly, because the font cache can take
+    # a long time to create.  Clearing the environment
+    # variable should cause matplotlib to use
+    # $HOME/.matplotlib (or, failing that, a temporary
+    # directory).
+    #
+    # https://matplotlib.org/faq/environment_variables_faq.html#\
+    #   envvar-MPLCONFIGDIR
+    #
+    # https://github.com/pyinstaller/pyinstaller/blob/v3.2.1/\
+    #   PyInstaller/loader/rthooks/pyi_rth_mplconfig.py
+    #
+    # n.b. This will cause issues if building FSLeyes
+    #      with the pyinstaller '--onefile' option, as
+    #      discussed in the above pyinstaller file.
+    if fslplatform.frozen:
+        os.environ.pop('MPLCONFIGDIR', None)
+
+    # OSX sometimes sets the local environment
+    # variables to non-standard values, which
+    # breaks the python locale module.
+    #
+    # http://bugs.python.org/issue18378
+    try:
+        import locale
+        locale.getdefaultlocale()
+    except:
+        os.environ['LC_ALL'] = 'C.UTF-8'
+
+
+def configLogging(verbose=0, noisy=None):
     """Configures *FSLeyes* ``logging``.
 
     .. note:: All logging calls are usually stripped from frozen
               versions of *FSLeyes*, so this function does nothing
               when we are running a frozen version.
+
+    :arg verbose: A number between 0 and 3, indicating the verbosity level.
+    :arg noisy:   A sequence of module names - logging will be enabled on these
+                  modules.
     """
 
     global log
+
+    if noisy is None:
+        noisy = []
 
     # make numpy/matplotlib/nibabel quiet
     warnings.filterwarnings('ignore',  module='matplotlib')
     warnings.filterwarnings('ignore',  module='mpl_toolkits')
     warnings.filterwarnings('ignore',  module='numpy')
+    warnings.filterwarnings('ignore',  module='trimesh')
     logging.getLogger('nibabel').setLevel(logging.CRITICAL)
+    logging.getLogger('trimesh').setLevel(logging.CRITICAL)
 
     # Show deprecations
     warnings.filterwarnings('default', category=DeprecationWarning)
@@ -334,11 +379,7 @@ def configLogging(namespace):
         return
 
     # Now we can set up logging
-    # as requested by the user.
-    if namespace.noisy is None:
-        namespace.noisy = []
-
-    if namespace.verbose == 1:
+    if verbose == 1:
         log.setLevel(logging.DEBUG)
 
         # make some noisy things quiet
@@ -346,16 +387,16 @@ def configLogging(namespace):
         logging.getLogger('fsleyes.views')  .setLevel(logging.WARNING)
         logging.getLogger('fsleyes_props')  .setLevel(logging.WARNING)
         logging.getLogger('fsleyes_widgets').setLevel(logging.WARNING)
-    elif namespace.verbose == 2:
+    elif verbose == 2:
         log.setLevel(logging.DEBUG)
         logging.getLogger('fsleyes_props')  .setLevel(logging.WARNING)
         logging.getLogger('fsleyes_widgets').setLevel(logging.WARNING)
-    elif namespace.verbose == 3:
+    elif verbose == 3:
         log.setLevel(logging.DEBUG)
         logging.getLogger('fsleyes_props')  .setLevel(logging.DEBUG)
         logging.getLogger('fsleyes_widgets').setLevel(logging.DEBUG)
 
-    for mod in namespace.noisy:
+    for mod in noisy:
         logging.getLogger(mod).setLevel(logging.DEBUG)
 
     # The trace module monkey-patches some
@@ -364,4 +405,4 @@ def configLogging(namespace):
     # it can set itself up.
     traceLogger = logging.getLogger('fsleyes_props.trace')
     if traceLogger.getEffectiveLevel() <= logging.DEBUG:
-        import fsleyes_props.trace
+        import fsleyes_props.trace  # noqa

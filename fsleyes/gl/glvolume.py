@@ -16,7 +16,7 @@ import numpy                              as np
 import OpenGL.GL                          as gl
 
 from   fsl.utils.platform import platform as fslplatform
-import fsl.utils.async                    as async
+import fsl.utils.idle                     as idle
 import fsl.utils.transform                as transform
 import fsleyes.gl                         as fslgl
 import fsleyes.gl.routines                as glroutines
@@ -160,10 +160,12 @@ class GLVolume(glimageobject.GLImageObject):
     """
 
 
-    def __init__(self, image, displayCtx, canvas, threedee):
+    def __init__(self, image, overlayList, displayCtx, canvas, threedee):
         """Create a ``GLVolume`` object.
 
         :arg image:       An :class:`.Image` object.
+
+        :arg overlayList: The :class:`.OverlayList`
 
         :arg displayCtx:  The :class:`.DisplayContext` object managing the
                           scene.
@@ -176,6 +178,7 @@ class GLVolume(glimageobject.GLImageObject):
 
         glimageobject.GLImageObject.__init__(self,
                                              image,
+                                             overlayList,
                                              displayCtx,
                                              canvas,
                                              threedee)
@@ -240,7 +243,7 @@ class GLVolume(glimageobject.GLImageObject):
             fslgl.glvolume_funcs.init(self)
             self.notify()
 
-        async.idleWhen(init, self.texturesReady)
+        idle.idleWhen(init, self.texturesReady)
 
 
     def destroy(self):
@@ -349,7 +352,6 @@ class GLVolume(glimageobject.GLImageObject):
         # 3D-only options
         if self.threedee:
 
-            opts.addListener('dithering',       name, self._ditheringChanged)
             opts.addListener('numSteps',        name, self._numStepsChanged)
             opts.addListener('numInnerSteps',   name,
                              self._numInnerStepsChanged)
@@ -360,6 +362,7 @@ class GLVolume(glimageobject.GLImageObject):
             opts.addListener('numClipPlanes',
                              name,
                              self._numClipPlanesChanged)
+            opts.addListener('clipMode',        name, self._clipModeChanged)
             opts.addListener('clipPosition',    name, self._clipping3DChanged)
             opts.addListener('clipAzimuth',     name, self._clipping3DChanged)
             opts.addListener('clipInclination', name, self._clipping3DChanged)
@@ -418,10 +421,10 @@ class GLVolume(glimageobject.GLImageObject):
         opts    .removeListener(          'overrideDataRange',       name)
 
         if self.threedee:
-            opts.removeListener('dithering',       name)
             opts.removeListener('numSteps',        name)
             opts.removeListener('numClipPlanes',   name)
             opts.removeListener('showClipPlanes',  name)
+            opts.removeListener('clipMode',        name)
             opts.removeListener('clipPosition',    name)
             opts.removeListener('clipAzimuth',     name)
             opts.removeListener('clipInclination', name)
@@ -447,7 +450,7 @@ class GLVolume(glimageobject.GLImageObject):
     def updateShaderState(self, *args, **kwargs):
         """Calls :func:`.gl14.glvolume_funcs.updateShaderState` or
         :func:`.gl21.glvolume_funcs.updateShaderStatea`, then
-        :meth:`.Notifier.notify`. Uses the :func:`.async.idleWhen` function to
+        :meth:`.Notifier.notify`. Uses the :func:`.idle.idleWhen` function to
         make sure that it is not called until :meth:`ready` returns ``True``.
 
         :arg alwaysNotify: Must be passed as a keyword argument. If
@@ -492,10 +495,10 @@ class GLVolume(glimageobject.GLImageObject):
         # single event, but in this situation
         # we only want to actually do the
         # update once.
-        async.idleWhen(func,
-                       self.ready,
-                       name=self.name,
-                       skipIfQueued=True)
+        idle.idleWhen(func,
+                      self.ready,
+                      name=self.name,
+                      skipIfQueued=True)
 
 
     def refreshImageTexture(self):
@@ -523,6 +526,9 @@ class GLVolume(glimageobject.GLImageObject):
         if opts.interpolation == 'none': interp = gl.GL_NEAREST
         else:                            interp = gl.GL_LINEAR
 
+        if opts.enableOverrideDataRange: normRange = opts.overrideDataRange
+        else:                            normRange = None
+
         self.imageTexture = glresources.get(
             texName,
             textures.ImageTexture,
@@ -530,6 +536,7 @@ class GLVolume(glimageobject.GLImageObject):
             self.image,
             interp=interp,
             volume=opts.index()[3:],
+            normaliseRange=normRange,
             notify=False)
 
         self.imageTexture.register(self.name, self.__texturesChanged)
@@ -713,7 +720,7 @@ class GLVolume(glimageobject.GLImageObject):
                           [-1,  1, 0],
                           [ 1,  1, 0]], dtype=np.float32)
 
-        invproj = transform.invert(self.canvas.getProjectionMatrix())
+        invproj = transform.invert(self.canvas.projectionMatrix)
         verts   = transform.transform(verts, invproj)
 
         if opts.resolution != 100:
@@ -843,7 +850,7 @@ class GLVolume(glimageobject.GLImageObject):
         """Called when the :attr:`.VolumeOpts.enableOverrideDataRange` property
         changes. Calls :meth:`_volumeChanged`.
         """
-        self._volumeChanged()
+        self._volumeChanged(volRefresh=True)
 
 
     def _overrideDataRangeChanged(self, *a):
@@ -852,7 +859,7 @@ class GLVolume(glimageobject.GLImageObject):
         :attr:`.VolumeOpts.enableOverrideDataRange` is ``True``.
         """
         if self.opts.enableOverrideDataRange:
-            self._volumeChanged()
+            self._volumeChanged(volRefresh=True)
 
 
     def _volumeChanged(self, *a, **kwa):
@@ -895,12 +902,6 @@ class GLVolume(glimageobject.GLImageObject):
         self.notify()
 
 
-    def _ditheringChanged(self, *a):
-        """Called when the :attr:`.Volume3DOpts.dithering` property changes.
-        """
-        self.notify()
-
-
     def _numStepsChanged(self, *a):
         """Called when the :attr:`.Volume3DOpts.numSteps` property changes.
         """
@@ -924,6 +925,15 @@ class GLVolume(glimageobject.GLImageObject):
 
     def _numClipPlanesChanged(self, *a):
         """Called when the :attr:`.Volume3DOpts.numClipPlanes` property
+        changes.
+        """
+        if float(fslplatform.glVersion) == 1.4:
+            fslgl.glvolume_funcs.compileShaders(self)
+        self.updateShaderState(alwaysNotify=True)
+
+
+    def _clipModeChanged(self, *a):
+        """Called when the :attr:`.Volume3DOpts.clipMode` property
         changes.
         """
         if float(fslplatform.glVersion) == 1.4:

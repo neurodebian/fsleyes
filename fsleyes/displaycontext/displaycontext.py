@@ -17,8 +17,10 @@ import contextlib
 import numpy        as np
 import numpy.linalg as npla
 
-import fsl.data.image as fslimage
-import fsleyes_props  as props
+import        fsl.data.image as fslimage
+import        fsl.data.mesh  as fslmesh
+import        fsleyes_props  as props
+from . import group          as dcgroup
 
 
 log = logging.getLogger(__name__)
@@ -105,6 +107,14 @@ class DisplayContext(props.SyncableHasProperties):
     """
 
 
+    vertexIndex = props.Int()
+    """This property may be used to control the :attr:`location` when the
+    currently selected overlay is a :class:`.Mesh`, which comprises
+    a list of vertices. If this property is set to an index into the mesh
+    vertex list, the :attr:`location` will be set to that vertex.
+    """
+
+
     bounds = props.Bounds(ndims=3)
     """This property contains the min/max values of a bounding box (in display
     coordinates) which is big enough to contain all of the overlays in the
@@ -125,6 +135,10 @@ class DisplayContext(props.SyncableHasProperties):
     overlayGroups = props.List()
     """A list of :class:`.OverlayGroup` instances, each of which defines
     a group of overlays which share display properties.
+
+    By default there is one overlay group, to which all new overlays are
+    initially added. The :class:`.OverlayListPanel` allows the user to
+    add/remove overlays from this default group.
     """
 
 
@@ -136,6 +150,10 @@ class DisplayContext(props.SyncableHasProperties):
     to those of the parent instance. Otherwise, the display properties for
     every overlay will be unsynchronised from the parent.
 
+    Properties which control the current volume/timepoint in a 4D data set are
+    not managed by this property - see the :attr: :attr:`syncOverlayVolume`
+    property.
+
     Synchronisation of the following properties between child and parent
     ``DisplayContext`` instances is also controlled by this flag:
 
@@ -146,6 +164,13 @@ class DisplayContext(props.SyncableHasProperties):
     .. note:: This property is accessed by the :class:`.Display` class, in its
               constructor, and when it creates new :class:`.DisplayOpts`
               instances, to set initial sync states.
+    """
+
+
+    syncOverlayVolume = props.Boolean(default=True)
+    """This property performs the same task as the :attr:`syncOverlayDisplay`
+    property, but it only affects :class:`DisplayOpts` properties which control
+    the current volume/timepoint in a 4D overlay.
     """
 
 
@@ -237,15 +262,14 @@ class DisplayContext(props.SyncableHasProperties):
                           :class:`.Nifti` overlay. Otherwise (``'world'``),
                           the display space will be set to ``'world'``.
 
-        All other arguments are passed through to the ``SyncableHasProperties`
+        All other arguments are passed through to the ``SyncableHasProperties``
         constructor, in addition to the following:
 
-          - The ``syncOverlayDisplay`` and ``location`` properties
-            are added to the ``nobind`` argument
+          - The ``syncOverlayDisplay``,, ``syncOverlayVolume``, ``location``,
+            and ``bounds`` properties are added to the ``nobind`` argument
 
-          - The ``selectedOverlay``, ``overlayGroups``,
-            ``autoDisplay`` and ``loadInMemory`` properties
-            are added to the ``nounbind`` argument.
+          - The ``overlayGroups``, ``autoDisplay`` and ``loadInMemory``
+            properties are added to the ``nounbind`` argument.
         """
 
         kwargs = dict(kwargs)
@@ -254,10 +278,10 @@ class DisplayContext(props.SyncableHasProperties):
         nounbind = kwargs.pop('nounbind', [])
 
         nobind  .extend(['syncOverlayDisplay',
+                         'syncOverlayVolume',
                          'location',
                          'bounds'])
-        nounbind.extend(['selectedOverlay',
-                         'overlayGroups',
+        nounbind.extend(['overlayGroups',
                          'autoDisplay',
                          'loadInMemory'])
 
@@ -294,6 +318,16 @@ class DisplayContext(props.SyncableHasProperties):
         if self.__child:
             self.__initDS = (len(parent.getChildren()) - 1) == 0
 
+
+        # While the DisplayContext may refer to
+        # multiple overlay groups, we are currently
+        # using just one, allowing the user to specify
+        # a set of overlays for which their display
+        # properties are 'locked'.
+        if not self.__child:
+            lockGroup = dcgroup.OverlayGroup(self, overlayList)
+            self.overlayGroups.append(lockGroup)
+
         # This dict contains the Display
         # objects for every overlay in
         # the overlay list, as
@@ -309,6 +343,9 @@ class DisplayContext(props.SyncableHasProperties):
             self.addListener('syncOverlayDisplay',
                              self.__name,
                              self.__syncOverlayDisplayChanged)
+            self.addListener('syncOverlayVolume',
+                             self.__name,
+                             self.__syncOverlayVolumeChanged)
             self.addListener('displaySpace',
                              self.__name,
                              self.__displaySpaceChanged,
@@ -320,6 +357,10 @@ class DisplayContext(props.SyncableHasProperties):
             self.addListener('worldLocation',
                              self.__name,
                              self.__worldLocationChanged,
+                             immediate=True)
+            self.addListener('vertexIndex',
+                             self.__name,
+                             self.__vertexIndexChanged,
                              immediate=True)
 
         # The overlayListChanged method
@@ -355,9 +396,11 @@ class DisplayContext(props.SyncableHasProperties):
 
         if self.__child:
             self.removeListener('syncOverlayDisplay', self.__name)
+            self.removeListener('syncOverlayVolume',  self.__name)
             self.removeListener('displaySpace',       self.__name)
             self.removeListener('location',           self.__name)
             self.removeListener('worldLocation',      self.__name)
+            self.removeListener('vertexIndex',        self.__name)
 
         for overlay, display in displays.items():
             display.destroy()
@@ -430,8 +473,8 @@ class DisplayContext(props.SyncableHasProperties):
 
     def getOpts(self, overlay, overlayType=None):
         """Returns the :class:`.DisplayOpts` instance associated with the
-        specified overlay.  See :meth:`getDisplay` and
-        :meth:`.Display.getDisplayOpts` for more details,
+        specified overlay.  See :meth:`getDisplay` and :meth:`.Display.opts`
+        for more details.
         """
 
         if overlay is None:
@@ -444,28 +487,31 @@ class DisplayContext(props.SyncableHasProperties):
             raise InvalidOverlayError('Overlay {} is not in '
                                       'list'.format(overlay.name))
 
-        return self.getDisplay(overlay, overlayType).getDisplayOpts()
+        return self.getDisplay(overlay, overlayType).opts
 
 
     def getReferenceImage(self, overlay):
         """Convenience method which returns the reference image associated
         with the given overlay, or ``None`` if there is no reference image.
 
-        See the :class:`.DisplayOpts.getReferenceImage` method.
+        See the :class:`.DisplayOpts.referenceImage` method.
         """
         if overlay is None:
             return None
 
-        return self.getOpts(overlay).getReferenceImage()
+        return self.getOpts(overlay).referenceImage
 
 
-    def displayToWorld(self, dloc):
+    def displayToWorld(self, dloc, *args, **kwargs):
         """Transforms the given coordinates from the display coordinate
         system into the world coordinate system.
 
         .. warning:: If any :attr:`.NiftiOpts.transform` properties have
                      been modified manually, this method will return invalid
                      results.
+
+        All other arguments are passed to the
+        :meth:`.NiftiOpts.transformCoords` method.
         """
 
         displaySpace = self.displaySpace
@@ -475,16 +521,19 @@ class DisplayContext(props.SyncableHasProperties):
 
         opts = self.getOpts(displaySpace)
 
-        return opts.transformCoords(dloc, 'display', 'world')
+        return opts.transformCoords(dloc, 'display', 'world', *args, **kwargs)
 
 
-    def worldToDisplay(self, wloc):
+    def worldToDisplay(self, wloc, *args, **kwargs):
         """Transforms the given coordinates from the world coordinate
         system into the display coordinate system.
 
         .. warning:: If any :attr:`.NiftiOpts.transform` properties have
                      been modified manually, this method will return invalid
                      results.
+
+        All other arguments are passed to the
+        :meth:`.NiftiOpts.transformCoords` method.
         """
 
         displaySpace = self.displaySpace
@@ -494,7 +543,7 @@ class DisplayContext(props.SyncableHasProperties):
 
         opts = self.getOpts(displaySpace)
 
-        return opts.transformCoords(wloc, 'world', 'display')
+        return opts.transformCoords(wloc, 'world', 'display', *args, **kwargs)
 
 
     def displaySpaceIsRadiological(self):
@@ -609,7 +658,7 @@ class DisplayContext(props.SyncableHasProperties):
 
         for dctx in dctxs:
             display = dctx.getDisplay(overlay)
-            opts    = display.getDisplayOpts()
+            opts    = display.opts
 
             display.disableAllNotification()
             opts   .disableAllNotification()
@@ -627,7 +676,7 @@ class DisplayContext(props.SyncableHasProperties):
 
         for dctx in dctxs:
             display = dctx.getDisplay(overlay)
-            opts    = display.getDisplayOpts()
+            opts    = display.opts
 
             display.enableAllNotification()
             opts   .enableAllNotification()
@@ -698,7 +747,7 @@ class DisplayContext(props.SyncableHasProperties):
             if overlay not in self.__overlayList:
 
                 display = self.__displays.pop(overlay)
-                opts    = display.getDisplayOpts()
+                opts    = display.opts
 
                 display.removeListener('overlayType', self.__name)
                 opts   .removeListener('bounds',      self.__name)
@@ -716,8 +765,9 @@ class DisplayContext(props.SyncableHasProperties):
             # The getDisplay method
             # will create a Display object
             # if one does not already exist
+            new     = overlay not in self.__displays
             display = self.getDisplay(overlay, ovlType)
-            opts    = display.getDisplayOpts()
+            opts    = display.opts
 
             # Register a listener on the overlay type,
             # because when it changes, the DisplayOpts
@@ -749,29 +799,36 @@ class DisplayContext(props.SyncableHasProperties):
                     if isinstance(overlay, fslimage.Nifti):
                         opts.detachFromParent('transform')
 
+            # All new overlays are initially
+            # added to the default overlay group.
+            # This only needs to be done on the
+            # master DC, as the overlayGroups are
+            # the same across all DCs.
+            if new and not self.__child and len(self.overlayGroups) > 0:
+                self.overlayGroups[0].addOverlay(overlay)
+
         # Ensure that the displaySpace
         # property options are in sync
         # with the overlay list.
         self.__updateDisplaySpaceOptions()
 
-        # Stuff which only needs to
-        # be done on the parent DC
+        # The rest of the stuff only
+        # needs to be done on child DCs
         if not self.__child:
-
-            # Limit the selectedOverlay property
-            # so it cannot take a value greater
-            # than len(overlayList)-1. selectedOverlay
-            # is always synchronised, so we only
-            # need to do this on the parent DC.
-            nOverlays = len(self.__overlayList)
-            if nOverlays > 0:
-                self.setAttribute('selectedOverlay',
-                                  'maxval',
-                                  nOverlays - 1)
-            else:
-                self.setAttribute('selectedOverlay', 'maxval', 0)
-
             return
+
+        # Limit the selectedOverlay property
+        # so it cannot take a value greater
+        # than len(overlayList)-1. selectedOverlay
+        # is always synchronised, so we only
+        # need to do this on the parent DC.
+        nOverlays = len(self.__overlayList)
+        if nOverlays > 0:
+            self.setAttribute('selectedOverlay',
+                              'maxval',
+                              nOverlays - 1)
+        else:
+            self.setAttribute('selectedOverlay', 'maxval', 0)
 
         # Ensure that the overlayOrder
         # property is valid
@@ -1020,14 +1077,49 @@ class DisplayContext(props.SyncableHasProperties):
 
         for display in self.__displays.values():
 
-            opts = display.getDisplayOpts()
-
             if self.syncOverlayDisplay:
                 display.syncAllToParent()
-                opts   .syncAllToParent()
             else:
                 display.unsyncAllFromParent()
-                opts   .unsyncAllFromParent()
+
+            opts     = display.opts
+            optProps = opts.getAllProperties()[0]
+            exclude  = opts.getVolumeProps()
+
+            for optProp in optProps:
+
+                # volume properties are managed
+                # by syncOverlayVolume
+                if optProp in exclude:
+                    continue
+
+                if self.syncOverlayDisplay:
+                    if opts.canBeSyncedToParent(optProp):
+                        opts.syncToParent(optProp)
+                else:
+                    if opts.canBeUnsyncedFromParent(optProp):
+                        opts.unsyncFromParent(optProp)
+
+
+    def __syncOverlayVolumeChanged(self, *a):
+        """Called when the :attr:`syncOverlayVolume` property changes.
+
+        Synchronises or unsychronises the volume/timepoint properties of
+        the :class:`.Display` and :class:`.DisplayOpts` instances for every
+        overlay.
+        """
+
+        for display in self.__displays.values():
+            opts     = display.opts
+            optProps = opts.getVolumeProps()
+
+            for optProp in optProps:
+                if self.syncOverlayVolume:
+                    if opts.canBeSyncedToParent(optProp):
+                        opts.syncToParent(optProp)
+                else:
+                    if opts.canBeUnsyncedFromParent(optProp):
+                        opts.unsyncFromParent(optProp)
 
 
     def __updateBounds(self, *a):
@@ -1048,7 +1140,7 @@ class DisplayContext(props.SyncableHasProperties):
         for ovl in self.__overlayList:
 
             display = self.__displays[ovl]
-            opts    = display.getDisplayOpts()
+            opts    = display.opts
             lo      = opts.bounds.getLo()
             hi      = opts.bounds.getHi()
 
@@ -1084,11 +1176,33 @@ class DisplayContext(props.SyncableHasProperties):
         self.__propagateLocation('display')
 
 
+    def __vertexIndexChanged(self, *a):
+        """Called when the :attr:`vertexIndex` property changes. Propagates
+        the new location to the :attr:`location` property.
+        """
+
+        vidx = self.vertexIndex
+        ovl  = self.getSelectedOverlay()
+
+        # If the current overlay is a mesh, and
+        # the index looks valid, propagate it on
+        # to the location.
+        if isinstance(ovl, fslmesh.Mesh) and \
+           vidx >= 0                     and \
+           vidx < ovl.vertices.shape[0]:
+
+            opts = self.getOpts(ovl)
+            loc  = ovl.vertices[vidx, :]
+            loc  = opts.transformCoords(loc, 'mesh', 'display')
+
+            self.location.xyz = loc
+
+
     def __propagateLocation(self, dest):
         """Called by the :meth:`__locationChanged` and
         :meth:`__worldLocationChanged` methods. The ``dest`` argument may be
         either ``'world'`` (the ``worldLocation`` is updated from the
-        ``location``), or ``'display'` (vice-versa).
+        ``location``), or ``'display'`` (vice-versa).
         """
 
         if self.displaySpace == 'world':

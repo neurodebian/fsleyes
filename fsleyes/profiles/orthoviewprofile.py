@@ -14,9 +14,11 @@ import wx
 
 import numpy as np
 
-import fsleyes.profiles as profiles
-import fsleyes.actions  as actions
-import fsl.utils.async  as async
+import fsl.utils.idle      as idle
+import fsl.utils.transform as transform
+
+import fsleyes.profiles    as profiles
+import fsleyes.actions     as actions
 
 
 log = logging.getLogger(__name__)
@@ -51,6 +53,10 @@ class OrthoViewProfile(profiles.Profile):
 
     ``bricon`` The user can drag the mouse along a canvas to change the
                brightness/contrast of the currently selected overlay.
+
+    ``pick``   If the currently selected overlay is a :class:`.Mesh`,
+               the user can select the mesh vertex which is nearest to the
+               mouse click.
     ========== ==============================================================
 
 
@@ -91,7 +97,7 @@ class OrthoViewProfile(profiles.Profile):
         if extraModes is None:
             extraModes = []
 
-        modes = ['nav', 'slice', 'pan', 'zoom', 'bricon'] + extraModes
+        modes = ['nav', 'slice', 'pan', 'zoom', 'bricon', 'pick'] + extraModes
 
         profiles.Profile.__init__(self,
                                   viewPanel,
@@ -101,9 +107,9 @@ class OrthoViewProfile(profiles.Profile):
 
         # We create our own name and use it
         # for registering property listeners,
-        # so sub-classes can use Profile._name
+        # so sub-classes can use Profile.name
         # to register its own listeners.
-        self.__name    = 'OrthoViewProfile_{}'.format(self._name)
+        self.__name    = 'OrthoViewProfile_{}'.format(self.name)
 
         self.__xcanvas = viewPanel.getXCanvas()
         self.__ycanvas = viewPanel.getYCanvas()
@@ -130,8 +136,8 @@ class OrthoViewProfile(profiles.Profile):
         """Must be called when this ``OrthoViewProfile`` is no longer needed.
         Removes some property listeners, and calls :meth:`.Profile.destroy`.
         """
-        self._overlayList.removeListener('overlays',        self.__name)
-        self._displayCtx .removeListener('selectedOverlay', self.__name)
+        self.overlayList.removeListener('overlays',        self.__name)
+        self.displayCtx .removeListener('selectedOverlay', self.__name)
         profiles.Profile.destroy(self)
 
 
@@ -150,7 +156,7 @@ class OrthoViewProfile(profiles.Profile):
         the action methods based on the newly selected overlay.
         """
 
-        ovl = self._displayCtx.getSelectedOverlay()
+        ovl = self.displayCtx.getSelectedOverlay()
 
         self.resetDisplay     .enabled = ovl is not None
         self.centreCursor     .enabled = ovl is not None
@@ -167,7 +173,7 @@ class OrthoViewProfile(profiles.Profile):
         See the :meth:`.SliceCanvas.resetDisplay` method.
         """
 
-        opts = self._viewPanel.getSceneOptions()
+        opts = self.viewPanel.sceneOpts
 
         self.__xcanvas.resetDisplay()
         self.__ycanvas.resetDisplay()
@@ -185,13 +191,13 @@ class OrthoViewProfile(profiles.Profile):
         :attr:`.DisplayContext.bounds`.
         """
 
-        bounds = self._displayCtx.bounds
+        bounds = self.displayCtx.bounds
 
         xmid = bounds.xlo + 0.5 * bounds.xlen
         ymid = bounds.ylo + 0.5 * bounds.ylen
         zmid = bounds.zlo + 0.5 * bounds.zlen
 
-        self._displayCtx.location.xyz = [xmid, ymid, zmid]
+        self.displayCtx.location.xyz = [xmid, ymid, zmid]
 
 
     @actions.action
@@ -201,16 +207,16 @@ class OrthoViewProfile(profiles.Profile):
         ovelray.
         """
 
-        ovl    = self._displayCtx.getSelectedOverlay()
-        refOvl = self._displayCtx.getReferenceImage(ovl)
+        ovl    = self.displayCtx.getSelectedOverlay()
+        refOvl = self.displayCtx.getReferenceImage(ovl)
 
         if refOvl is not None:
-            opts   = self._displayCtx.getOpts(refOvl)
+            opts   = self.displayCtx.getOpts(refOvl)
             origin = opts.transformCoords([0, 0, 0], 'world', 'display')
         else:
             origin = [0, 0, 0]
 
-        self._displayCtx.location.xyz = origin
+        self.displayCtx.location.xyz = origin
 
 
     ########################
@@ -240,8 +246,8 @@ class OrthoViewProfile(profiles.Profile):
         the same along an axis.
         """
 
-        overlay = self._displayCtx.getReferenceImage(
-            self._displayCtx.getSelectedOverlay())
+        overlay = self.displayCtx.getReferenceImage(
+            self.displayCtx.getSelectedOverlay())
 
         # If non-zero, round to -1 or +1
         x = np.sign(x) * np.ceil(np.abs(np.clip(x, -1, 1)))
@@ -254,7 +260,7 @@ class OrthoViewProfile(profiles.Profile):
         # move by +/-1 along each axis (as
         # specified by the x/y/z parameters).
         if overlay is None:
-            dloc     = self._displayCtx.location.xyz
+            dloc     = self.displayCtx.location.xyz
             dloc[0] += x
             dloc[1] += y
             dloc[2] += z
@@ -292,7 +298,7 @@ class OrthoViewProfile(profiles.Profile):
             #      into the display coordinate system.
 
             offsets  = [x, y, z]
-            opts     = self._displayCtx.getOpts(overlay)
+            opts     = self.displayCtx.getOpts(overlay)
             vround   = opts.transform in ('id', 'pixdim', 'pixdim-flip')
             vloc     = opts.getVoxel(clip=False, vround=vround)
             voxAxes  = overlay.axisMapping(opts.getTransform('voxel',
@@ -318,7 +324,7 @@ class OrthoViewProfile(profiles.Profile):
         if canvasPos is None:
             return False
 
-        self._displayCtx.location = canvasPos
+        self.displayCtx.location = canvasPos
 
         return True
 
@@ -332,7 +338,7 @@ class OrthoViewProfile(profiles.Profile):
         canvas which was the target of the event.
         """
 
-        if len(self._overlayList) == 0:
+        if len(self.overlayList) == 0:
             return False
 
         try:    ch = chr(key)
@@ -350,10 +356,10 @@ class OrthoViewProfile(profiles.Profile):
         else:                     return False
 
         def update():
-            self._displayCtx.location.xyz = self.__offsetLocation(*dirs)
+            self.displayCtx.location.xyz = self.__offsetLocation(*dirs)
 
         # See comment in _zoomModeMouseWheel about timeout
-        async.idle(update, timeout=0.1)
+        idle.idle(update, timeout=0.1)
 
         return True
 
@@ -371,7 +377,7 @@ class OrthoViewProfile(profiles.Profile):
         on that canvas.
         """
 
-        if len(self._overlayList) == 0:
+        if len(self.overlayList) == 0:
             return False
 
         dirs  = [0, 0, 0]
@@ -383,10 +389,10 @@ class OrthoViewProfile(profiles.Profile):
         pos = self.__offsetLocation(*dirs)
 
         def update():
-            self._displayCtx.location[copts.zax] = pos[copts.zax]
+            self.displayCtx.location[copts.zax] = pos[copts.zax]
 
         # See comment in _zoomModeMouseWheel about timeout
-        async.idle(update, timeout=0.1)
+        idle.idle(update, timeout=0.1)
 
         return True
 
@@ -438,7 +444,7 @@ class OrthoViewProfile(profiles.Profile):
             newZoom    = np.clip(copts.zoom + wheel, minzoom, maxzoom)
             copts.zoom = newZoom
 
-        async.idle(update, timeout=0.1)
+        idle.idle(update, timeout=0.1)
 
         return True
 
@@ -571,7 +577,7 @@ class OrthoViewProfile(profiles.Profile):
             canvas.panDisplayBy(xoff, yoff)
 
         # See comment in _zoomModeMouseWheel about timeout
-        async.idle(update, timeout=0.1)
+        idle.idle(update, timeout=0.1)
 
         return True
 
@@ -587,12 +593,12 @@ class OrthoViewProfile(profiles.Profile):
         currently selected overlay.
         """
 
-        overlay = self._displayCtx.getSelectedOverlay()
+        overlay = self.displayCtx.getSelectedOverlay()
 
         if overlay is None:
             return False
 
-        display = self._displayCtx.getDisplay(overlay)
+        display = self.displayCtx.getDisplay(overlay)
 
         self.__briconOrigin = (display.brightness, display.contrast)
 
@@ -618,7 +624,7 @@ class OrthoViewProfile(profiles.Profile):
         if self.__briconOrigin is None:
             return False
 
-        overlay = self._displayCtx.getSelectedOverlay()
+        overlay = self.displayCtx.getSelectedOverlay()
 
         if overlay is None:
             return False
@@ -634,7 +640,7 @@ class OrthoViewProfile(profiles.Profile):
         (ox, oy), _ = self.getMouseDownLocation()
         (ob, oc)    = self.__briconOrigin
 
-        display = self._displayCtx.getDisplay(overlay)
+        display = self.displayCtx.getDisplay(overlay)
         w, h    = canvas.GetSize()
         x, y    = mousePos
 
@@ -665,3 +671,63 @@ class OrthoViewProfile(profiles.Profile):
         if display.propertyIsEnabled('contrast'):   display.contrast   = c
 
         return True
+
+
+    ###########
+    # Pick mode
+    ###########
+
+
+    def _pickModeLeftMouseDrag(self, ev, canvas, mousePos, canvasPos):
+        """Handles left mouse drag events in ``pick`` mode. If the currently
+        selected overlay is a :class:`.Mesh`, identifies the mesh
+        vertex which is nearest to the mouse click. Otherwise, returns
+        ``False``.
+        """
+
+        import fsl.data.mesh as fslmesh
+
+        overlay = self.displayCtx.getSelectedOverlay()
+
+        if not isinstance(overlay, fslmesh.Mesh):
+            return False
+
+
+        opts  = self.displayCtx.getOpts(overlay)
+        loc   = opts.transformCoords(canvasPos, 'display', 'mesh')
+
+        # The GLMesh caches the most
+        # recently drawn cross section
+        # vertices, and corresponding
+        # mesh triangle indices, in
+        # the mesh coordinate system.
+        xsect = self.overlayList.getData(
+            overlay,
+            'crosssection_{}'.format(canvas.opts.zax), None)
+
+        # No cross-section calculated,
+        # can't pick the nearest vertex.
+        if xsect is None or len(xsect[0]) == 0:
+            return False
+
+        lines, faces = xsect
+        lines        = lines.reshape(-1, 3)
+
+        # Find the location on the cross section
+        # that was nearest to the mouse click
+        ldists = transform.veclength(loc - lines)
+        lidx   = np.argsort(ldists)[0]
+        lvert  = lines[lidx]
+        fidx   = faces[int(np.floor(lidx / 2))]
+
+        # Get the triangle on the mesh
+        # corresponding to this location
+        face      = overlay.indices[ fidx]
+        faceVerts = overlay.vertices[face]
+
+        # Calculate the nearest vertex on
+        # this triangle
+        fdists = transform.veclength(faceVerts - lvert)
+        vidx   = np.argsort(fdists)[0]
+
+        self.displayCtx.vertexIndex = face[vidx]

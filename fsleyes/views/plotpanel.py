@@ -23,9 +23,9 @@ import scipy.interpolate as interp
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_wxagg import FigureCanvasWxAgg as Canvas
 
-import fsl.utils.async                    as async
-from   fsl.utils.platform import platform as fslplatform
+import fsl.utils.idle                     as idle
 import fsleyes_props                      as props
+import fsleyes_widgets                    as fwidgets
 import fsleyes_widgets.elistbox           as elistbox
 
 import fsleyes.strings                    as strings
@@ -217,12 +217,11 @@ class PlotPanel(viewpanel.ViewPanel):
         figure.subplots_adjust(top=1.0, bottom=0.0, left=0.0, right=1.0)
         figure.patch.set_visible(False)
 
-        self.setCentrePanel(canvas)
-
+        self.centrePanel = canvas
         self.__figure    = figure
         self.__axis      = axis
         self.__canvas    = canvas
-        self.__name      = 'PlotPanel_{}'.format(self._name)
+        self.__name      = 'PlotPanel_{}'.format(self.name)
 
         # Accessing data from large compressed
         # files may take time, so we maintain
@@ -236,7 +235,7 @@ class PlotPanel(viewpanel.ViewPanel):
         # asynchronous data preparation, and the
         # __drawDataSeries method does the actual
         # plotting.
-        self.__drawQueue = async.TaskThread()
+        self.__drawQueue = idle.TaskThread()
         self.__drawQueue.daemon = True
         self.__drawQueue.start()
 
@@ -338,8 +337,8 @@ class PlotPanel(viewpanel.ViewPanel):
 
         idleName = '{}.draw'.format(id(self))
 
-        if not self.destroyed() and not async.inIdle(idleName):
-            async.idle(self.draw, name=idleName)
+        if not self.destroyed() and not idle.inIdle(idleName):
+            idle.idle(self.draw, name=idleName)
 
 
     def destroy(self):
@@ -393,8 +392,8 @@ class PlotPanel(viewpanel.ViewPanel):
 
         from fsleyes.actions.screenshot import ScreenshotAction
 
-        ScreenshotAction(self.getOverlayList(),
-                         self.getDisplayContext(),
+        ScreenshotAction(self.overlayList,
+                         self.displayCtx,
                          self)()
 
 
@@ -407,8 +406,8 @@ class PlotPanel(viewpanel.ViewPanel):
 
         from fsleyes.actions.importdataseries import ImportDataSeriesAction
 
-        ImportDataSeriesAction(self.getOverlayList(),
-                               self.getDisplayContext(),
+        ImportDataSeriesAction(self.overlayList,
+                               self.displayCtx,
                                self)()
 
 
@@ -421,8 +420,8 @@ class PlotPanel(viewpanel.ViewPanel):
 
         from fsleyes.actions.exportdataseries import ExportDataSeriesAction
 
-        ExportDataSeriesAction(self.getOverlayList(),
-                               self.getDisplayContext(),
+        ExportDataSeriesAction(self.overlayList,
+                               self.displayCtx,
                                self)()
 
 
@@ -503,7 +502,7 @@ class PlotPanel(viewpanel.ViewPanel):
 
             # Just in case this PlotPanel is destroyed
             # before this task gets executed
-            if not fslplatform.isWidgetAlive(self):
+            if not fwidgets.isalive(self):
                 return
 
             for artist in self.artists:
@@ -512,11 +511,11 @@ class PlotPanel(viewpanel.ViewPanel):
 
         if immediate: realDraw()
         else:
-            self.__drawQueue.enqueue(async.idle, realDraw)
+            self.__drawQueue.enqueue(idle.idle, realDraw)
 
         if refresh:
             if immediate: canvas.draw()
-            else:         self.__drawQueue.enqueue(async.idle, canvas.draw)
+            else:         self.__drawQueue.enqueue(idle.idle, canvas.draw)
 
 
     def drawDataSeries(self, extraSeries=None, refresh=False, **plotArgs):
@@ -527,9 +526,9 @@ class PlotPanel(viewpanel.ViewPanel):
         asynchronously, to avoid locking up the GUI:
 
          1. The data for each ``DataSeries`` instance is prepared on
-            separate threads (using :func:`.async.run`).
+            separate threads (using :func:`.idle.run`).
 
-         2. A call to :func:`.async.wait` is enqueued on a
+         2. A call to :func:`.idle.wait` is enqueued on a
             :class:`.TaskThread`.
 
          3. This ``wait`` function waits until all of the data preparation
@@ -617,7 +616,7 @@ class PlotPanel(viewpanel.ViewPanel):
 
         # Run the data preparation tasks,
         # a separate thread for each.
-        tasks = [async.run(t) for t in tasks]
+        tasks = [idle.run(t) for t in tasks]
 
         # Show a message while we're
         # preparing the data.
@@ -628,7 +627,7 @@ class PlotPanel(viewpanel.ViewPanel):
         # Wait until data preparation is
         # done, then call __drawDataSeries.
         self.__drawRequests += 1
-        self.__drawQueue.enqueue(async.wait,
+        self.__drawQueue.enqueue(idle.wait,
                                  tasks,
                                  self.__drawDataSeries,
                                  toPlot,
@@ -745,6 +744,7 @@ class PlotPanel(viewpanel.ViewPanel):
         # Ticks
         if self.ticks:
             axis.tick_params(direction='in', pad=-5)
+            axis.tick_params(axis='both', which='both', length=3)
 
             for ytl in axis.yaxis.get_ticklabels():
                 ytl.set_horizontalalignment('left')
@@ -752,11 +752,16 @@ class PlotPanel(viewpanel.ViewPanel):
             for xtl in axis.xaxis.get_ticklabels():
                 xtl.set_verticalalignment('bottom')
         else:
+
+            # we clear the labels, but
+            # leave the ticks, so the
+            # axis grid gets drawn
             xlabels = ['' for i in range(len(axis.xaxis.get_ticklabels()))]
             ylabels = ['' for i in range(len(axis.yaxis.get_ticklabels()))]
 
             axis.set_xticklabels(xlabels)
             axis.set_yticklabels(ylabels)
+            axis.tick_params(axis='both', which='both', length=0)
 
         # Limits
         if xmin != xmax:
@@ -782,6 +787,11 @@ class PlotPanel(viewpanel.ViewPanel):
                       zorder=0)
         else:
             axis.grid(False)
+
+        axis.spines['right'] .set_visible(False)
+        axis.spines['left']  .set_visible(False)
+        axis.spines['top']   .set_visible(False)
+        axis.spines['bottom'].set_visible(False)
 
         axis.set_axisbelow(True)
         axis.patch.set_facecolor(self.bgColour)
@@ -1085,7 +1095,7 @@ class OverlayPlotPanel(PlotPanel):
 
         PlotPanel.__init__(self, *args, **kwargs)
 
-        self.__name = 'OverlayPlotPanel_{}'.format(self._name)
+        self.__name = 'OverlayPlotPanel_{}'.format(self.name)
 
         # The dataSeries attribute is a dictionary of
         #
@@ -1118,15 +1128,15 @@ class OverlayPlotPanel(PlotPanel):
         self.__dataSeries   = {}
         self.__refreshProps = {}
 
-        self             .addListener('dataSeries',
-                                      self.__name,
-                                      self.__dataSeriesChanged)
-        self._displayCtx .addListener('selectedOverlay',
-                                      self.__name,
-                                      self.__selectedOverlayChanged)
-        self._overlayList.addListener('overlays',
-                                      self.__name,
-                                      self.__overlayListChanged)
+        self            .addListener('dataSeries',
+                                     self.__name,
+                                     self.__dataSeriesChanged)
+        self.displayCtx .addListener('selectedOverlay',
+                                     self.__name,
+                                     self.__selectedOverlayChanged)
+        self.overlayList.addListener('overlays',
+                                     self.__name,
+                                     self.__overlayListChanged)
 
         self.__overlayListChanged(initialState=initialState)
         self.__dataSeriesChanged()
@@ -1136,9 +1146,9 @@ class OverlayPlotPanel(PlotPanel):
         """Must be called when this ``OverlayPlotPanel`` is no longer needed.
         Removes some property listeners, and calls :meth:`PlotPanel.destroy`.
         """
-        self._overlayList.removeListener('overlays',        self.__name)
-        self._displayCtx .removeListener('selectedOverlay', self.__name)
-        self             .removeListener('dataSeries',      self.__name)
+        self.overlayList.removeListener('overlays',        self.__name)
+        self.displayCtx .removeListener('selectedOverlay', self.__name)
+        self            .removeListener('dataSeries',      self.__name)
 
         for overlay in list(self.__dataSeries.keys()):
             self.clearDataSeries(overlay)
@@ -1154,11 +1164,11 @@ class OverlayPlotPanel(PlotPanel):
         :class:`.DataSeries` that should be plotted.
         """
 
-        overlays = self._overlayList[:]
+        overlays = self.overlayList[:]
 
         # Display.enabled
         overlays = [o for o in overlays
-                    if self._displayCtx.getDisplay(o).enabled]
+                    if self.displayCtx.getDisplay(o).enabled]
 
         # Replace proxy images
         overlays = [o.getBase() if isinstance(o, fsloverlay.ProxyImage)
@@ -1232,7 +1242,10 @@ class OverlayPlotPanel(PlotPanel):
         # a dumb copy.
         for i, ds  in enumerate(toAdd):
 
-            copy           = plotting.DataSeries(ds.overlay)
+            copy           = plotting.DataSeries(ds.overlay,
+                                                 self.overlayList,
+                                                 self.displayCtx,
+                                                 self)
             toAdd[i]       = copy
 
             copy.alpha     = ds.alpha
@@ -1269,7 +1282,7 @@ class OverlayPlotPanel(PlotPanel):
             # each data series instance so that the
             # PlotListPanel.__onListSelect method can
             # update the display properties.
-            opts = self._displayCtx.getOpts(ds.overlay)
+            opts = self.displayCtx.getOpts(ds.overlay)
             if isinstance(ds, (plotting.MelodicTimeSeries,
                                plotting.MelodicPowerSpectrumSeries)):
                 copy._volume = opts.volume
@@ -1373,15 +1386,15 @@ class OverlayPlotPanel(PlotPanel):
         # Default to showing the
         # currently selected overlay
         if initialState is None:
-            if len(self._overlayList) > 0:
-                initialState = {self._displayCtx.getSelectedOverlay() : True}
+            if len(self.overlayList) > 0:
+                initialState = {self.displayCtx.getSelectedOverlay() : True}
             else:
                 initialState = {}
 
         # Make sure that a DataSeries
         # exists for every compatible overlay
         newOverlays = []
-        for ovl in self._overlayList:
+        for ovl in self.overlayList:
 
             if ovl in self.__dataSeries:
                 continue
@@ -1390,14 +1403,14 @@ class OverlayPlotPanel(PlotPanel):
                 continue
 
             ds, refreshTargets, refreshProps = self.createDataSeries(ovl)
-            display                          = self._displayCtx.getDisplay(ovl)
+            display                          = self.displayCtx.getDisplay(ovl)
 
             if ds is None:
 
                 # "Disable" overlays which don't have any data
                 # to plot. We do this mostly so the overlay
                 # appears greyed out in the OverlayListPanel.
-                self._displayCtx.getDisplay(ovl).enabled = False
+                self.displayCtx.getDisplay(ovl).enabled = False
                 continue
 
             # Display.enabled == DataSeries.enabled
@@ -1500,7 +1513,7 @@ class OverlayPlotPanel(PlotPanel):
         exists, and is not currently enabled, it is enabled.
         """
 
-        overlay = self._displayCtx.getSelectedOverlay()
+        overlay = self.displayCtx.getSelectedOverlay()
 
         if overlay is None:
             return
@@ -1527,16 +1540,16 @@ class OverlayPlotPanel(PlotPanel):
         initialState = kwa.get('initialState', None)
 
         for ds in list(self.dataSeries):
-            if ds.overlay is not None and ds.overlay not in self._overlayList:
+            if ds.overlay is not None and ds.overlay not in self.overlayList:
                 self.dataSeries.remove(ds)
                 ds.destroy()
 
         for overlay in list(self.__dataSeries.keys()):
-            if overlay not in self._overlayList:
+            if overlay not in self.overlayList:
                 self.clearDataSeries(overlay)
 
-        for overlay in self._overlayList:
-            display = self._displayCtx.getDisplay(overlay)
+        for overlay in self.overlayList:
+            display = self.displayCtx.getDisplay(overlay)
 
             # PlotPanels use the Display.enabled property
             # to toggle on/off overlay plots. We don't want

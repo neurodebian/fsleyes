@@ -98,6 +98,10 @@ messages = TypeDict({
     'A lookup table with that name already exists - choose a different name.',
     'LookupTablePanel.installerror' :
     'An error occurred while installing the lookup table.',
+    'LookupTablePanel.labelExists' :
+    'The {} LUT already contains a label with value {}',
+    'LookupTablePanel.loadError' :
+    'An error occurred while loading {}',
 
     'actions.copyoverlay.createMask'  : 'Create empty mask image '
                                         'with same dimensions',
@@ -136,9 +140,6 @@ messages = TypeDict({
 
     'HistogramPanel.calcHist'           : 'Calculating histogram for {} ...',
 
-    'LookupTablePanel.labelExists' : 'The {} LUT already contains a '
-                                     'label with value {}',
-
     'ClusterPanel.noOverlays'     : 'Add a FEAT overlay',
     'ClusterPanel.notFEAT'        : 'Choose a FEAT overlay',
     'ClusterPanel.noClusters'     : 'No cluster results exist '
@@ -146,24 +147,6 @@ messages = TypeDict({
     'ClusterPanel.badData'        : 'Cluster data could not be parsed - '
                                     'check your cluster_*.txt files.',
     'ClusterPanel.loadingCluster' : 'Loading clusters for COPE{} ({}) ...',
-
-    'OrthoEditProfile.imageChange'        : 'You are now editing {}. ',
-    'OrthoEditProfile.imageChangeHint'    : 'Setting {} as the display '
-                                            'space reference\nimage - the '
-                                            'display space must match the '
-                                            'image being edited.',
-
-    'OrthoEditProfile.imageChange.suppress' : 'Do not show this '
-                                              'message again',
-
-    'OrthoCropProfile.imageChange'        : 'You are now cropping {}. ',
-    'OrthoCropProfile.imageChangeHint'    : 'Setting {} as the display '
-                                            'space reference\nimage - the '
-                                            'display space must match the '
-                                            'image being cropped.',
-
-    'OrthoCropProfile.imageChange.suppress' : 'Do not show this '
-                                              'message again',
 
     'MelodicClassificationPanel.disabled' :
     'Choose a melodic or other 4D image.',
@@ -188,6 +171,8 @@ messages = TypeDict({
     'ScreenshotAction.screenshot' : 'Save screenshot',
     'ScreenshotAction.pleaseWait' : 'Saving screenshot to {}...',
     'ScreenshotAction.error'      : 'An error occurred saving the screenshot.',
+
+    'MovieGifAction.movieGif'     : 'Save animated GIF',
 
     'SaveOverlayAction.saveError' :
     'An error occurred while saving the file {}.',
@@ -237,12 +222,12 @@ messages = TypeDict({
     'Calculating correlation values for seed voxel [{}, {}, {}] ...',
 
     'EditTransformPanel.saveFlirt.error' :
-    'An error occurred saving the FLIRT matrix.',
+    'An error occurred saving the affine matrix.',
 
     'SaveFlirtXfmAction.error' :
-    'An error occurred saving the FLIRT matrix.',
+    'An error occurred saving the affine matrix.',
 
-    'FlirtFileDialog.matFile'    : 'Select FLIRT transformation matrix file',
+    'FlirtFileDialog.matFile'    : 'Select affine transformation matrix file',
     'FlirtFileDialog.refFile'    : 'Select FLIRT reference image',
 
     'CropImagePanel.saveCrop'  : 'Select a file to save the crop parameters',
@@ -251,19 +236,40 @@ messages = TypeDict({
     'An error occurred saving the crop parameters',
     'CropImagePanel.loadError' :
     'An error occurred loading the crop parameters',
+    'CropImagePanel.dsWarning' :
+    'Warning: To crop an image, you must select it\n'
+    'as the display space. You can change the display\n'
+    'space back in the view settings panel.',
 
+    'LocationHistoryPanel.load' : 'Select a location file to load',
+    'LocationHistoryPanel.save' : 'Select a file to save the locations to',
+    'LocationHistoryPanel.loadError' :
+    'An error occurred loading locations from {}',
+    'LocationHistoryPanel.saveError' :
+    'An error occurred saving locations to {}',
+
+    'OrthoEditToolBar.dsWarning' :
+    'Warning: You must set the display\n'
+    'space to the image being edited!',
 
     'LoadVertexDataAction.loadVertexData' :
     'Select a vertex data file for {}',
+
+    'LoadVertexDataAction.loadVertices' :
+    'Select a vertex file for {}',
+
     'LoadVertexDataAction.error' :
     'An error occurred while loading the vertex data for {}',
 
     'UpdateCheckAction.newVersionAvailable' :
-    'A new version of FSLeyes is available. This version of FSLeyes is {}, '
-    'and the latest is {}.\n\nVisit {} to upgrade!',
+    'A new version of FSLeyes is available. This version\n'
+    'of FSLeyes is {}, and the latest is {}.',
 
     'UpdateCheckAction.upToDate' :
     'Your version of FSLeyes ({}) is up to date.',
+
+    'UpdateCheckAction.updateUrl' :
+    'The latest version of FSLeyes is available from:',
 
     'UpdateCheckAction.newVersionError' :
     'An error occurred while checking for FSLeyes updates. Try again later.',
@@ -273,6 +279,14 @@ messages = TypeDict({
 
     'ApplyCommandLineAction.error' :
     'An error occurred while applying the command line arguments.',
+
+    'loadDicom.selectDir' : 'Select DICOM directory',
+    'loadDicom.scanning'  : 'Scanning for DICOM data series...',
+    'loadDicom.loading'   : 'Loading DICOM data series...',
+    'loadDicom.scanError' :
+    'An error occurred while scanning the DICOM directory',
+    'loadDicom.loadError' :
+    'An error occurred while loading DICOM data',
 })
 
 
@@ -317,6 +331,8 @@ titles = TypeDict({
     'LightBoxToolBar'           : 'Lightbox view toolbar',
     'LookupTablePanel'          : 'Lookup tables',
     'LutLabelDialog'            : 'New LUT label',
+    'Scene3DToolBar'            : '3D view toolbar',
+    'FlirtFileDialog'           : 'Load affine transformation',
 
     'PlotListPanel'             : 'Plot list',
     'TimeSeriesControlPanel'    : 'Time series control',
@@ -333,10 +349,14 @@ titles = TypeDict({
     'CropImagePanel'             : 'Crop',
     'EditTransformPanel'         : 'Nudge',
 
+    'LocationHistoryPanel.loadError' : 'Error loading location file',
+    'LocationHistoryPanel.saveError' : 'Error saving location file',
+
     'LookupTablePanel.newlut'       : 'Name lookup table',
     'LookupTablePanel.loadLut'      : 'Select a lookup table file',
     'LookupTablePanel.labelExists'  : 'Label already exists',
     'LookupTablePanel.installerror' : 'Error installing lookup table',
+    'LookupTablePanel.loadError'    : 'Error loading lut file',
 
     'MelodicClassificationPanel.loadDialog' : 'Load FIX/Melview file...',
     'MelodicClassificationPanel.saveDialog' : 'Save FIX/Melview file...',
@@ -380,7 +400,7 @@ titles = TypeDict({
 
     'LoadVertexDataAction.error' : 'Error loading vertex data',
 
-    'SaveFlirtXfmAction.error' : 'Error saving theFLIRT matrix',
+    'SaveFlirtXfmAction.error' : 'Error saving affine matrix',
 
     'ClearSettingsAction.confirm' : 'Clear all settings?',
 
@@ -395,14 +415,24 @@ titles = TypeDict({
 
     'ApplyCommandLineAction.title' : 'Apply FSLeyes command line',
     'ApplyCommandLineAction.error' : 'Error applying command line',
+
+    'XNATBrowser' : 'Open from XNAT repository',
+
+    'loadDicom.scanning'  : 'Scanning DICOM directory',
+    'loadDicom.loading'   : 'Loading DICOM data series',
+    'loadDicom.scanError' : 'Error reading DICOM directory',
+    'loadDicom.loadError' : 'Error loading DICOM series',
+    'BrowseDicomDialog'   : 'Select DICOM series',
 })
 
 
 actions = TypeDict({
 
-    'LoadOverlayAction'        : 'Add overlay from file',
-    'LoadOverlayFromDirAction' : 'Add overlay from directory',
+    'LoadOverlayAction'        : 'Add from file',
+    'LoadOverlayFromDirAction' : 'Add from directory',
     'LoadStandardAction'       : 'Add standard',
+    'LoadDicomAction'          : 'Add from DICOM',
+    'BrowseXNATAction'         : 'Add from XNAT',
     'CopyOverlayAction'        : 'Copy',
     'LoadAtlasAction'          : 'Add atlas',
     'ClearSettingsAction'      : 'Clear FSLeyes settings',
@@ -418,8 +448,8 @@ actions = TypeDict({
     'RunScriptAction'          : 'Run script',
     'AboutAction'              : 'About FSLeyes',
     'PearsonCorrelateAction'   : 'Seed correlation (Pearson)',
-    'ApplyFlirtXfmAction'      : 'Load FLIRT transformation',
-    'SaveFlirtXfmAction'       : 'Export FLIRT transformation',
+    'ApplyFlirtXfmAction'      : 'Load affine transformation',
+    'SaveFlirtXfmAction'       : 'Export affine transformation',
     'PCACorrelateAction'       : 'Seed correlation (PCA)',
     'ResampleAction'           : 'Resample image',
 
@@ -440,6 +470,7 @@ actions = TypeDict({
     'ViewPanel.removeAllPanels'             : 'Remove all panels',
 
     'CanvasPanel.screenshot'                : 'Take screenshot',
+    'CanvasPanel.movieGif'                  : 'Save animated GIF',
     'CanvasPanel.showCommandLineArgs'       : 'Show command line for scene',
     'CanvasPanel.applyCommandLineArgs'      : 'Apply command line arguments',
     'CanvasPanel.toggleMovieMode'           : 'Movie mode',
@@ -502,6 +533,7 @@ actions = TypeDict({
     'OrthoEditProfile.createMask'              : 'Create mask',
     'OrthoEditProfile.clearSelection'          : 'Clear selection',
     'OrthoEditProfile.fillSelection'           : 'Fill selection',
+    'OrthoEditProfile.invertSelection'         : 'Invert selection',
     'OrthoEditProfile.eraseSelection'          : 'Erase selection',
     'OrthoEditProfile.copySelection'           : 'Copy selection',
     'OrthoEditProfile.pasteSelection'          : 'Paste selection',
@@ -514,13 +546,20 @@ labels = TypeDict({
     'FSLeyesFrame.noName'                 : '<unnamed>',
     'FSLeyesFrame.recentPathsMenu'        : 'Recent files',
 
-    'LocationPanel.worldLocation'         : 'Coordinates: ',
-    'LocationPanel.worldLocation.unknown' : 'Unknown',
-    'LocationPanel.voxelLocation'         : 'Voxel location',
-    'LocationPanel.volume'                : 'Volume',
-    'LocationPanel.noData'                : 'No data',
-    'LocationPanel.outOfBounds'           : 'Out of bounds',
-    'LocationPanel.notAvailable'          : 'N/A',
+    'LocationPanel.info'                      : 'Location',
+    'LocationPanel.history'                   : 'History',
+    'LocationInfoPanel.worldLocation'         : 'Coordinates: ',
+    'LocationInfoPanel.worldLocation.unknown' : 'Unknown',
+    'LocationInfoPanel.voxelLocation'         : 'Voxel location',
+    'LocationInfoPanel.volume'                : 'Volume',
+    'LocationInfoPanel.noData'                : 'No data',
+    'LocationInfoPanel.outOfBounds'           : 'Out of bounds',
+    'LocationInfoPanel.notAvailable'          : 'N/A',
+    'LocationHistoryPanel.load'               : 'Load',
+    'LocationHistoryPanel.save'               : 'Save',
+    'LocationHistoryPanel.clear'              : 'Clear',
+    'LocationHistoryPanel.hint'               :
+    'Double click on an item to add a comment.',
 
     'OverlayListPanel.noDataSource'       : '[in memory]',
 
@@ -606,6 +645,7 @@ labels = TypeDict({
 
     'OverlayDisplayPanel.loadCmap'       : 'Load colour map',
     'OverlayDisplayPanel.loadVertexData' : 'Load data',
+    'OverlayDisplayPanel.loadVertices'   : 'Load vertices',
 
     'OverlayDisplayPanel.clipPlane#'     : 'Clip plane #{}',
 
@@ -621,6 +661,7 @@ labels = TypeDict({
     'OverlayInfoPanel.Nifti.dimensions'   : 'Dimensions',
     'OverlayInfoPanel.Nifti.transform'    : 'Transform/space',
     'OverlayInfoPanel.Nifti.orient'       : 'Orientation',
+    'OverlayInfoPanel.Nifti.size'         : 'Size',
 
     'OverlayInfoPanel.Nifti.displaySpace.id'          : 'Raw voxels',
     'OverlayInfoPanel.Nifti.displaySpace.pixdim'      : 'True scaled voxels',
@@ -641,36 +682,47 @@ labels = TypeDict({
                                                   '(MELODIC analysis)',
     'OverlayInfoPanel.MelodicImage.melodicInfo' : 'MELODIC information',
 
-    'OverlayInfoPanel.TriangleMesh'                        :
-    'VTK model',
-    'OverlayInfoPanel.TriangleMesh.numVertices'            :
+    'OverlayInfoPanel.Mesh'            :
+    '3D mesh',
+    'OverlayInfoPanel.Mesh.numVertices'            :
     'Number of vertices',
-    'OverlayInfoPanel.TriangleMesh.numTriangles'           :
+    'OverlayInfoPanel.Mesh.numTriangles'           :
     'Number of triangles',
-    'OverlayInfoPanel.TriangleMesh.displaySpace'           :
+    'OverlayInfoPanel.Mesh.displaySpace'           :
     'Display space',
-    'OverlayInfoPanel.TriangleMesh.refImage'               :
+    'OverlayInfoPanel.Mesh.refImage'               :
     'Reference image',
-    'OverlayInfoPanel.TriangleMesh.coordSpace'             :
+    'OverlayInfoPanel.Mesh.size'                   :
+    'Size',
+    'OverlayInfoPanel.Mesh.coordSpace'             :
     'Vertices defined in',
-    'OverlayInfoPanel.TriangleMesh.coordSpace.id'          :
+    'OverlayInfoPanel.Mesh.coordSpace.id'          :
     'Voxels ({})',
-    'OverlayInfoPanel.TriangleMesh.coordSpace.pixdim'      :
+    'OverlayInfoPanel.Mesh.coordSpace.pixdim'      :
     'Scaled voxels ({})',
-    'OverlayInfoPanel.TriangleMesh.coordSpace.pixdim-flip' :
+    'OverlayInfoPanel.Mesh.coordSpace.pixdim-flip' :
     'Scaled voxels [FSL convention] ({})',
-    'OverlayInfoPanel.TriangleMesh.coordSpace.affine'      :
+    'OverlayInfoPanel.Mesh.coordSpace.affine'      :
     'World coordinates ({})',
-    'OverlayInfoPanel.TriangleMesh.coordSpace.display'     :
+    'OverlayInfoPanel.Mesh.coordSpace.display'     :
     'Display coordinate system',
 
-    'OverlayInfoPanel.GiftiSurface' : 'GIFTI surface',
+    'OverlayInfoPanel.VTKMesh'        : 'VTK model',
+    'OverlayInfoPanel.GiftiMesh'      : 'GIFTI surface',
+    'OverlayInfoPanel.FreesurferMesh' : 'Freesurfer surface',
 
     'OverlayInfoPanel.dataSource'               : 'Data source',
     'OverlayInfoPanel.niftiVersion'             : 'NIFTI version',
 
     'OverlayInfoPanel.DTIFitTensor'             : 'DTIFit tensor images',
     'OverlayInfoPanel.DTIFitTensor.tensorInfo'  : 'Tensor image paths ',
+
+    'OverlayInfoPanel.DicomImage'               : 'NIFTI Image (from DICOM)',
+    'OverlayInfoPanel.DicomImage.dicomDir'      : 'DICOM directory',
+    'OverlayInfoPanel.DicomImage.dicomInfo'     : 'DICOM information',
+
+    'OverlayInfoPanel.MGHImage'                 : 'NIFTI Image (from MGH)',
+    'OverlayInfoPanel.MGHImage.filename'        : 'MGH image file',
 
     'MelodicClassificationPanel.componentTab'   : 'Components',
     'MelodicClassificationPanel.labelTab'       : 'Labels',
@@ -707,11 +759,10 @@ labels = TypeDict({
     'CropImagePanel.save'             : 'Save',
     'CropImagePanel.cancel'           : 'Cancel',
 
-    'EditTransformPanel.dsWarning'   :
+    'EditTransformPanel.dsWarning'  :
     'Warning: Change the display space to "World" to see\n'
     'the effects of the transformation. You can change it\n'
     'back in the view settings panel',
-    'EditTransformPanel.changeDS'    : 'Change display space',
     'EditTransformPanel.noOverlay'   : 'Select a NIFTI image',
     'EditTransformPanel.overlayName' : 'Transform {}',
     'EditTransformPanel.oldXform'    : 'Original transform',
@@ -721,23 +772,26 @@ labels = TypeDict({
     'EditTransformPanel.rotate'      : 'Rotate',
     'EditTransformPanel.apply'       : 'Apply',
     'EditTransformPanel.reset'       : 'Reset',
-    'EditTransformPanel.loadFlirt'   : 'Load FLIRT',
-    'EditTransformPanel.saveFlirt'   : 'Save FLIRT',
+    'EditTransformPanel.loadFlirt'   : 'Load affine',
+    'EditTransformPanel.saveFlirt'   : 'Save affine',
     'EditTransformPanel.cancel'      : 'Close',
 
+    'DisplaySpaceWarning.changeDS'    : 'Change display space',
 
     'FlirtFileDialog.load.message' :
-    'Select a FLIRT transformation matrix\n'
-    'and the corresponding reference image.',
+    'Select an affine transformation matrix file',
 
     'FlirtFileDialog.save.message' :
-    'Specify a file name for the FLIRT transformation\n'
-    'matrix, and choose the corresponding reference image.',
+    'Specify a file name for the affine transformation',
 
     'FlirtFileDialog.source'              : 'Source image:\n{}',
     'FlirtFileDialog.refChoiceSelectFile' : 'Select file manually',
     'FlirtFileDialog.matFile'             : 'Matrix file',
-    'FlirtFileDialog.refFile'             : 'Reference image',
+    'FlirtFileDialog.affType'             : 'File type',
+    'FlirtFileDialog.affType.flirt'       : 'FLIRT',
+    'FlirtFileDialog.affType.v2w'         : 'Voxel-to-world',
+    'FlirtFileDialog.refImage'            : 'Reference image',
+    'FlirtFileDialog.refFile'             : 'Reference image file',
     'FlirtFileDialog.selectFile'          : 'Choose',
     'FlirtFileDialog.ok'                  : 'Ok',
     'FlirtFileDialog.cancel'              : 'Cancel',
@@ -760,6 +814,22 @@ labels = TypeDict({
     'ResampleDialog.origPixdims'   : 'Old pixdims',
     'ResampleDialog.newVoxels'     : 'New shape',
     'ResampleDialog.newPixdims'    : 'New pixdims',
+
+    'XNATBrowser.ok'        : 'Download',
+    'XNATBrowser.cancel'    : 'Cancel',
+    'XNATBrowser.choosedir' : 'Choose a download location',
+
+    'BrowseDicomPanel.dicomdir'          : 'Directory',
+    'BrowseDicomPanel.date'              : 'Date',
+    'BrowseDicomPanel.patient'           : 'Patient',
+    'BrowseDicomPanel.institution'       : 'Institution',
+    'BrowseDicomPanel.SeriesNumber'      : 'Series',
+    'BrowseDicomPanel.SeriesDescription' : 'Description',
+    'BrowseDicomPanel.Matrix'            : 'Matrix',
+    'BrowseDicomPanel.Load'              : 'Load',
+
+    'BrowseDicomDialog.load'       : 'Load',
+    'BrowseDicomDialog.cancel'     : 'Cancel',
 })
 
 
@@ -771,6 +841,7 @@ properties = TypeDict({
     'CanvasPanel.syncLocation'       : 'Link location',
     'CanvasPanel.syncOverlayOrder'   : 'Link overlay order',
     'CanvasPanel.syncOverlayDisplay' : 'Link overlay display settings',
+    'CanvasPanel.syncOverlayVolume'  : 'Link overlay volume settings',
     'CanvasPanel.movieMode'          : 'Movie mode',
     'CanvasPanel.movieRate'          : 'Movie update rate',
     'CanvasPanel.movieAxis'          : 'Movie axis',
@@ -829,6 +900,7 @@ properties = TypeDict({
     'TimeSeriesPanel.plotResiduals'    : 'Plot residuals',
 
     'HistogramPanel.histType'    : 'Histogram type',
+    'HistogramPanel.plotType'    : 'Plot type',
 
     'PowerSpectrumPanel.plotFrequencies' : 'Show frequencies along x axis ',
     'PowerSpectrumPanel.plotMelodicICs'  : 'Plot component power spectra for '
@@ -902,19 +974,22 @@ properties = TypeDict({
     'VolumeOpts.overrideDataRange'        : 'Override image data range',
     'VolumeOpts.custom_overrideDataRange' : 'Override image data range',
 
-    'Volume3DOpts.dithering'               : 'Dithering',
     'Volume3DOpts.numSteps'                : 'Number of samples',
     'Volume3DOpts.blendFactor'             : 'Blending',
     'Volume3DOpts.resolution'              : 'Quality',
     'Volume3DOpts.numClipPlanes'           : 'Number of clipping planes',
     'Volume3DOpts.showClipPlanes'          : 'Show clipping planes',
+    'Volume3DOpts.clipMode'                : 'Clipping mode',
     'Volume3DOpts.clipPosition'            : 'Clip position (%)',
     'Volume3DOpts.clipInclination'         : 'Clip Z angle',
     'Volume3DOpts.clipAzimuth'             : 'Clip rotation',
 
-    'MaskOpts.colour'         : 'Colour',
-    'MaskOpts.invert'         : 'Invert',
-    'MaskOpts.threshold'      : 'Threshold',
+    'MaskOpts.colour'        : 'Colour',
+    'MaskOpts.invert'        : 'Invert',
+    'MaskOpts.threshold'     : 'Threshold',
+    'MaskOpts.outline'       : 'Show outline only',
+    'MaskOpts.outlineWidth'  : 'Outline width',
+    'MaskOpts.interpolation' : 'Interpolation',
 
     'VectorOpts.xColour'       : 'X Colour',
     'VectorOpts.yColour'       : 'Y Colour',
@@ -944,7 +1019,9 @@ properties = TypeDict({
     'MeshOpts.outlineWidth'      : 'Outline width',
     'MeshOpts.refImage'          : 'Reference image',
     'MeshOpts.coordSpace'        : 'Mesh coordinate space',
+    'MeshOpts.custom_vertexSet'  : 'Surface definition',
     'MeshOpts.custom_vertexData' : 'Vertex data',
+    'MeshOpts.vertexSet'         : 'Surface definition',
     'MeshOpts.vertexData'        : 'Vertex data',
     'MeshOpts.vertexDataIndex'   : 'Vertex data index',
     'MeshOpts.showName'          : 'Show model name',
@@ -1039,7 +1116,8 @@ choices = TypeDict({
 
     'MeshOpts.refImage.none'     : 'No reference image',
 
-    'MeshOpts.coordSpace' : {'affine'      : 'World coordinates',
+    'MeshOpts.coordSpace' : {'torig'       : 'Freesurfer coordinates',
+                             'affine'      : 'World coordinates',
                              'pixdim'      : 'Scaled voxels',
                              'pixdim-flip' : 'Scaled voxels forced to '
                                              'radiological orientation',
@@ -1058,22 +1136,27 @@ choices = TypeDict({
                                   'linear' : 'Linear interpolation',
                                   'spline' : 'Spline interpolation'},
 
+    'Volume3DOpts.clipMode' : {'intersection' : 'Intersection',
+                               'union'        : 'Union',
+                               'complement'   : 'Complement'},
 
     'SHOpts.colourMode' : {'radius'    : 'Colour by radius',
                            'direction' : 'Colour by direction'},
 
-    'Display.overlayType' : {'volume'     : '3D/4D volume',
-                             'mask'       : '3D/4D mask image',
-                             'label'      : 'Label image',
-                             'rgbvector'  : '3-direction vector image (RGB)',
-                             'linevector' : '3-direction vector image (Line)',
-                             'mesh'       : '3D mesh',
-                             'giftimesh'  : 'GIFTI surface',
-                             'tensor'     : 'Diffusion tensor',
-                             'sh'         : 'Diffusion SH'},
+    'Display.overlayType' : {
+        'volume'         : '3D/4D volume',
+        'mask'           : '3D/4D mask image',
+        'label'          : 'Label image',
+        'rgbvector'      : '3-direction vector image (RGB)',
+        'linevector'     : '3-direction vector image (Line)',
+        'mesh'           : '3D mesh',
+        'tensor'         : 'Diffusion tensor',
+        'sh'             : 'Diffusion SH'},
 
     'HistogramPanel.histType' : {'probability' : 'Probability',
                                  'count'       : 'Count'},
+    'HistogramPanel.plotType' : {'centre'      : 'Bin centres',
+                                 'edge'        : 'Bin edges'},
 
     'DataSeries.lineStyle' : {'-'  : 'Solid line',
                               '--' : 'Dashed line',
@@ -1297,6 +1380,7 @@ perspectives = {
     'feat'     : 'FEAT mode',
     'ortho'    : 'Plain orthographic',
     'lightbox' : 'Plain lightbox',
+    '3d'       : 'Plain 3D',
 }
 
 tensor = {
@@ -1342,25 +1426,31 @@ about = {
 
     FSLeyes is a Python application which leverages the following open-source software libraries:
 
+     - fsleyes-props [{}] (https://git.fmrib.ox.ac.uk/fsl/fsleyes/props)
+     - fsleyes-widgets [{}] (https://git.fmrib.ox.ac.uk/fsl/fsleyes/widgets)
+     - fslpy [{}] (https://git.fmrib.ox.ac.uk/fsl/fslpy)
      - indexed_gzip [{}] (https://github.com/pauldmccarthy/indexed_gzip/)
      - jinja2 [{}] (http://jinja.pocoo.org)
      - matplotlib [{}] (http://www.matplotlib.org)
      - nibabel [{}] (http://nipy.org/nibabel)
      - numpy [{}] (http://www.numpy.org)
      - pillow [{}]  (http://python-pillow.org/)
-     - fsleyes-props [{}] (https://git.fmrib.ox.ac.uk/fsl/fsleyes/props)
-     - fsleyes-widgets [{}] (https://git.fmrib.ox.ac.uk/fsl/fsleyes/widgets)
-     - fslpy [{}] (https://git.fmrib.ox.ac.uk/fsl/fslpy)
      - pyopengl [{}] (http://pyopengl.sourceforge.net)
      - pyparsing [{}] (http://pyparsing.wikispaces.com/)
      - scipy [{}] (http://www.scipy.org)
      - six [{}] (https://pythonhosted.org/six/)
      - trimesh [{}] (https://github.com/mikedh/trimesh)
-     - wxPython [{}] (http://www.wxpython.org)
+     - wxpython [{}] (http://www.wxpython.org)
+     - wxnatpy [{}] (https://github.com/pauldmccarthy/wxnatpy/)
+     - xnatpy [{}] (https://bitbucket.org/bigr_erasmusmc/xnatpy)
 
     Cubic/spline interpolation routines used in FSLeyes are provided by Daniel Ruijters and Philippe Th\u00E9venaz, described at http://www.dannyruijters.nl/cubicinterpolation/.
 
+    The GLSL parser is based on code by Nicolas P . Rougier, available at https://github.com/rougier/glsl-parser, and released under the BSD license.
+
     Some of the icons used in FSLeyes are derived from the Freeline icon set, by Enes Dal, available at https://www.iconfinder.com/Enesdal, and released under the Creative Commons (Attribution 3.0 Unported) license.
+
+    DICOM to NIFTI conversion is performed with Chris Rorden's dcm2niix (https://github.com/rordenlab/dcm2niix).
 
     FSLeyes is released under Version 2.0 of the Apache Software License. Source code for FSLeyes is available at https://git.fmrib.ox.ac.uk/fsl/fsleyes/fsleyes
 
@@ -1372,9 +1462,10 @@ about = {
     # dynamically looks up the version number for
     # each of them, and inserts them into the above
     # string.
-    'libs' : ['indexed_gzip',  'jinja2',             'matplotlib',
+    'libs' : ['fsleyes_props', 'fsleyes_widgets',    'fsl.version',
+              'indexed_gzip',  'jinja2',             'matplotlib',
               'nibabel',       'numpy',              'PIL',
-              'fsleyes_props', 'fsleyes_widgets',    'fsl.version',
               'OpenGL',        'pyparsing',          'scipy',
-              'six',           'fsleyes.gl.trimesh', 'wx'],
+              'six',           'fsleyes.gl.trimesh', 'wx',
+              'wxnat',         'xnat'],
 }

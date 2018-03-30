@@ -16,7 +16,7 @@ import OpenGL.GL as gl
 import numpy as np
 
 import fsl.data.image                     as fslimage
-import fsl.utils.async                    as async
+import fsl.utils.idle                     as idle
 import fsleyes_widgets.utils.status       as status
 import fsleyes_props                      as props
 
@@ -124,6 +124,7 @@ class SliceCanvas(object):
        zoomTo
        resetDisplay
        getAnnotations
+       getViewport
     """
 
 
@@ -152,6 +153,12 @@ class SliceCanvas(object):
         # every overlay in the overlay list,
         # and stored in this dictionary
         self._glObjects = {}
+
+        # A copy of the final viewport is
+        # stored here on each call to _draw.
+        # It is accessible via the getViewport
+        # method.
+        self.__viewport = None
 
         # If render mode is offscren or prerender, these
         # dictionaries will contain a RenderTexture or
@@ -193,6 +200,9 @@ class SliceCanvas(object):
         self.displayCtx .addListener('bounds',
                                      self.name,
                                      self._overlayBoundsChanged)
+        self.displayCtx .addListener('displaySpace',
+                                     self.name,
+                                     self._displaySpaceChanged)
         self.displayCtx .addListener('syncOverlayDisplay',
                                      self.name,
                                      self._syncOverlayDisplayChanged)
@@ -225,6 +235,7 @@ class SliceCanvas(object):
 
         self.overlayList.removeListener('overlays',     self.name)
         self.displayCtx .removeListener('bounds',       self.name)
+        self.displayCtx .removeListener('displaySpace', self.name)
         self.displayCtx .removeListener('overlayOrder', self.name)
 
         for overlay in self.overlayList:
@@ -425,16 +436,12 @@ class SliceCanvas(object):
         """
 
         opts = self.opts
-        xmin = self.displayCtx.bounds.getLo(opts.xax)
-        xmax = self.displayCtx.bounds.getHi(opts.xax)
-        ymin = self.displayCtx.bounds.getLo(opts.yax)
-        ymax = self.displayCtx.bounds.getHi(opts.yax)
 
         with props.skip(opts, 'zoom', self.name):
             opts.zoom = 100
 
         with props.suppress(opts, 'displayBounds'):
-            self._updateDisplayBounds((xmin, xmax, ymin, ymax))
+            self._updateDisplayBounds()
 
         self.Refresh()
 
@@ -455,6 +462,16 @@ class SliceCanvas(object):
         # globjs can be set to False
         if not globj: return None
         else:         return globj
+
+
+    def getViewport(self):
+        """Return the current viewport, as two tuples containing the
+        ``(xlo, ylo, zlo)`` and ``(xhi, yhi, zhi)`` bounds.
+
+        This method will return ``None`` if :meth:`_draw` has not yet been
+        called.
+        """
+        return self.__viewport
 
 
     def _initGL(self):
@@ -554,7 +571,7 @@ class SliceCanvas(object):
 
         display = self.displayCtx.getDisplay(overlay)
         copts   = self.opts
-        dopts   = display.getDisplayOpts()
+        dopts   = display.opts
 
         name = '{}_{}_zax{}'.format(
             id(overlay),
@@ -665,7 +682,7 @@ class SliceCanvas(object):
                   'changed to {}'.format(display.name,
                                          display.overlayType))
 
-        self.__regenGLObject(display.getOverlay())
+        self.__regenGLObject(display.overlay)
         self.Refresh()
 
 
@@ -678,8 +695,8 @@ class SliceCanvas(object):
         method).
 
         If ``updateRenderTextures`` is ``True`` (the default), and the
-        :attr:`.renderMode` is ``offscreen`` or ``prerender``, any
-        render texture associated with the overlay is destroyed.
+        :attr:`.SliceCanvasOpts.renderMode` is ``offscreen`` or ``prerender``,
+        any render texture associated with the overlay is destroyed.
         """
 
         renderMode = self.opts.renderMode
@@ -711,8 +728,8 @@ class SliceCanvas(object):
         Does nothing if a ``GLObject`` already exists for the given overlay.
 
         If ``updateRenderTextures`` is ``True`` (the default), and the
-        :attr:`.renderMode` is ``offscreen`` or ``prerender``, any
-        textures for the overlay are updated.
+        :attr:`.SliceCanvasOpts.renderMode` is ``offscreen`` or ``prerender``,
+        any textures for the overlay are updated.
 
         If ``refresh`` is ``True`` (the default), the :meth:`Refresh` method
         is called after the ``GLObject`` has been created.
@@ -762,6 +779,7 @@ class SliceCanvas(object):
                 return
 
             globj = globject.createGLObject(overlay,
+                                            self.overlayList,
                                             self.displayCtx,
                                             self,
                                             False)
@@ -798,7 +816,7 @@ class SliceCanvas(object):
             strings.messages[self, 'globjectError'].format(overlay.name))(
                 create)
 
-        async.idle(create)
+        idle.idle(create)
 
 
     def __onGLObjectUpdate(self, globj, *a):
@@ -853,7 +871,7 @@ class SliceCanvas(object):
                                  refresh=False)
 
         # All the GLObjects are created using
-        # async.idle, so we call refresh in the
+        # idle.idle, so we call refresh in the
         # same way to make sure it gets called
         # after all the GLObject creations.
         def refresh():
@@ -867,7 +885,7 @@ class SliceCanvas(object):
             self._updateRenderTextures()
             self.Refresh()
 
-        async.idle(refresh)
+        idle.idle(refresh)
 
 
     def _getGLObjects(self):
@@ -901,9 +919,51 @@ class SliceCanvas(object):
         return overlays, globjs
 
 
-    def _overlayBoundsChanged(self, *a):
-        """Called when the display bounds are changed. Calls the
-        :meth:`resetDisplay` method.
+    def _overlayBoundsChanged(self, *args, **kwargs):
+        """Called when the :attr:`.DisplayContext.bounds` are changed.
+        Initialises/resets the display bounds, and/or preserves the zoom
+        level if necessary.
+
+        :arg preserveZoom: Must be passed as a keyword argument. If ``True``
+                           (the default), the :attr:`zoom` value is adjusted
+                           so that the effective zoom is preserved
+        """
+
+        preserveZoom = kwargs.get('preserveZoom', True)
+
+        opts = self.opts
+        xax  = opts.xax
+        yax  = opts.yax
+        xmin = self.displayCtx.bounds.getLo(xax)
+        xmax = self.displayCtx.bounds.getHi(xax)
+        ymin = self.displayCtx.bounds.getLo(yax)
+        ymax = self.displayCtx.bounds.getHi(yax)
+        width, height = self.GetSize()
+
+        if np.isclose(xmin, xmax) or width == 0 or height == 0:
+            return
+
+        if not preserveZoom or opts.displayBounds.xlen == 0:
+            self.resetDisplay()
+            return
+
+        # Figure out the scaling factor that
+        # would preserve the current zoom
+        # level for the new display bounds.
+        xmin, xmax, ymin, ymax = glroutines.preserveAspectRatio(
+            width, height, xmin, xmax, ymin, ymax)
+
+        scale = opts.displayBounds.xlen / (xmax - xmin)
+
+        # Adjust the zoom value so that the
+        # effective zoom stays the same
+        with props.suppress(opts, 'zoom'):
+            opts.zoom = self.scaleToZoom(scale)
+
+
+    def _displaySpaceChanged(self, *a):
+        """Called when the :attr:`.DisplayContext.displaySpace` changes. Resets
+        the display bounds and zoom.
         """
         self.resetDisplay()
 
@@ -917,38 +977,31 @@ class SliceCanvas(object):
         self._updateDisplayBounds(oldLoc=loc)
 
 
-    def _applyZoom(self, xmin, xmax, ymin, ymax):
-        """*Zooms* in to the given rectangle according to the current value
-        of the zoom property Returns a 4-tuple containing the updated bound
-        values.
+    def zoomToScale(self, zoom):
+        """Converts the given zoom value into a scaling factor that can be
+        multiplied by the display bounds width/height.
+
+        Zoom is specified as a percentage.  At 100% the full scene takes up
+        the full display.
+
+        In order to make the zoom smoother at low levels, we re-scale the zoom
+        value to be exponential across the range.
+
+        This is done by transforming the zoom from ``[zmin, zmax]`` into
+        ``[0.0, 1.0]``, then turning it from linear ``[0.0, 1.0]`` to
+        exponential ``[0.0, 1.0]``, and then finally transforming it back to
+        ``[zmin - zmax]``.
+
+        However there is a slight hack in that, if the zoom value is less than
+        100%, it will be applied linearly (i.e. 50% will cause the width/height
+        to be scaled by 50%).
         """
 
-        # Zoom is specified as a percentage.
-        # At 100% the full scene takes up the
-        # full display.
-        #
-        # In order to make the zoom smoother
-        # at low levels, we re-scale the zoom
-        # value to be exponential across the
-        # range.
-        #
-        # This is done by transforming the zoom
-        # from [100 - zmax] into [0.0 - 1.0], then
-        # turning it from linear [0.0 - 1.0] to
-        # exponential [0.0 - 1.0], and then finally
-        # transforming it back to [100 - zmax].
-        #
-        # HOWEVER there is a slight hack in that,
-        # if the zoom value is less than 100%, it
-        # will be applied linearly (i.e. 50% will
-        # cause the scene to take up 50% of the
-        # screen)
-
         # Assuming that minval == 100.0
-        opts    = self.opts
-        zoom    = opts.zoom
-        minzoom = opts.getAttribute('zoom', 'minval')
-        maxzoom = opts.getAttribute('zoom', 'maxval')
+        opts = self.opts
+        zmin = opts.getAttribute('zoom', 'minval')
+        zmax = opts.getAttribute('zoom', 'maxval')
+        zlen = zmax - zmin
 
         # Don't break the maths below
         if zoom <= 0:
@@ -958,18 +1011,54 @@ class SliceCanvas(object):
         if zoom >= 100:
 
             # [100 - zmax] -> [0.0 - 1.0] -> exponentify -> [100 - zmax]
-            zoom       = (zoom - minzoom)      / (maxzoom - minzoom)
-            zoom       = minzoom + (zoom ** 3) * (maxzoom - minzoom)
+            zoom = (zoom - zmin)      / zlen
+            zoom = zmin + (zoom ** 3) * zlen
 
             # Then we transform the zoom from
             # [100 - zmax] to [1.0 - 0.0] -
             # this value is used to scale the
             # bounds.
-            zoomFactor = minzoom / zoom
+            scale = zmin / zoom
 
         # Hack for zoom < 100
         else:
-            zoomFactor = 100.0 / zoom
+            scale = 100.0 / zoom
+
+        return scale
+
+
+    def scaleToZoom(self, scale):
+        """Converts the given zoom scaling factor into a zoom percentage.
+        This method performs the reverse operation to the :meth:`zoomToScale`
+        method.
+        """
+
+        opts = self.opts
+        zmin = opts.getAttribute('zoom', 'minval')
+        zmax = opts.getAttribute('zoom', 'maxval')
+        zlen = zmax - zmin
+
+        if scale > 1:
+            zoom = 100.0 / scale
+
+        else:
+
+            # [100 - zmax] -> [0.0 - 1.0] -> de-exponentify -> [100 - zmax]
+            zoom = zmin / scale
+            zoom = (zoom - zmin) / zlen
+            zoom = np.power(zoom, 1.0 / 3.0)
+            zoom = zmin + zoom * zlen
+
+        return zoom
+
+
+    def _applyZoom(self, xmin, xmax, ymin, ymax):
+        """*Zooms* in to the given rectangle according to the current value
+        of the zoom property Returns a 4-tuple containing the updated bound
+        values.
+        """
+
+        zoomFactor = self.zoomToScale(self.opts.zoom)
 
         xlen    = xmax - xmin
         ylen    = ymax - ymin
@@ -1151,6 +1240,11 @@ class SliceCanvas(object):
         lo[yax], hi[yax] = ymin, ymax
         lo[zax], hi[zax] = zmin, zmax
 
+        # store a copy of the final bounds -
+        # interested parties can retrieve it
+        # via the getViewport method.
+        self.__viewport = (tuple(lo), tuple(hi))
+
         # set up 2D orthographic drawing
         glroutines.show2D(xax,
                           yax,
@@ -1282,7 +1376,7 @@ class SliceCanvas(object):
 
             rt      = self._offscreenTextures.get(overlay, None)
             display = self.displayCtx.getDisplay(overlay)
-            dopts   = display.getDisplayOpts()
+            dopts   = display.opts
             lo      = dopts.bounds.getLo()
             hi      = dopts.bounds.getHi()
 
@@ -1338,7 +1432,7 @@ class SliceCanvas(object):
         for overlay, globj in zip(overlays, globjs):
 
             display = self.displayCtx.getDisplay(overlay)
-            dopts   = display.getDisplayOpts()
+            dopts   = display.opts
 
             if not display.enabled:
                 continue
@@ -1376,18 +1470,13 @@ class SliceCanvas(object):
                           'to off-screen texture'.format(
                               copts.zax, overlay.name))
 
-                rt.bindAsRenderTarget()
-                rt.setRenderViewport(copts.xax, copts.yax, lo, hi)
+                with rt.bound(copts.xax, copts.yax, lo, hi),  \
+                     glroutines.disabled(gl.GL_BLEND):
 
-                glroutines.clear((0, 0, 0, 0))
-
-                with glroutines.disabled(gl.GL_BLEND):
+                    glroutines.clear((0, 0, 0, 0))
                     globj.preDraw()
                     globj.draw2D(zpos, axes)
                     globj.postDraw()
-
-                rt.unbindAsRenderTarget()
-                rt.restoreViewport()
 
             # Pre-rendering - a pre-generated 2D
             # texture of the current z position

@@ -19,17 +19,18 @@ import itertools as it
 import              wx
 import numpy     as np
 
-import fsl.utils.async              as async
-import fsl.data.image               as fslimage
+import fsl.utils.idle                       as idle
+import fsl.data.image                       as fslimage
 
-import fsleyes_props                as props
-import fsleyes_widgets.rangeslider  as rslider
-import fsleyes_widgets.utils.status as status
+import fsleyes_props                        as props
+import fsleyes_widgets.rangeslider          as rslider
+import fsleyes_widgets.utils.status         as status
 
-import fsleyes.panel                as fslpanel
-import fsleyes.displaycontext       as displaycontext
-import fsleyes.strings              as strings
-import fsleyes.actions.copyoverlay  as copyoverlay
+import fsleyes.panel                        as fslpanel
+import fsleyes.displaycontext               as displaycontext
+import fsleyes.strings                      as strings
+import fsleyes.actions.copyoverlay          as copyoverlay
+import fsleyes.controls.displayspacewarning as dswarning
 
 
 class CropImagePanel(fslpanel.FSLeyesPanel):
@@ -75,6 +76,15 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
             highLabel='tmax',
             style=rslider.RSSP_INTEGER)
 
+        self.__dsWarning = dswarning.DisplaySpaceWarning(
+            self,
+            overlayList,
+            displayCtx,
+            frame,
+            strings.messages[self, 'dsWarning'],
+            'not overlay',
+            'overlay')
+
         self.__cropLabel       = wx.StaticText(self)
         self.__sizeLabel       = wx.StaticText(self)
         self.__cropButton      = wx.Button(    self, id=wx.ID_OK)
@@ -93,8 +103,10 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
         self.__btnSizer = wx.BoxSizer(wx.HORIZONTAL)
 
         self.__sizer.Add((1, 10))
-        self.__sizer.Add(self.__cropLabel,     flag=wx.CENTRE, proportion=1)
+        self.__sizer.Add(self.__cropLabel,     flag=wx.CENTRE)
         self.__sizer.Add((1, 10))
+        self.__sizer.Add(self.__dsWarning,     flag=wx.CENTRE)
+        self.__sizer.Add((1, 10), proportion=1)
         self.__sizer.Add(self.__cropBoxWidget, flag=wx.EXPAND)
         self.__sizer.Add(self.__volumeWidget,  flag=wx.EXPAND)
         self.__sizer.Add((1, 10))
@@ -134,13 +146,13 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
                                        self.__robustFovButton)
 
         displayCtx .addListener('selectedOverlay',
-                                self._name,
+                                self.name,
                                 self.__selectedOverlayChanged)
         overlayList.addListener('overlays',
-                                self._name,
+                                self.name,
                                 self.__selectedOverlayChanged)
         profile    .addListener('cropBox',
-                                self._name,
+                                self.name,
                                 self.__cropBoxChanged)
 
         self.__selectedOverlayChanged()
@@ -153,16 +165,19 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
         """
 
         profile     = self.__profile
-        displayCtx  = self.getDisplayContext()
-        overlayList = self.getOverlayList()
+        displayCtx  = self.displayCtx
+        overlayList = self.overlayList
+        dsWarning   = self.__dsWarning
 
-        profile    .removeListener('cropBox',         self._name)
-        displayCtx .removeListener('selectedOverlay', self._name)
-        overlayList.removeListener('overlays',        self._name)
+        profile    .removeListener('cropBox',         self.name)
+        displayCtx .removeListener('selectedOverlay', self.name)
+        overlayList.removeListener('overlays',        self.name)
 
-        self.__ortho   = None
-        self.__profile = None
+        self.__ortho     = None
+        self.__profile   = None
+        self.__dsWarning = None
 
+        dsWarning.destroy()
         fslpanel.FSLeyesPanel.destroy(self)
 
 
@@ -173,7 +188,7 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
 
         self.__overlay = overlay
 
-        display = self.getDisplayContext().getDisplay(overlay)
+        display = self.displayCtx.getDisplay(overlay)
         is4D    = overlay.ndims >= 4
 
         if is4D:
@@ -182,7 +197,7 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
 
         self.__volumeWidget.Enable(is4D)
 
-        display.addListener('name', self._name, self.__overlayNameChanged)
+        display.addListener('name', self.name, self.__overlayNameChanged)
         self.__overlayNameChanged()
 
 
@@ -195,8 +210,8 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
             return
 
         try:
-            display = self.getDisplayContext().getDisplay(self.__overlay)
-            display.removeListener('name', self._name)
+            display = self.displayCtx.getDisplay(self.__overlay)
+            display.removeListener('name', self.name)
 
         except displaycontext.InvalidOverlayError:
             pass
@@ -211,7 +226,7 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
         overlay changes. Updates the name label.
         """
 
-        display = self.getDisplayContext().getDisplay(self.__overlay)
+        display = self.displayCtx.getDisplay(self.__overlay)
         label   = strings.labels[self, 'image']
         label   = label.format(display.name)
         self.__cropLabel.SetLabel(label)
@@ -222,7 +237,7 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
         Updates labels appropriately.
         """
 
-        displayCtx = self.getDisplayContext()
+        displayCtx = self.displayCtx
         overlay    = displayCtx.getSelectedOverlay()
 
         if overlay is self.__overlay:
@@ -376,7 +391,7 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
         # Do asynchronously, because we don't want
         # this CropImagePanel being destroyed from
         # its own event handler.
-        async.idle(self.__ortho.toggleCropMode)
+        idle.idle(self.__ortho.toggleCropMode)
 
 
     def __onCrop(self, ev):
@@ -385,8 +400,8 @@ class CropImagePanel(fslpanel.FSLeyesPanel):
         to finish cropping.
         """
 
-        overlayList = self.getOverlayList()
-        displayCtx  = self.getDisplayContext()
+        overlayList = self.overlayList
+        displayCtx  = self.displayCtx
         overlay     = displayCtx.getSelectedOverlay()
         display     = displayCtx.getDisplay(overlay)
         name        = '{}_roi'.format(display.name)

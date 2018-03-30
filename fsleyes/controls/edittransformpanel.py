@@ -12,23 +12,23 @@ control panel which allows the user to adjust the ``voxToWorldMat`` of an
 
 import logging
 
-import                   wx
-import wx.lib.agw.aui as wxaui
+import wx
 
 import numpy as np
 
-import fsl.data.image                as fslimage
-import fsl.utils.async               as async
-import fsl.utils.transform           as transform
+import fsl.data.image                       as fslimage
+import fsl.utils.idle                       as idle
+import fsl.utils.transform                  as transform
 
-import fsleyes_props                 as props
-import fsleyes_widgets.floatslider   as fslider
+import fsleyes_props                        as props
+import fsleyes_widgets.floatslider          as fslider
 
-import fsleyes.panel                 as fslpanel
-import fsleyes.displaycontext        as displaycontext
-import fsleyes.strings               as strings
-import fsleyes.actions.applyflirtxfm as applyflirtxfm
-import fsleyes.actions.saveflirtxfm  as saveflirtxfm
+import fsleyes.panel                        as fslpanel
+import fsleyes.displaycontext               as displaycontext
+import fsleyes.strings                      as strings
+import fsleyes.actions.applyflirtxfm        as applyflirtxfm
+import fsleyes.actions.saveflirtxfm         as saveflirtxfm
+import fsleyes.controls.displayspacewarning as dswarning
 
 
 log = logging.getLogger(__name__)
@@ -48,11 +48,11 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
     attribute.
 
 
-    This panel also has buttons which allow the user to load/save a FLIRT
+    This panel also has buttons which allow the user to load/save the
     transformation matrix - they use functions in the :mod:`.applyflirtxfm`
-    and :mod:`.saveflirtxfm` modules to load, save, and calculate FLIRT
-    transformation matrices. When the user loads a FLIRT matrix, it is used in
-    place of the :attr:`.Image.voxToWorldMat` transformation.
+    and :mod:`.saveflirtxfm` modules to load, save, and calculate
+    transformation matrices. When the user loads a matrix, it is used in place
+    of the :attr:`.Image.voxToWorldMat` transformation.
 
     .. note:: The effect of editing the transformation will only be visible
               if the :attr:`.DisplayContext.displaySpace` is set to
@@ -124,8 +124,14 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         }
 
         self.__overlayName = wx.StaticText(self)
-        self.__dsWarning   = wx.StaticText(self)
-        self.__changeDS    = wx.Button(    self)
+        self.__dsWarning   = dswarning.DisplaySpaceWarning(
+            self,
+            overlayList,
+            displayCtx,
+            frame,
+            strings.labels[self, 'dsWarning'],
+            'overlay',
+            'world')
 
         self.__xscale  = fslider.SliderSpinPanel(self, label='X', **scArgs)
         self.__yscale  = fslider.SliderSpinPanel(self, label='Y', **scArgs)
@@ -155,8 +161,6 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         self.__cancel    = wx.Button(self)
 
         self.__overlayName  .SetLabel(strings.labels[self, 'noOverlay'])
-        self.__dsWarning    .SetLabel(strings.labels[self, 'dsWarning'])
-        self.__changeDS     .SetLabel(strings.labels[self, 'changeDS'])
         self.__scaleLabel   .SetLabel(strings.labels[self, 'scale'])
         self.__offsetLabel  .SetLabel(strings.labels[self, 'offset'])
         self.__rotateLabel  .SetLabel(strings.labels[self, 'rotate'])
@@ -168,8 +172,6 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         self.__oldXformLabel.SetLabel(strings.labels[self, 'oldXform'])
         self.__newXformLabel.SetLabel(strings.labels[self, 'newXform'])
 
-        self.__dsWarning.SetForegroundColour((255, 0, 0, 255))
-
         # Populate the xform labels with a
         # dummy xform, so an appropriate
         # minimum size will get calculated
@@ -178,7 +180,6 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         self.__formatXform(np.eye(4), self.__newXform)
 
         self.__primarySizer   = wx.BoxSizer(wx.VERTICAL)
-        self.__dsSizer        = wx.BoxSizer(wx.HORIZONTAL)
         self.__secondarySizer = wx.BoxSizer(wx.HORIZONTAL)
         self.__controlSizer   = wx.BoxSizer(wx.VERTICAL)
         self.__xformSizer     = wx.BoxSizer(wx.VERTICAL)
@@ -186,18 +187,12 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
 
         self.__primarySizer  .Add((1, 10),            flag=wx.EXPAND)
         self.__primarySizer  .Add(self.__overlayName, flag=wx.CENTRE)
-        self.__primarySizer  .Add(self.__dsSizer,     flag=wx.CENTRE)
+        self.__primarySizer  .Add(self.__dsWarning,   flag=wx.CENTRE)
         self.__primarySizer  .Add((1, 10),            flag=wx.EXPAND)
         self.__primarySizer  .Add(self.__secondarySizer)
         self.__primarySizer  .Add((1, 10),            flag=wx.EXPAND)
         self.__primarySizer  .Add(self.__buttonSizer, flag=wx.EXPAND)
         self.__primarySizer  .Add((1, 10),            flag=wx.EXPAND)
-
-        self.__dsSizer.Add((1, 1),          flag=wx.EXPAND)
-        self.__dsSizer.Add(self.__dsWarning)
-        self.__dsSizer.Add((10, 1))
-        self.__dsSizer.Add(self.__changeDS, flag=wx.ALIGN_CENTRE_VERTICAL)
-        self.__dsSizer.Add((1, 1),          flag=wx.EXPAND)
 
         self.__secondarySizer.Add((10, 1),           flag=wx.EXPAND)
         self.__secondarySizer.Add(self.__controlSizer)
@@ -251,25 +246,20 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         self.__yrotate.Bind(fslider.EVT_SSP_VALUE, self.__xformChanged)
         self.__zrotate.Bind(fslider.EVT_SSP_VALUE, self.__xformChanged)
 
-        self.__changeDS .Bind(wx.EVT_BUTTON, self.__onChangeDS)
         self.__apply    .Bind(wx.EVT_BUTTON, self.__onApply)
         self.__reset    .Bind(wx.EVT_BUTTON, self.__onReset)
         self.__loadFlirt.Bind(wx.EVT_BUTTON, self.__onLoadFlirt)
         self.__saveFlirt.Bind(wx.EVT_BUTTON, self.__onSaveFlirt)
         self.__cancel   .Bind(wx.EVT_BUTTON, self.__onCancel)
 
-        displayCtx .addListener('displaySpace',
-                                self._name,
-                                self.__displaySpaceChanged)
         displayCtx .addListener('selectedOverlay',
-                                self._name,
+                                self.name,
                                 self.__selectedOverlayChanged)
         overlayList.addListener('overlays',
-                                self._name,
+                                self.name,
                                 self.__selectedOverlayChanged)
 
         self.__selectedOverlayChanged()
-        self.__displaySpaceChanged()
 
 
     def destroy(self):
@@ -278,41 +268,20 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         """
 
         self.__deregisterOverlay()
+
+        displayCtx  = self.displayCtx
+        overlayList = self.overlayList
+        dsWarning   = self.__dsWarning
+
+        displayCtx .removeListener('selectedOverlay', self.name)
+        overlayList.removeListener('overlays',        self.name)
+
         self.__ortho        = None
         self.__cachedXforms = None
+        self.__dsWarning    = None
 
-        displayCtx  = self.getDisplayContext()
-        overlayList = self.getOverlayList()
-
-        displayCtx .removeListener('displaySpace',    self._name)
-        displayCtx .removeListener('selectedOverlay', self._name)
-        overlayList.removeListener('overlays',        self._name)
-
+        dsWarning.destroy()
         fslpanel.FSLeyesPanel.destroy(self)
-
-
-    def __displaySpaceChanged(self, *a):
-        """Called when the :attr:`.DisplayContext.displaySpace` property
-        changes. If it has been given a setting that would cause the
-        transformation changes to have no effect on the display, a warning
-        message is shown.
-        """
-        overlay     = self.__overlay
-        displayCtx  = self.getDisplayContext()
-        showWarning = displayCtx.displaySpace is overlay
-
-        self.__primarySizer.Show(self.__dsSizer, showWarning)
-        self.SetInitialSize(self.__primarySizer.GetMinSize())
-
-        parent = self.GetTopLevelParent()
-
-        if isinstance(parent, wxaui.AuiFloatingFrame):
-
-            self.Layout()
-            self.Fit()
-            parent.SetInitialSize(self.__primarySizer.GetMinSize())
-            parent.Layout()
-            parent.Fit()
 
 
     def __registerOverlay(self, overlay):
@@ -321,8 +290,8 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         """
 
         self.__overlay = overlay
-        display = self.getDisplayContext().getDisplay(overlay)
-        display.addListener('name', self._name, self.__overlayNameChanged)
+        display = self.displayCtx.getDisplay(overlay)
+        display.addListener('name', self.name, self.__overlayNameChanged)
 
         self.__overlayNameChanged()
 
@@ -351,8 +320,8 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         # overlay has been removed
         # from the list
         try:
-            display = self.getDisplayContext().getDisplay(overlay)
-            display.removeListener('name', self._name)
+            display = self.displayCtx.getDisplay(overlay)
+            display.removeListener('name', self.name)
 
         except displaycontext.InvalidOverlayError:
             pass
@@ -362,7 +331,7 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         """Called when the :attr:`.Display.name` of the currently selected
         overlay changes. Updates the name label.
         """
-        display = self.getDisplayContext().getDisplay(self.__overlay)
+        display = self.displayCtx.getDisplay(self.__overlay)
         label   = strings.labels[self, 'overlayName'].format(display.name)
 
         self.__overlayName.SetLabel(label)
@@ -374,7 +343,7 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         selected overlay is an :class:`.Image`, it is registered, and
         the transform widgets reset.
         """
-        overlay = self.getDisplayContext().getSelectedOverlay()
+        overlay = self.displayCtx.getSelectedOverlay()
 
         if overlay is self.__overlay:
             return
@@ -475,7 +444,7 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
             return
 
         overlay  = self.__overlay
-        opts     = self.getDisplayContext().getOpts(overlay)
+        opts     = self.displayCtx.getOpts(overlay)
 
         if self.__extraXform is None: v2wXform = overlay.voxToWorldMat
         else:                         v2wXform = self.__extraXform
@@ -494,16 +463,6 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         opts.displayXform = transform.concat(xform, overlay.worldToVoxMat)
 
 
-    def __onChangeDS(self, ev):
-        """Called when the *Change display space* button is pushed. This
-        button is only shown if the :attr:`.DisplayContext.displaySpace`
-        is set to something which causes the transformation change to
-        have no effect on the display. This method changes the ``displaySpace``
-        to ``'world'``.
-        """
-        self.getDisplayContext().displaySpace = 'world'
-
-
     def __onApply(self, ev):
         """Called when the *Apply* button is pushed. Sets the
         ``voxToWorldMat`` attribute of the :class:`.Image` instance being
@@ -519,7 +478,7 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         else:                         v2wXform = self.__extraXform
 
         newXform = self.__getCurrentXform()
-        opts     = self.getDisplayContext().getOpts(overlay)
+        opts     = self.displayCtx.getOpts(overlay)
 
         xform = transform.concat(newXform, v2wXform)
 
@@ -552,7 +511,7 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
 
         for overlay in reset:
             try:
-                opts = self.getDisplayContext().getOpts(overlay)
+                opts = self.displayCtx.getOpts(overlay)
                 opts.displayXform = np.eye(4)
 
             # In cas overlay has been removed
@@ -580,23 +539,27 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         if overlay is None:
             return
 
-        overlayList      = self.getOverlayList()
-        displayCtx       = self.getDisplayContext()
-        matFile, refFile = applyflirtxfm.promptForFlirtFiles(
+        overlayList               = self.overlayList
+        displayCtx                = self.displayCtx
+        affType, matFile, refFile = applyflirtxfm.promptForFlirtFiles(
             self,
             overlay,
             overlayList,
             displayCtx)
 
-        if matFile is None or refFile is None:
+        if all((affType is None, matFile is None, refFile is None)):
             return
 
-        xform = applyflirtxfm.calculateTransform(
-            overlay,
-            overlayList,
-            displayCtx,
-            matFile,
-            refFile)
+        if affType == 'flirt':
+            xform = applyflirtxfm.calculateTransform(
+                overlay,
+                overlayList,
+                displayCtx,
+                matFile,
+                refFile)
+
+        elif affType == 'v2w':
+            xform = np.loadtxt(matFile)
 
         self.__extraXform = xform
         self.__xformChanged()
@@ -612,16 +575,16 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         if overlay is None:
             return
 
-        overlayList      = self.getOverlayList()
-        displayCtx       = self.getDisplayContext()
-        matFile, refFile = applyflirtxfm.promptForFlirtFiles(
+        overlayList               = self.overlayList
+        displayCtx                = self.displayCtx
+        affType, matFile, refFile = applyflirtxfm.promptForFlirtFiles(
             self,
             overlay,
             overlayList,
             displayCtx,
             save=True)
 
-        if matFile is None or refFile is None:
+        if all((affType is None, matFile is None, refFile is None)):
             return
 
         if self.__extraXform is None: v2wXform = overlay.voxToWorldMat
@@ -630,12 +593,15 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         newXform = self.__getCurrentXform()
         v2wXform = transform.concat(newXform, v2wXform)
 
-        xform = saveflirtxfm.calculateTransform(
-            overlay,
-            overlayList,
-            displayCtx,
-            refFile,
-            srcXform=v2wXform)
+        if affType == 'flirt':
+            xform = saveflirtxfm.calculateTransform(
+                overlay,
+                overlayList,
+                displayCtx,
+                refFile,
+                srcXform=v2wXform)
+        elif affType == 'v2w':
+            xform = v2wXform
 
         try:
             np.savetxt(matFile, xform, fmt='%0.10f')
@@ -658,4 +624,4 @@ class EditTransformPanel(fslpanel.FSLeyesPanel):
         """
 
         self.__resetAllOverlays()
-        async.idle(self.__ortho.toggleEditTransformPanel)
+        idle.idle(self.__ortho.toggleEditTransformPanel)

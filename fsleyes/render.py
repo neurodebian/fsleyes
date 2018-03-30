@@ -18,7 +18,6 @@ import fsleyes_widgets.utils.layout          as fsllayout
 import fsleyes_widgets.utils.colourbarbitmap as cbarbitmap
 
 import                                          fsleyes
-import fsleyes.main                          as fsleyesmain
 import fsleyes.version                       as version
 import fsleyes.overlay                       as fsloverlay
 import fsleyes.colourmaps                    as fslcm
@@ -58,7 +57,6 @@ def main(args=None):
 
     # Initialise FSLeyes and implement hacks
     fsleyes.initialise()
-    fsleyesmain.hacksAndWorkarounds()
 
     # Initialise colour maps module
     fslcm.init()
@@ -66,7 +64,7 @@ def main(args=None):
     # Parse arguments, and
     # configure logging/debugging
     namespace = parseArgs(args)
-    fsleyes.configLogging(namespace)
+    fsleyes.configLogging(namespace.verbose, namespace.noisy)
 
     # Initialise the fsleyes.gl modules
     fslgl.bootstrap(namespace.glversion)
@@ -103,11 +101,6 @@ def parseArgs(argv):
                             metavar=('W', 'H'),
                             help='Size in pixels (width, height)',
                             default=(800, 600))
-    mainParser.add_argument('-o',
-                            '--selectedOverlay',
-                            metavar='IDX',
-                            help='Index of selected overlay '
-                                 '(starting from 0)'),
 
     name        = 'render'
     prolog      = 'FSLeyes render version {}\n'.format(version.__version__)
@@ -183,6 +176,9 @@ def makeDisplayContext(namespace):
 
     # Load the overlays specified on the command
     # line, and configure their display properties
+    parseargs.applyMainArgs(   namespace,
+                               overlayList,
+                               masterDisplayCtx)
     parseargs.applyOverlayArgs(namespace,
                                overlayList,
                                masterDisplayCtx,
@@ -577,7 +573,7 @@ def buildColourBarBitmap(overlayList,
 
     overlay = displayCtx.getSelectedOverlay()
     display = displayCtx.getDisplay(overlay)
-    opts    = display.getDisplayOpts()
+    opts    = display.opts
 
     if not isinstance(opts, displaycontext.ColourMapOpts):
         return None

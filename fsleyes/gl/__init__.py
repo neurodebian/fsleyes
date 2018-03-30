@@ -124,7 +124,6 @@ be displayed as:
    ~fsleyes.gl.gllinevector.GLLineVector
    ~fsleyes.gl.glrgbvector.GLRGBVector
    ~fsleyes.gl.glmesh.GLMesh
-   ~fsleyes.gl.glgiftimesh.GLGiftiMesh
    ~fsleyes.gl.gltensor.GLTensor
    ~fsleyes.gl.glsh.GLSH
 
@@ -179,8 +178,9 @@ import os
 import logging
 import platform
 
-import fsl.utils.async                    as async
+import fsl.utils.idle                     as idle
 from   fsl.utils.platform import platform as fslplatform
+import fsleyes_widgets                    as fwidgets
 import fsleyes_props                      as props
 
 
@@ -200,7 +200,7 @@ if not fslplatform.canHaveGui:
     os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
 
 
-import OpenGL
+import OpenGL  # noqa
 
 
 # Make PyOpenGL throw an error, instead of implicitly
@@ -265,6 +265,9 @@ def bootstrap(glVersion=None):
     ``glmesh_funcs``       The version-specific module containing functions for
                            rendering :class:`.GLMesh` instances.
 
+    ``glmask_funcs``       The version-specific module containing functions for
+                           rendering :class:`.GLMask` instances.
+
     ``gllabel_funcs``      The version-specific module containing functions for
                            rendering :class:`.GLLabel` instances.
 
@@ -314,7 +317,7 @@ def bootstrap(glVersion=None):
         verstr = '1.4'
         glpkg  = gl14
     else: raise RuntimeError('OpenGL 1.4 or newer is required '
-                             '(detected version: {:0.1f}'.format(glVersion))
+                             '(detected version: {:0.1f})'.format(glVersion))
 
     # The gl21 implementation depends on a
     # few extensions - if they're not present,
@@ -362,8 +365,10 @@ def bootstrap(glVersion=None):
     log.debug('Using OpenGL {} implementation with renderer {}'.format(
         verstr, renderer))
 
-    # If on linux, we need to call glutInit.
-    # If on OSX, we don't need to bother.
+    # If using freeglut, we need to call
+    # glutInit. If not (e.g. on mac, which
+    # provides its own GLUT implementation),
+    # we don't need to bother.
     #
     # note: GLUT is only required for text
     #       rendering. The GLUT requirement
@@ -374,8 +379,11 @@ def bootstrap(glVersion=None):
     #       as a requirement. Off-screen
     #       rendering is possible via other
     #       means (e.g. xvfb-run).
-    if fslplatform.os == 'Linux':
-        import OpenGL.GLUT as GLUT
+
+    import OpenGL.GLUT as GLUT
+    # it would be nice if there were a
+    # nicer way to test for freeglut
+    if bool(GLUT.fgDeinitialize):
         GLUT.glutInit()
 
     # Populate this module, and set
@@ -385,6 +393,7 @@ def bootstrap(glVersion=None):
     thismod.glvolume_funcs     = glpkg.glvolume_funcs
     thismod.glrgbvector_funcs  = glpkg.glrgbvector_funcs
     thismod.gllinevector_funcs = glpkg.gllinevector_funcs
+    thismod.glmask_funcs       = glpkg.glmask_funcs
     thismod.glmesh_funcs       = glpkg.glmesh_funcs
     thismod.gllabel_funcs      = glpkg.gllabel_funcs
     thismod.gltensor_funcs     = glpkg.gltensor_funcs
@@ -619,7 +628,7 @@ class GLContext(object):
             # above).  If an existing wx.App is running,
             # we just schedule the context creation
             # routine on it.
-            async.idle(create, alwaysQueue=True)
+            idle.idle(create, alwaysQueue=True)
 
             if self.__ownApp:
                 log.debug('Starting temporary wx.MainLoop')
@@ -931,14 +940,14 @@ class WXGLCanvasTarget(object):
         """
 
         def doRefresh():
-            if fslplatform.isWidgetAlive(self):
+            if fwidgets.isalive(self):
                 self.Refresh()
 
         # GL canvases do need to be refreshed
         # on EVT_PAINT events. If they are not,
         # the canvas will be corrupted.
         if not self.__freezeDraw:
-            async.idle(doRefresh)
+            idle.idle(doRefresh)
 
 
     def _initGL(self):

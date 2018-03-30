@@ -23,7 +23,7 @@ import logging
 import numpy     as np
 import numpy.fft as fft
 
-import fsl.utils.async       as async
+import fsl.utils.idle        as idle
 import fsl.utils.cache       as cache
 import fsl.data.melodicimage as fslmelimage
 import fsleyes_props         as props
@@ -48,21 +48,24 @@ class PowerSpectrumSeries(dataseries.DataSeries):
     """
 
 
-    def __init__(self, overlay, displayCtx):
+    def __init__(self, overlay, overlayList, displayCtx, plotPanel):
         """Create a ``PowerSpectrumSeries``.
 
-        :arg overlay:    The overlay.
-        :arg displayCtx: The :class:`.DisplayContext` instance.
+        :arg overlay:     The overlay from which the data to be plotted is
+                          retrieved.
+        :arg overlayList: The :class:`.OverlayList` instance.
+        :arg displayCtx:  The :class:`.DisplayContext` instance.
+        :arg plotPanel:   The :class:`.PlotPanel` that owns this
+                          ``PowerSpectrumSeries``.
         """
-        dataseries.DataSeries.__init__(self, overlay)
-        self.displayCtx = displayCtx
+        dataseries.DataSeries.__init__(
+            self, overlay, overlayList, displayCtx, plotPanel)
 
 
     def destroy(self):
         """Must be called when this ``PowerSpectrumSeries`` is no longer
         needed.
         """
-        self.displayCtx = None
         dataseries.DataSeries.destroy(self)
 
 
@@ -128,7 +131,7 @@ class VoxelPowerSpectrumSeries(PowerSpectrumSeries):
         """
 
         display = self.displayCtx.getDisplay(self.overlay)
-        opts    = display.getDisplayOpts()
+        opts    = display.opts
         coords  = opts.getVoxel()
 
         if coords is not None:
@@ -142,7 +145,7 @@ class VoxelPowerSpectrumSeries(PowerSpectrumSeries):
 
     # See VoxelTimeSeries.getData for an
     # explanation of the mutex decorator.
-    @async.mutex
+    @idle.mutex
     def getData(self):
         """Returns the data for the current voxel of the overlay. The current
         voxel is dictated by the :attr:`.DisplayContext.location` property.
@@ -194,7 +197,7 @@ class MelodicPowerSpectrumSeries(PowerSpectrumSeries):
         ``MelodicPowerSpectrumSeries``.
         """
         display   = self.displayCtx.getDisplay(self.overlay)
-        opts      = display.getDisplayOpts()
+        opts      = display.opts
         component = opts.volume
 
         return '{} [component {}]'.format(display.name, component + 1)
@@ -211,5 +214,65 @@ class MelodicPowerSpectrumSeries(PowerSpectrumSeries):
 
         ydata = self.overlay.getComponentPowerSpectrum(component)
         xdata = np.arange(len(ydata), dtype=np.float32)
+
+        return xdata, ydata
+
+
+
+class MeshPowerSpectrumSeries(PowerSpectrumSeries):
+    """A ``MeshPowerSpectrumSeries`` object encapsulates the power spectrum for
+    the data from a :class:`.Mesh` overlay which has some time series
+    vertex data associated with it. See the :attr:`.MeshOpts.vertexData`
+    property.
+    """
+
+
+    def __init__(self, *args, **kwargs):
+        """Create a ``MeshPowerSpectrumSeries`` instance. All arguments are
+        passed through to  :meth:`PowerSpectrumSeries.__init__`.
+        """
+        PowerSpectrumSeries.__init__(self, *args, **kwargs)
+
+
+    def makeLabel(self):
+        """Returns a label to use for this ``MeshPowerSpectrumSeries`` on the
+        legend.
+        """
+
+        if self.__haveData():
+            display = self.displayCtx.getDisplay(self.overlay)
+            opts    = display.opts
+            vidx    = opts.getVertex()
+
+            return '{} [{}]'.format(display.name, vidx)
+
+        else:
+            return PowerSpectrumSeries.makeLabel(self)
+
+
+    def __haveData(self):
+        """Returns ``True`` if there is currently time series data to show
+        for this ``MeshPowerSpectrumSeries``, ``False`` otherwise.
+        """
+        opts = self.displayCtx.getOpts(self.overlay)
+        vidx = opts.getVertex()
+        vd   = opts.getVertexData()
+
+        return vidx is not None and vd is not None and vd.shape[1] > 1
+
+
+    def getData(self):
+        """Returns the power spectrum of the data at the current location for
+        the :class:`.Mesh`, or ``[], []`` if there is no data.
+        """
+
+        if not self.__haveData():
+            return [], []
+
+        opts  = self.displayCtx.getOpts(self.overlay)
+        vidx  = opts.getVertex()
+        vd    = opts.getVertexData()
+        ydata = self.calcPowerSpectrum(vd[vidx, :])
+        xdata = np.arange(len(ydata))
 
         return xdata, ydata

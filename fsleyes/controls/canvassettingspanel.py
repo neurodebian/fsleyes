@@ -78,7 +78,7 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
 
     def __makeTools(self):
 
-        displayCtx  = self._displayCtx
+        displayCtx  = self.displayCtx
         canvasPanel = self.__canvasPanel
         widgets     = self.getWidgetList()
 
@@ -86,6 +86,7 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
             ('syncOverlayOrder',   props.Widget('syncOverlayOrder')),
             ('syncLocation',       props.Widget('syncLocation')),
             ('syncOverlayDisplay', props.Widget('syncOverlayDisplay')),
+            ('syncOverlayVolume',  props.Widget('syncOverlayVolume')),
             ('movieMode',          props.Widget('movieMode')),
             ('movieAxis',
              props.Widget('movieAxis',
@@ -202,7 +203,7 @@ class CanvasSettingsPanel(fslpanel.FSLeyesSettingsPanel):
                 tooltip=fsltooltips.properties[canvasPanel, dispProp.key],
                 groupName='scene')
 
-        opts = canvasPanel.getSceneOptions()
+        opts = canvasPanel.sceneOpts
 
         for dispProp in sceneOptsProps.values():
 

@@ -19,6 +19,7 @@ import fsl.utils.transform                as transform
 import fsleyes.displaycontext.scene3dopts as scene3dopts
 import fsleyes.gl.wxglscene3dcanvas       as scene3dcanvas
 import fsleyes.actions                    as actions
+import fsleyes.controls.scene3dtoolbar    as s3dtoolbar
 from . import                                canvaspanel
 
 
@@ -36,8 +37,8 @@ class Scene3DPanel(canvaspanel.CanvasPanel):
 
 
     The scene properties are described and changed via a :class:`.Scene3DOpts`
-    instance, accessible through the :meth:`.CanvasPanel.getSceneOptions`
-    method.
+    instance, accessible through the :meth:`.CanvasPanel.sceneOpts`
+    property.
     """
 
 
@@ -68,7 +69,7 @@ class Scene3DPanel(canvaspanel.CanvasPanel):
         displayCtx.defaultDisplaySpace = 'world'
         displayCtx.displaySpace        = 'world'
 
-        contentPanel = self.getContentPanel()
+        contentPanel = self.contentPanel
 
         self.__canvas = scene3dcanvas.WXGLScene3DCanvas(contentPanel,
                                                         overlayList,
@@ -107,7 +108,6 @@ class Scene3DPanel(canvaspanel.CanvasPanel):
         canvaspanel.CanvasPanel.destroy(self)
 
 
-
     def getGLCanvases(self):
         """Returns all of the :class:`.SliceCanvas` instances contained
         within this ``Scene3DPanel``.
@@ -121,6 +121,7 @@ class Scene3DPanel(canvaspanel.CanvasPanel):
         to its view menu.
         """
         actionz = [self.screenshot,
+                   self.movieGif,
                    self.showCommandLineArgs,
                    self.applyCommandLineArgs,
                    None,
@@ -134,6 +135,7 @@ class Scene3DPanel(canvaspanel.CanvasPanel):
                    self.toggleCanvasSettingsPanel,
                    self.toggleAtlasPanel,
                    self.toggleDisplayToolBar,
+                   self.toggleScene3DToolBar,
                    self.toggleLookupTablePanel,
                    self.toggleClusterPanel,
                    self.toggleClassificationPanel,
@@ -167,6 +169,25 @@ class Scene3DPanel(canvaspanel.CanvasPanel):
         self.getCurrentProfile().resetDisplay()
 
 
+    @actions.toggleControlAction(s3dtoolbar.Scene3DToolBar)
+    def toggleScene3DToolBar(self):
+        """Shows/hides a :class:`.Scene3DToolBar`. See
+        :meth:`.ViewPanel.togglePanel`.
+        """
+        self.togglePanel(s3dtoolbar.Scene3DToolBar, panel=self)
+
+
+    def getMovieFrame(self, overlay, opts):
+        """Returns the current movie frame. If the :attr:`movieAxis` is ``3``
+        (e.g. time series), the volume index is returned. Otherwise the
+        current rotation matrix is returned.
+        """
+        if self.movieAxis == 3:
+            return super(Scene3DPanel, self).getMovieFrame(overlay, opts)
+        else:
+            return np.copy(self.__canvas.opts.rotation)
+
+
     def doMovieUpdate(self, overlay, opts):
         """Overrides :meth:`.CanvasPanel.doMovieUpdate`. For x/y/z axis
         movies, the scene is rotated. Otherwise (for time) the ``CanvasPanel``
@@ -174,20 +195,22 @@ class Scene3DPanel(canvaspanel.CanvasPanel):
         """
 
         if self.movieAxis >= 3:
-            canvaspanel.CanvasPanel.doMovieUpdate(self, overlay, opts)
+            return canvaspanel.CanvasPanel.doMovieUpdate(self, overlay, opts)
         else:
 
+            canvas  = self.__canvas
+            currot  = canvas.opts.rotation
             rate    = float(self.movieRate)
             rateMin = self.getAttribute('movieRate', 'minval')
             rateMax = self.getAttribute('movieRate', 'maxval')
             rate    = 0.1 + 0.9 * (rate - rateMin) / (rateMax - rateMin)
             rate    = rate * np.pi / 10
 
-            canvas               = self.__canvas
             rots                 = [0, 0, 0]
             rots[self.movieAxis] = rate
 
             xform = transform.axisAnglesToRotMat(*rots)
-            xform = transform.concat(xform, canvas.opts.rotation)
+            xform = transform.concat(xform, currot)
 
             canvas.opts.rotation = xform
+            return np.copy(xform)

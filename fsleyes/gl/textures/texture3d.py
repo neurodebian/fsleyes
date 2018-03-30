@@ -18,7 +18,7 @@ import OpenGL.GL.ARB.texture_float        as arbtf
 
 import fsl.utils.notifier                 as notifier
 import fsl.utils.memoize                  as memoize
-import fsl.utils.async                    as async
+import fsl.utils.idle                     as idle
 import fsl.utils.transform                as transform
 from   fsl.utils.platform import platform as fslplatform
 import fsleyes_widgets.utils.status       as status
@@ -43,6 +43,7 @@ GL_TYPE_NAMES = {
 
     gl.GL_LUMINANCE8          : 'GL_LUMINANCE8',
     gl.GL_LUMINANCE16         : 'GL_LUMINANCE16',
+    arbtf.GL_LUMINANCE16F_ARB : 'GL_LUMINANCE16F',
     arbtf.GL_LUMINANCE32F_ARB : 'GL_LUMINANCE32F',
     gl.GL_R32F                : 'GL_R32F',
 
@@ -88,7 +89,7 @@ class Texture3D(texture.Texture, notifier.Notifier):
     When a ``Texture3D`` is created, and when its settings are changed, it may
     need to prepare the data to be passed to OpenGL - for large textures, this
     can be a time consuming process, so this is performed on a separate thread
-    using the :mod:`.async` module (unless the ``threaded`` parameter to
+    using the :mod:`.idle` module (unless the ``threaded`` parameter to
     :meth:`__init__` is set to ``False``). The :meth:`ready` method returns
     ``True`` or ``False`` to indicate whether the ``Texture3D`` can be used.
 
@@ -171,9 +172,9 @@ class Texture3D(texture.Texture, notifier.Notifier):
 
         # If threading is enabled, texture
         # refreshes are performed with an
-        # async.TaskThread.
+        # idle.TaskThread.
         if threaded:
-            self.__taskThread = async.TaskThread()
+            self.__taskThread = idle.TaskThread()
             self.__taskName   = '{}_{}_refresh'.format(type(self).__name__,
                                                        id(self))
 
@@ -271,8 +272,9 @@ class Texture3D(texture.Texture, notifier.Notifier):
                   supported - see :meth:`canUseFloatTextures`.
         """
 
-        rgSupported = glexts.hasExtension('GL_ARB_texture_rg')
-        nbits       = dtype.itemsize * 8
+        floatSupported = glexts.hasExtension('GL_ARB_texture_float')
+        rgSupported    = glexts.hasExtension('GL_ARB_texture_rg')
+        nbits          = dtype.itemsize * 8
 
         if rgSupported:
             if nbits == 8: return gl.GL_RED, gl.GL_R8
@@ -281,8 +283,24 @@ class Texture3D(texture.Texture, notifier.Notifier):
         # GL_RED does not exist in old OpenGLs -
         # we have to use luminance instead.
         else:
-            if nbits == 8: return gl.GL_LUMINANCE, gl.GL_LUMINANCE8
-            else:          return gl.GL_LUMINANCE, gl.GL_LUMINANCE16
+            if nbits == 8:
+                return gl.GL_LUMINANCE, gl.GL_LUMINANCE8
+
+            # But GL_LUMINANCE is deprecated in GL 3.x,
+            # and some more recent GL drivers seem to
+            # have trouble displaying GL_LUMINANCE16
+            # textures - displayting them at what seems
+            # to be a down-sampled (e.g. using a 4 bit
+            # storage format) version of the data. So we
+            # store the data as floating point if we can.
+            elif floatSupported:
+                return gl.GL_LUMINANCE, arbtf.GL_LUMINANCE16F_ARB
+
+            # Hopefully float textures are supported
+            # on recent GL drivers which don't support
+            # LUMINANCE_16
+            else:
+                return gl.GL_LUMINANCE, gl.GL_LUMINANCE16
 
 
     @classmethod
@@ -525,7 +543,7 @@ class Texture3D(texture.Texture, notifier.Notifier):
                            function is called (but only if a setting has
                            changed).
         ``callback``       Optional function which will be called (via
-                           :func:`.async.idle`) when the texture has been
+                           :func:`.idle.idle`) when the texture has been
                            refreshed. Only called if ``refresh`` is
                            ``True``, and a setting has changed.
         ``notify``         Passed through to the :meth:`refresh` method.
@@ -633,7 +651,7 @@ class Texture3D(texture.Texture, notifier.Notifier):
                            suppressed.
 
         :arg callback:     Optional function which will be called (via
-                           :func:`.async.idle`) when the texture has been
+                           :func:`.idle.idle`) when the texture has been
                            refreshed. Only called if ``refresh`` is
                            ``True``, and a setting has changed.
 
@@ -641,7 +659,7 @@ class Texture3D(texture.Texture, notifier.Notifier):
         instance, containing the shape of the texture data.
 
         .. note:: The texture data is generated on a separate thread, using
-                  the :func:`.async.run` function.
+                  the :func:`.idle.run` function.
         """
 
         # Don't bother if data
@@ -659,7 +677,7 @@ class Texture3D(texture.Texture, notifier.Notifier):
 
         # This can take a long time for big
         # data, so we do it in a separate
-        # thread using the async module.
+        # thread using the idle module.
         def genData():
 
             # Another genData function is
@@ -669,7 +687,7 @@ class Texture3D(texture.Texture, notifier.Notifier):
             # calling configTexture as well.
             if self.__taskThread is not None and \
                self.__taskThread.isQueued(self.__taskName):
-                raise async.TaskThreadVeto()
+                raise idle.TaskThreadVeto()
 
             if refreshData:
                 self.__determineTextureType()
@@ -704,7 +722,7 @@ class Texture3D(texture.Texture, notifier.Notifier):
             # The image data is flattened, with fortran dimension
             # ordering, so the data, as stored on the GPU, has its
             # first dimension as the fastest changing.
-            data = data.flatten(order='F')
+            data = data.reshape(-1, order='F')
 
             if not bound:
                 self.bindTexture()

@@ -70,6 +70,8 @@ import               pkgutil
 import               fnmatch
 import               platform
 import               logging
+import               importlib
+import               py_compile
 import subprocess as sp
 import itertools  as it
 import os.path    as op
@@ -86,6 +88,24 @@ from distutils.command.build import build
 
 # Expected to be "darwin" or "linux"
 platform = platform.system().lower()
+
+# if linux, we add some extra information
+# if centos6/7 or ubuntu 1404/1604
+if platform == 'linux':
+
+    if op.exists(op.join(op.sep, 'etc', 'redhat-release')):
+        with open(op.join(op.sep, 'etc', 'redhat-release'), 'rt') as f:
+            info = f.read().lower()
+            if 'centos' in info:
+                if   ' 6.' in info: platform = 'centos6'
+                elif ' 7.' in info: platform = 'centos7'
+
+    elif op.exists(op.join(op.sep, 'etc', 'lsb-release')):
+        with open(op.join(op.sep, 'etc', 'lsb-release'), 'rt') as f:
+            info = f.read().lower()
+            if 'ubuntu' in info:
+                if   '14.04' in info: platform = 'ubuntu1404'
+                elif '16.04' in info: platform = 'ubuntu1604'
 
 
 # The directory in which this
@@ -141,104 +161,11 @@ class docbuilder(Command):
 
         # Sigh. Why can't I mock a package?
         mockobj       = mock.MagicMock()
-        mockedModules = [
-            'OpenGL',
-            'OpenGL.GL',
-            'OpenGL.GL.ARB',
-            'OpenGL.GL.ARB.draw_instanced',
-            'OpenGL.GL.ARB.fragment_program',
-            'OpenGL.GL.ARB.instanced_arrays',
-            'OpenGL.GL.ARB.texture_float',
-            'OpenGL.GL.ARB.vertex_program',
-            'OpenGL.GL.EXT',
-            'OpenGL.GL.EXT.framebuffer_object',
-            'OpenGL.GLUT',
-            'OpenGL.extensions',
-            'OpenGL.raw',
-            'OpenGL.raw.GL',
-            'OpenGL.raw.GL._types',
-            'fsl',
-            'fsl.data',
-            'fsl.data.atlases',
-            'fsl.data.constants',
-            'fsl.data.dtifit',
-            'fsl.data.featanalysis',
-            'fsl.data.featimage',
-            'fsl.data.fixlabels',
-            'fsl.data.gifti',
-            'fsl.data.image',
-            'fsl.data.imagewrapper',
-            'fsl.data.melodicimage',
-            'fsl.data.mesh',
-            'fsl.data.vest',
-            'fsl.data.volumelabels',
-            'fsl.utils',
-            'fsl.utils.async',
-            'fsl.utils.cache',
-            'fsl.utils.callfsl',
-            'fsl.utils.memoize',
-            'fsl.utils.notifier',
-            'fsl.utils.platform',
-            'fsl.utils.settings',
-            'fsl.utils.transform',
-            'fsl.version',
-            'fsleyes_props',
-            'fsleyes_widgets',
-            'fsleyes_widgets.bitmaptoggle',
-            'fsleyes_widgets.dialog',
-            'fsleyes_widgets.elistbox',
-            'fsleyes_widgets.floatslider',
-            'fsleyes_widgets.floatspin',
-            'fsleyes_widgets.imagepanel',
-            'fsleyes_widgets.notebook',
-            'fsleyes_widgets.numberdialog',
-            'fsleyes_widgets.placeholder_textctrl',
-            'fsleyes_widgets.rangeslider',
-            'fsleyes_widgets.texttag',
-            'fsleyes_widgets.utils',
-            'fsleyes_widgets.utils.colourbarbitmap',
-            'fsleyes_widgets.utils.layout',
-            'fsleyes_widgets.utils.status',
-            'fsleyes_widgets.utils.typedict',
-            'fsleyes_widgets.widgetgrid',
-            'fsleyes_widgets.widgetlist',
-            'matplotlib',
-            'matplotlib.backend_bases',
-            'matplotlib.backends',
-            'matplotlib.backends.backend_wx',
-            'matplotlib.backends.backend_wxagg',
-            'matplotlib.image',
-            'matplotlib.patches',
-            'matplotlib.pyplot',
-            'numpy',
-            'numpy.fft',
-            'numpy.linalg',
-            'pyparsing',
-            'scipy',
-            'scipy.interpolate',
-            'scipy.ndimage',
-            'scipy.ndimage.measurements',
-            'scipy.spatial',
-            'scipy.spatial.distance',
-            'wx',
-            'wx.glcanvas',
-            'wx.html',
-            'wx.lib',
-            'wx.lib.agw',
-            'wx.lib.agw.aui',
-            'wx.lib.newevent',
-            'wx.py',
-            'wx.py.interpreter',
-            'wx.py.shell',
-        ]
+        mockedModules = open(op.join(docdir, 'mock_modules.txt')).readlines()
+        mockedClasses = open(op.join(docdir, 'mock_classes.txt')).readlines()
+        mockedModules = {m.strip() : mockobj for m in mockedModules}
+        mockedClasses = [l.strip() for l in mockedClasses]
 
-        mockedModules = {m : mockobj for m in mockedModules}
-
-        # Various classes and types have
-        # to be mocked, otherwise we get
-        # all sorts of errors in cases
-        # of inheritance and monkey
-        # patching.
         class MockClass(object):
             def __init__(self, *args, **kwargs):
                 pass
@@ -246,21 +173,15 @@ class docbuilder(Command):
         class MockType(type):
             pass
 
-        with mock.patch.dict('sys.modules', **mockedModules), \
-             mock.patch('fsl.utils.notifier.Notifier',         MockClass), \
-             mock.patch('fsleyes_props.HasProperties',         MockClass), \
-             mock.patch('fsleyes_props.SyncableHasProperties', MockClass), \
-             mock.patch('fsleyes_props.PropertyOwner',         MockType),  \
-             mock.patch('fsleyes_props.Toggle',                MockClass), \
-             mock.patch('fsleyes_props.Button',                MockClass), \
-             mock.patch('wx.Panel',                            MockClass), \
-             mock.patch('wx.glcanvas.GLCanvas',                MockClass), \
-             mock.patch('wx.PyPanel',                          MockClass), \
-             mock.patch('wx.lib.agw.aui.AuiFloatingFrame',     MockClass), \
-             mock.patch('wx.lib.agw.aui.AuiDockingGuide',      MockClass), \
-             mock.patch('wx.lib.newevent.NewEvent',    return_value=(0, 0)):
+        patches = [mock.patch.dict('sys.modules', **mockedModules)] + \
+                  [mock.patch('wx.lib.newevent.NewEvent',
+                              return_value=(mockobj, mockobj))]     + \
+                  [mock.patch(c, MockClass) for c in mockedClasses]    + \
+                  [mock.patch('fsleyes_props.PropertyOwner', MockType)]
 
-            sphinx.build_main(['sphinx-build', docdir, destdir])
+        [p.start() for p in patches]
+        sphinx.build_main(['sphinx-build', docdir, destdir])
+        [p.stop() for p in patches]
 
 
 class userdoc(docbuilder):
@@ -326,6 +247,14 @@ class build_standalone(Command):
 
     def run(self):
 
+        # Some combination of typing, jinja2, and possibly sphinx
+        # causes errors to be raised when jinja2 is imported during
+        # the py2app/pyinstaller build processes. Importing here
+        # seems to work fine. I suspect that the problem lies with
+        # the python typing module.
+        import jinja2.utils    # noqa
+        import jinja2.runtime  # noqa
+
         # Build user documentation
         self.run_command('userdoc')
 
@@ -338,7 +267,7 @@ class build_standalone(Command):
             if platform == 'darwin': self.run_command('py2app')
             else:                    self.run_command('pyinstaller')
 
-        # create a zip file
+        # create archive file
         distdir     = op.join(basedir, 'dist')
         archivefile = op.join(distdir,
                               'FSLeyes-{}'.format(get_fsleyes_version()))
@@ -346,9 +275,9 @@ class build_standalone(Command):
         if platform == 'darwin': archivedir = 'FSLeyes.app'
         else:                    archivedir = 'FSLeyes'
 
-        print('Creating {}.zip...'.format(archivefile))
+        print('Creating {}.tar.gz...'.format(archivefile))
         shutil.make_archive(archivefile,
-                            'zip',
+                            'gztar',
                             root_dir=distdir,
                             base_dir=archivedir)
 
@@ -414,6 +343,7 @@ class build_standalone(Command):
                     propsfiles, widgetsfiles, fslpyfiles, fsleyesfiles):
                 if not filename.endswith('.py'):
                     continue
+                logging.getLogger().setLevel(logging.WARNING)
                 logstrip.main(['-f', '-M', 'INFO', filename])
 
         def enable_logging():
@@ -448,6 +378,7 @@ class py2app(orig_py2app):
         plist       = op.join(assetdir, 'build', 'Info.plist')
         assets      = build_asset_list(False)
 
+        self.verbose             = False
         self.quiet               = True
         self.argv_emulation      = True
         self.no_chdir            = True
@@ -457,7 +388,12 @@ class py2app(orig_py2app):
         self.dociconfile         = dociconfile
         self.plist               = plist
         self.resources           = assets
-        self.packages            = ['OpenGL_accelerate']
+        self.packages            = ['OpenGL_accelerate',
+                                    'certifi',
+                                    'wxnat',
+                                    'nibabel',
+                                    'trimesh',
+                                    'xnat']
         self.matplotlib_backends = ['wx_agg']
         self.excludes            = ['IPython', 'ipykernel', 'Cython']
 
@@ -465,14 +401,6 @@ class py2app(orig_py2app):
 
 
     def run(self):
-
-        # Some combination of typing, jinja2, and possibly sphinx
-        # causes errors to be raised when jinja2 is imported during
-        # the py2app build process. Importing here seems to work
-        # fine. I suspect that the problem lies with the python
-        # typing module.
-        import jinja2.utils
-        import jinja2.runtime
 
         orig_py2app.run(self)
 
@@ -484,13 +412,21 @@ class py2app(orig_py2app):
         plist       = op.join(contentsdir, 'Info.plist')
         resourcedir = op.join(contentsdir, 'Resources')
 
+        dylibs = []
+
+        # libspatialindex isn't on mac by default
+        dylibs.append(find_library('spatialindex'))
+        dylibs.append(find_library('spatialindex_c'))
+
         # py2app (and pyinstaller) seem to
         # get the wrong version of libpng,
         # which causes render to segfault
-        pildir = package_path('PIL')
-        dylib  = op.join(pildir, 'PIL', '.dylibs', 'libpng16.16.dylib')
-        if op.exists(dylib):
-            shutil.copy(dylib, op.join(contentsdir, 'Frameworks'))
+        pildir = package_path('matplotlib')
+        dylibs.append(op.join(pildir, 'matplotlib', '.dylibs', 'libpng16.16.dylib'))
+
+        for dylib in dylibs:
+            if op.exists(dylib):
+                shutil.copy(dylib, op.join(contentsdir, 'Frameworks'))
 
         # copy the application document iconset
         shutil.copy(self.dociconfile, resourcedir)
@@ -549,12 +485,25 @@ class pyinstaller(Command):
             'jinja2.asyncsupport',
         ]
 
-        extrabins = ['glut', 'OSMesa', 'xcb', 'SDL-1.2']
+        # Extra .so files to include in the bundle
+        extrabins = ['glut',
+                     'OSMesa',
+                     'SDL-1.2',
+                     'notify',
+                     'spatialindex',
+                     'spatialindex_c']
+
+
         extrabins = [find_library(b)  for b in extrabins]
         extrabins = ['{}:.'.format(b) for b in extrabins]
 
+        extrafiles  = self.include_package('nibabel')
+        extrafiles += self.include_package('xnat')
+        extrafiles += self.include_package('trimesh', ['.template'])
+
         cmd = [
             'pyinstaller',
+            '--log-level=WARN',
             '--name=FSLeyes',
             '--icon={}'.format(iconfile),
             '--windowed',
@@ -562,9 +511,10 @@ class pyinstaller(Command):
             '--distpath={}'.format(distdir)
         ]
 
-        for h in hidden:    cmd += ['--hidden-import',  h]
-        for e in excludes:  cmd += ['--exclude-module', e]
-        for e in extrabins: cmd += ['--add-binary',     e]
+        for h in hidden:     cmd += ['--hidden-import',  h]
+        for e in excludes:   cmd += ['--exclude-module', e]
+        for e in extrabins:  cmd += ['--add-binary',     e]
+        for e in extrafiles: cmd += ['--add-data',       e]
 
         cmd += [entrypt]
 
@@ -591,7 +541,103 @@ class pyinstaller(Command):
         if len(libglut) != 1:
             raise RuntimeError('Cannot identify libglut')
 
-        os.symlink(libglut[0], op.join(distdir, 'FSLeyes', 'glut'))
+        os.symlink(op.basename(libglut[0]),
+                   op.join(distdir, 'FSLeyes', 'glut'))
+
+        # Similarly, something is wrong with
+        # the way that rtree tries to access
+        # libspatialindex...
+        libsi  = glob.glob(op.join(distdir, 'FSLeyes', 'libspatialindex.*'))
+        libsic = glob.glob(op.join(distdir, 'FSLeyes', 'libspatialindex_c.*'))
+        if len(libsi) != 1 or len(libsic) != 1:
+            raise RuntimeError('Cannot identify libspatialindex/_c')
+
+        os.symlink(op.basename(libsi[0]),
+                   op.join(distdir, 'FSLeyes', 'libspatialindex.so'))
+        os.symlink(op.basename(libsic[0]),
+                   op.join(distdir, 'FSLeyes', 'libspatialindex_c.so'))
+
+
+        # pyinstaller tends to include lots
+        # of things that will be provided
+        # by the running OS, so we can remove
+        # a bunch of cruft.
+        libstoremove = ['libasyncns*',
+                        'libasound*',
+                        'libatk*',
+                        'libcaca*',
+                        'libcairo*',
+                        'libcom_err*',
+                        'libcrypto*',
+                        'libdatrie*',
+                        'libdbus*',
+                        'libdrm*',
+                        'libEGL*',
+                        'libenchant*',
+                        'libffi*',
+                        'libFLAC*',
+                        'libfontconfig*',
+                        'libgailutil*',
+                        'libgbm*',
+                        'libgcc_s*',
+                        'libgdk*',
+                        'libgio*',
+                        'libGL.*',
+                        'libGLU*',
+                        'libglib*',
+                        'libglapi*',
+                        'libgmodule*',
+                        'libgobject*',
+                        'libgraphite*',
+                        'libgssapi*',
+                        'libgst*',
+                        'libgthread*',
+                        'libgtk*',
+                        'libjbig*',
+                        'libharfbuzz*',
+                        'libICE*',
+                        'libicu*',
+                        'libk5crypto*',
+                        'libkeyutils*',
+                        'libkrb*',
+                        'libncurses*',
+                        'libogg*',
+                        'libpango*',
+                        'libpcre*',
+                        'libpixman*',
+                        'libpulse*',
+                        'libselinux*',
+                        'libslang*',
+                        'libSM*',
+                        'libsndfile*',
+                        'libsoup*',
+                        'libssl*',
+                        'libstdc*',
+                        'libthai*',
+                        'libtinfo*',
+                        'libuuid*',
+                        'libvorbis*',
+                        'libwrap*',
+                        'libxcb*',
+                        'libxml*',
+                        'libxslt*',
+                        'libX*']
+
+        # libGLU is not present
+        # by default on centos7
+        if platform == 'centos7':
+            libstoremove.remove('libGLU*')
+
+        for ltr in libstoremove:
+            paths = glob.glob(op.join(distdir, 'FSLeyes', ltr))
+            for p in paths:
+                os.remove(p)
+
+        # Directories that can be safely removed
+        dirstoremove = ['sphinx', 'mpl-data/sample_data']
+        for dtr in dirstoremove:
+            dtr = op.join(distdir, 'FSLeyes', dtr)
+            shutil.rmtree(dtr)
 
         # Copy assets
         os.makedirs(assetdir)
@@ -604,6 +650,38 @@ class pyinstaller(Command):
 
             for src in files:
                 shutil.copy(src, dirname)
+
+
+    def include_package(self, pkgname, ftypes=None):
+
+        if ftypes is None:
+            ftypes = []
+
+        ftypes.insert(0, '.py')
+
+        pkg     = importlib.import_module(pkgname)
+        pkgpath = pkg.__path__[0]
+
+        extrafiles = []
+
+        for dirpath, _, filenames in os.walk(pkgpath):
+
+            filenames = [f for f in filenames
+                         if any([f.endswith(ft) for ft in ftypes])]
+
+            dest = op.relpath(dirpath, op.join(pkgpath, '..'))
+
+            for filename in filenames:
+
+                srcfile = op.join(dirpath, filename)
+                extrafiles.append('{}:{}'.format(srcfile, dest))
+
+                if srcfile.endswith('.py'):
+                    srccmpfile = srcfile + 'c'
+                    py_compile.compile(srcfile, srccmpfile)
+                    extrafiles.append('{}:{}'.format(srccmpfile, dest))
+
+        return extrafiles
 
 
 def find_library(name):
@@ -619,7 +697,7 @@ def find_library(name):
     # Under mac, find_library
     # returns the full path
     if platform == 'darwin':
-        return path
+        return op.realpath(path)
 
     print('Searching for: {}'.format(path))
 
@@ -631,7 +709,8 @@ def find_library(name):
                   '/lib/',
                   '/usr/lib64/',
                   '/usr/lib/',
-                  '/usr/lib/x86_64-linux-gnu']
+                  '/usr/lib/x86_64-linux-gnu',
+                  '/usr/local/lib/']
     for sd in searchDirs:
         searchPath = op.join(sd, path)
         if op.exists(searchPath):
@@ -731,12 +810,22 @@ def get_fsleyes_readme():
 
 def get_fsleyes_deps():
     """Returns a list containing the FSLeyes dependencies. """
-
-    # The dependency list is stored in requirements.txt
     with open(op.join(basedir, 'requirements.txt'), 'rt') as f:
         install_requires = f.readlines()
-
     return [i.strip() for i in install_requires]
+
+def get_fsleyes_extra_deps():
+    """Returns a dict specifying the extra FSLeyes dependencies."""
+    with open(op.join(basedir, 'requirements-extra.txt'), 'rt') as f:
+        extras_require = f.readlines()
+    return {'extras' : [r.strip() for r in extras_require]}
+
+
+def get_fsleyes_dev_deps():
+    """Returns a dict specifying the FSLeyes development dependencies."""
+    with open(op.join(basedir, 'requirements-dev.txt'), 'rt') as f:
+        setup_requires = f.readlines()
+    return [i.strip() for i in setup_requires]
 
 
 def main():
@@ -747,8 +836,10 @@ def main():
     version          = get_fsleyes_version()
     readme           = get_fsleyes_readme()
     install_requires = get_fsleyes_deps()
+    extras_require   = get_fsleyes_extra_deps()
+    setup_requires   = get_fsleyes_dev_deps()
+    tests_require    = setup_requires
     assets           = build_asset_list(True)
-    setup_requires   = ['sphinx', 'sphinx-rtd-theme', 'mock']
 
     # When building/installing, all asset files
     # are placed within the fsleyes package
@@ -780,10 +871,15 @@ def main():
             'Topic :: Scientific/Engineering :: Visualization'],
 
         packages=packages,
+
         install_requires=install_requires,
+        extras_require=extras_require,
         setup_requires=setup_requires,
+        tests_require=tests_require,
+
         include_package_data=True,
         package_data=assets,
+        test_suite='tests',
 
         cmdclass={
             'build'            : custom_build,
@@ -803,6 +899,18 @@ def main():
 
 
 if __name__ == '__main__':
-
     logging.basicConfig()
+
+    def dummy_log(*args, **kwargs):
+        pass
+
+    # some things are awfully loud, and
+    # distutils does its own logging.
+    import distutils.log as dul
+    dul._global_log._log = dummy_log
+
+    logging.getLogger('py2app')    .setLevel(logging.CRITICAL)
+    logging.getLogger('distutils') .setLevel(logging.CRITICAL)
+    logging.getLogger('setuptools').setLevel(logging.CRITICAL)
+
     main()

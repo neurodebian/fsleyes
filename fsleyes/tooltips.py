@@ -111,7 +111,7 @@ properties = TypeDict({
     'colour, and vice versa.',
 
     'VolumeOpts.interpolation' :
-    'Interpolate the image data for display purposes. You can choose no  '
+    'Interpolate the image data on the display. You can choose no  '
     'interpolation (equivalent to nearest neighbour interpolation), linear '
     'interpolation, or third-order spline (cubic) interpolation.',
 
@@ -130,10 +130,6 @@ properties = TypeDict({
     'one. This is useful for images which have a very large data '
     'range that is driven by outliers.',
 
-    'Volume3DOpts.dithering' :
-    'How much the image sampling position should be randomly adjusted for '
-    'each pixel. ' ,
-
     'Volume3DOpts.numSteps' :
     'The maximum number of times that the image is sampled for each pixel.',
 
@@ -149,7 +145,12 @@ properties = TypeDict({
 
     'Volume3DOpts.numClipPlanes' :
     'Number of active clipping planes. Areas of the image which are in the '
-    'region intersected by all clipping planes will not be shown.',
+    'intersection, union, or complement of all clipping planes will not be '
+    'shown. The clip mode controls how clipping is applied',
+
+    'Volume3DOpts.clipMode' :
+    'How the clipping planes are applied. You can choose to clip (hide) the '
+    'intersection, union, or complement of all active clipping planes',
 
     'Volume3DOpts.showClipPlanes' :
     'When enabled, each active clipping plane is shown.',
@@ -163,12 +164,24 @@ properties = TypeDict({
     'Volume3DOpts.clipAzimuth' :
     'Amount by which to rotate the clip plane about the Z axis.',
 
-    'MaskOpts.colour'    : 'The colour of this mask image.',
-    'MaskOpts.invert'    : 'Invert the mask threshold range, so that values '
-                           'outside of the range are shown, and values '
-                           'within the range are hidden.',
-    'MaskOpts.threshold' : 'The mask threshold range - values outside of '
-                           'this range will not be displayed.',
+    'MaskOpts.colour' :
+    'The colour of this mask image.',
+    'MaskOpts.invert' :
+    'Invert the mask threshold range, so that values outside of the range '
+    'are shown, and values within the range are hidden.',
+    'MaskOpts.threshold' :
+    'The mask threshold range - values outside of this range will not be '
+    'displayed.',
+    'MaskOpts.outline' :
+    'When selected, an outline of the mask is shown, instead of the filled '
+    'mask being shown.',
+    'MaskOpts.outlineWidth'  :
+    'When the mask outline is shown, this setting controls the outline width '
+    'in pixels.',
+    'MaskOpts.interpolation' :
+    'Interpolate the mask data on the display. You can choose no  '
+    'interpolation (equivalent to nearest neighbour interpolation), linear '
+    'interpolation, or third-order spline (cubic) interpolation.',
 
     'LabelOpts.lut'          : 'The lookup table to use for this label image.',
     'LabelOpts.outline'      : 'Show the outline of each labelled region '
@@ -289,7 +302,13 @@ properties = TypeDict({
     'If a reference image is selected, this setting defines the space, '
     'relative to the reference image, in which the model coordinates are '
     'defined.',
-    'MeshOpts.vertexData'   :
+    'MeshOpts.vertexSet' :
+    'Choose a file which contains a surface definition (vertices) for this '
+    'mesh',
+    'MeshOpts.custom_vertexSet' :
+    'Choose a file which contains a surface definition (vertices) for this '
+    'mesh',
+    'MeshOpts.vertexData' :
     'Choose a file which contains data for each vertex - you can colour the '
     'mesh outline according to the values in the file. This only applies '
     'when the mesh outline, and not its cross-section is displayed.',
@@ -397,6 +416,9 @@ properties = TypeDict({
     'OrthoToolBar.showCursorAndLabels' :
     'Show/hide the location cursor and anatomical labels',
 
+    'Scene3DToolBar.showCursorAndLegend' :
+    'Show/hide the location cursor and anatomical legend',
+
     'LightBoxOpts.zoom'           : 'Zoom level - this controls how many '
                                     'slices to display.',
     'LightBoxOpts.sliceSpacing'   : 'The spacing between adjacent slices. '
@@ -442,7 +464,13 @@ properties = TypeDict({
                                        'also have this setting enabled). ',
     'CanvasPanel.syncOverlayDisplay' : 'If checked, the display properties '
                                        'of all overlays shown in this panel '
-                                       'linked to the display properties '
+                                       'are linked to the display properties '
+                                       'on other panels (as long as they '
+                                       'also have this setting enabled). ',
+    'CanvasPanel.syncOverlayVolume'  : 'If checked,  properties which control '
+                                       'the displayed volume/timepoint '
+                                       'of all overlays shown in this panel '
+                                       'are linked to the volume properties '
                                        'on other panels (as long as they '
                                        'also have this setting enabled). ',
 
@@ -508,8 +536,10 @@ properties = TypeDict({
     'TimeSeriesPanel.currentLineStyle' : 'Line style of the current time '
                                          'series.',
 
-    'HistogramPanel.histType'    : 'Show histogram data as raw counts, or '
-                                   'as probabilities.',
+    'HistogramPanel.histType' :
+    'Show histogram data as raw counts, or as probabilities.',
+    'HistogramPanel.plotType'    :
+    'Use histogram bin edges or bin centres for the histogram plot.',
 
     'PowerSpectrumPanel.plotFrequencies'  : 'If checked, the x values '
                                             'are transformed into frequency '
@@ -726,6 +756,9 @@ actions = TypeDict({
 
     'OrthoEditProfile.pasteSelection' :
     'Paste the contents of the clipboard into the currently selected image.',
+
+    'Scene3DViewProfile.resetDisplay' :
+    'Reset the zoom, pan, and rotation',
 
     # Items in the OverlayListPanel
     'ListItemWidget.save'  : 'Save this overlay to a file',

@@ -38,8 +38,8 @@ Editing NIFTI images
 
 The :ref:`orthographic view <ortho_lightbox_views_ortho>` has an *edit mode*
 which allows you to edit the values contained in NIFTI images.  You can enter
-edit mode in any orthographic view via its settings menu, e.g. *Settings*
-|right_arrow| *Ortho View 1* |right_arrow| *Edit mode*.
+edit mode in any orthographic view via the *Tools* |right_arrow| *Edit mode*
+menu option.
 
 .. image:: images/editing_images_edit_mode_menu.png
    :align: center
@@ -51,16 +51,17 @@ Overview
 
 
 
-**Important:** When you are in edit mode, the :ref:`currently selected overlay
-<overview_overlays>` (assuming that it is a NIFTI image) is the default target
-for all editing operations. Whenever you draw, erase, fill, select, copy, or
-paste voxels, you will be doing so with respect to the *currently selected
-image*.
+.. important:: When you are in edit mode, the :ref:`currently selected overlay
+               <overview_overlays>` (assuming that it is a NIFTI image) is the
+               default target for all editing operations. Whenever you draw,
+               erase, fill, select, copy, or paste voxels, you will be doing
+               so with respect to the *currently selected image*.
 
 
-When you use :ref:`select mode <editing_images_select_mode>`, you may use the
-*Target image* setting to specify an alternate target for fill and paste
-operations.
+               There is one exception to this rule - in :ref:`select mode
+               <editing_images_select_mode>`, you may use the *Target image*
+               setting to specify an alternate target for fill and paste
+               operations.
 
 
 Create a mask/copy!

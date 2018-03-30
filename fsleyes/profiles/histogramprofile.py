@@ -15,6 +15,7 @@ import numpy              as np
 import matplotlib.patches as patches
 
 import fsleyes_props      as props
+import fsl.data.image     as fslimage
 
 import fsleyes.overlay    as fsloverlay
 from . import                plotprofile
@@ -74,10 +75,10 @@ class HistogramProfile(plotprofile.PlotProfile):
         self.__draggingRange = False
 
         overlayList.addListener('overlays',
-                                self._name,
+                                self.name,
                                 self.__overlayListChanged)
         displayCtx .addListener('selectedOverlay',
-                                self._name,
+                                self.name,
                                 self.__selectedOverlayChanged)
 
         self.__selectedOverlayChanged()
@@ -88,8 +89,8 @@ class HistogramProfile(plotprofile.PlotProfile):
         Removes property listeners, and cleans some things up.
         """
 
-        self._overlayList.removeListener('overlays',        self._name)
-        self._displayCtx .removeListener('selectedOverlay', self._name)
+        self.overlayList.removeListener('overlays',        self.name)
+        self.displayCtx .removeListener('selectedOverlay', self.name)
 
         for hs in list(self.__rangePolygons.keys()):
             self.__deregisterHistogramSeries(hs)
@@ -106,7 +107,7 @@ class HistogramProfile(plotprofile.PlotProfile):
         """
 
         for hs in list(self.__rangePolygons.keys()):
-            if hs.overlay not in self._overlayList:
+            if hs.overlay not in self.overlayList:
                 self.__deregisterHistogramSeries(hs)
 
         self.__selectedOverlayChanged()
@@ -123,7 +124,7 @@ class HistogramProfile(plotprofile.PlotProfile):
 
         rangePolygon = RangePolygon(
             hs,
-            self._viewPanel,
+            self.viewPanel,
             np.zeros((2, 2)),
             closed=True,
             linewidth=2)
@@ -131,8 +132,8 @@ class HistogramProfile(plotprofile.PlotProfile):
         rangeOverlay = HistogramOverlay(
             hs,
             hs.overlay,
-            self._displayCtx,
-            self._overlayList)
+            self.displayCtx,
+            self.overlayList)
 
         self.__rangePolygons[hs] = rangePolygon
         self.__rangeOverlays[hs] = rangeOverlay
@@ -157,16 +158,18 @@ class HistogramProfile(plotprofile.PlotProfile):
         exist for the newly selected overlay.
         """
 
-        overlay = self._displayCtx.getSelectedOverlay()
+        overlay = self.displayCtx.getSelectedOverlay()
         oldHs   = self.__currentHs
-        newHs   = self._viewPanel.getDataSeries(overlay)
+        newHs   = self.viewPanel.getDataSeries(overlay)
 
         if oldHs == newHs:
             return
 
-        self.__currentHs = newHs
-
-        self.__registerHistogramSeries(newHs)
+        if isinstance(overlay, fslimage.Image):
+            self.__currentHs = newHs
+            self.__registerHistogramSeries(newHs)
+        else:
+            self.__currentHs = None
 
 
     def __updateShowOverlayRange(self, datax, which=False):
@@ -311,6 +314,7 @@ class RangePolygon(patches.Polygon):
         hs.addGlobalListener(           self._rp_name, self.updatePolygon)
         hsPanel.addListener('smooth',   self._rp_name, self.updatePolygon)
         hsPanel.addListener('histType', self._rp_name, self.updatePolygon)
+        hsPanel.addListener('plotType', self._rp_name, self.updatePolygon)
 
         self.updatePolygon()
 
@@ -327,6 +331,7 @@ class RangePolygon(patches.Polygon):
         hs.removeGlobalListener(           self._rp_name)
         hsPanel.removeListener('smooth',   self._rp_name)
         hsPanel.removeListener('histType', self._rp_name)
+        hsPanel.removeListener('plotType', self._rp_name)
 
         if self in hsPanel.artists:
             hsPanel.artists.remove(self)
@@ -347,15 +352,17 @@ class RangePolygon(patches.Polygon):
         hs      = self._rp_hs
         hsPanel = self._rp_hsPanel
 
-        # If smoothing is enabled, we get
+        # If smoothing is enabled, or we are
+        # plotting bin centres, we get
         # the histogram data from the plotted
         # Line2D instance. This is because the
-        # HistogramPanel does the smoothing,
-        # not the HistogramSeries instance.
+        # HistogramPanel does the smoothing and
+        # bin centre adjustmennt, not the
+        # HistogramSeries instance.
         #
         # Try/except because the HistogramSeries
         # may not yet have been plotted.
-        if hsPanel.smooth:
+        if hsPanel.smooth or hsPanel.plotType == 'centre':
             try:
 
                 hsArtist = hsPanel.getArtist(hs)

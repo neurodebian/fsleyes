@@ -177,20 +177,6 @@ class Display(props.SyncableHasProperties):
             log.debug('{}.del ({})'.format(type(self).__name__, id(self)))
 
 
-    @deprecation.deprecated(deprecated_in='0.14.3',
-                            removed_in='1.0.0',
-                            details='Use overlay instead')
-    def getOverlay(self):
-        """Deprecated - use :meth:`overlay` instead."""
-        return self.__overlay
-
-
-    @property
-    def overlay(self):
-        """Returns the overlay associated with this ``Display`` instance."""
-        return self.__overlay
-
-
     def destroy(self):
         """This method must be called when this ``Display`` instance
         is no longer needed.
@@ -212,6 +198,47 @@ class Display(props.SyncableHasProperties):
         self.__overlay     = None
 
 
+    @deprecation.deprecated(deprecated_in='0.14.3',
+                            removed_in='1.0.0',
+                            details='Use overlay instead')
+    def getOverlay(self):
+        """Deprecated - use :meth:`overlay` instead."""
+        return self.__overlay
+
+
+    @property
+    def overlay(self):
+        """Returns the overlay associated with this ``Display`` instance."""
+        return self.__overlay
+
+
+    @property
+    def opts(self):
+        """Return the :class:`.DisplayOpts` instance associated with this
+        ``Display``, which contains overlay type specific display settings.
+
+        If a ``DisplayOpts`` instance has not yet been created, or the
+        :attr:`overlayType` property no longer matches the type of the
+        existing ``DisplayOpts`` instance, a new ``DisplayOpts`` instance
+        is created (and the old one destroyed if necessary).
+
+        See the :meth:`__makeDisplayOpts` method.
+        """
+
+        if (self.__displayOpts             is None) or \
+           (self.__displayOpts.overlayType != self.overlayType):
+
+            if self.__displayOpts is not None:
+                self.__displayOpts.destroy()
+
+            self.__displayOpts = self.__makeDisplayOpts()
+
+        return self.__displayOpts
+
+
+    @deprecation.deprecated(deprecated_in='0.16.0',
+                            removed_in='1.0.0',
+                            details='Use opts instead')
     def getDisplayOpts(self):
         """Return the :class:`.DisplayOpts` instance associated with this
         ``Display``, which contains overlay type specific display settings.
@@ -241,30 +268,40 @@ class Display(props.SyncableHasProperties):
         value of the :attr:`overlayType` property.
 
         The :data:`.displaycontext.DISPLAY_OPTS_MAP` dictionary defines the
-        mapping between :attr:`overlayType` values, and ``DisplayOpts``
-        sub-class types.
+        mapping between overlay types and :attr:`overlayType` values, and
+        ``DisplayOpts`` sub-class types.
         """
 
         if self.getParent() is None:
             oParent = None
         else:
-            oParent = self.getParent().getDisplayOpts()
+            oParent = self.getParent().opts
 
         from . import DISPLAY_OPTS_MAP
 
-        optType = DISPLAY_OPTS_MAP[self.overlayType]
+        optType = DISPLAY_OPTS_MAP[self.__overlay, self.overlayType]
 
         log.debug('Creating {} instance (synced: {}) for overlay '
                   '{} ({})'.format(optType.__name__,
                                    self.__displayCtx.syncOverlayDisplay,
                                    self.__overlay, self.overlayType))
 
+        volProps  = optType.getVolumeProps()
+        allProps  = optType.getAllProperties()[0]
+        initState = {}
+
+        for p in allProps:
+            if p in volProps:
+                initState[p] = self.__displayCtx.syncOverlayVolume
+            else:
+                initState[p] = self.__displayCtx.syncOverlayDisplay
+
         return optType(self.__overlay,
                        self,
                        self.__overlayList,
                        self.__displayCtx,
                        parent=oParent,
-                       state=self.__displayCtx.syncOverlayDisplay)
+                       state=initState)
 
 
     def __findOptBaseType(self, optType, optName):
@@ -344,7 +381,7 @@ class Display(props.SyncableHasProperties):
         that the :class:`DisplayOpts` instance is of the correct type.
         """
         self.__saveOldDisplayOpts()
-        self.getDisplayOpts()
+        self.opts
         self.__restoreOldDisplayOpts()
 
 
@@ -431,6 +468,33 @@ class DisplayOpts(props.SyncableHasProperties, actions.ActionProvider):
             log.debug('{}.del ({})'.format(type(self).__name__, id(self)))
 
 
+    def destroy(self):
+        """This method must be called when this ``DisplayOpts`` instance
+        is no longer needed.
+
+        If a subclass overrides this method, the subclass implementation
+        must call this method, **after** performing its own clean up.
+        """
+        actions.ActionProvider.destroy(self)
+
+        self.detachAllFromParent()
+
+        self.__overlay     = None
+        self.__display     = None
+        self.__overlayList = None
+        self.__displayCtx  = None
+
+
+    @classmethod
+    def getVolumeProps(cls):
+        """Intended to be overridden by sub-classes as needed.  Returns a list
+        of property names which control the currently displayed
+        volume/timepoint for 4D overlays. The default implementation returns
+        an empty list.
+        """
+        return []
+
+
     @property
     def overlay(self):
         """Return the overlay associated with this ``DisplayOpts`` object.
@@ -475,28 +539,12 @@ class DisplayOpts(props.SyncableHasProperties, actions.ActionProvider):
         return self.__name
 
 
-    def destroy(self):
-        """This method must be called when this ``DisplayOpts`` instance
-        is no longer needed.
-
-        If a subclass overrides this method, the subclass implementation
-        must call this method, **after** performing its own clean up.
-        """
-        actions.ActionProvider.destroy(self)
-
-        self.detachAllFromParent()
-
-        self.__overlay     = None
-        self.__display     = None
-        self.__overlayList = None
-        self.__displayCtx  = None
-
-
-    def getReferenceImage(self):
+    @property
+    def referenceImage(self):
         """Return the reference image associated with this ``DisplayOpts``
         instance.
 
-        Some non-volumetric overlay types (e.g. the :class:`.TriangleMesh` -
+        Some non-volumetric overlay types (e.g. the :class:`.Mesh` -
         see :class:`.MeshOpts`) may have a *reference* :class:`.Nifti` instance
         associated with them, allowing the overlay to be localised in the
         coordinate space defined by the :class:`.Nifti`. The
@@ -520,6 +568,14 @@ class DisplayOpts(props.SyncableHasProperties, actions.ActionProvider):
         return None
 
 
+    @deprecation.deprecated(deprecated_in='0.14.3',
+                            removed_in='1.0.0',
+                            details='Use referenceImage instead')
+    def getReferenceImage(self):
+        """Deprecated - use :meth:`referenceImage` instead. """
+        return self.referenceImage
+
+
     def getLabels(self):
         """Generates some orientation labels for the overlay associated with
         this ``DisplayOpts`` instance.
@@ -534,7 +590,7 @@ class DisplayOpts(props.SyncableHasProperties, actions.ActionProvider):
             :meth:`.Image.getOrientation`)
         """
 
-        refImage = self.getReferenceImage()
+        refImage = self.referenceImage
 
         if refImage is None:
             return ('??????', [constants.ORIENT_UNKNOWN] * 3)

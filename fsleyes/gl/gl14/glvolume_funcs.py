@@ -64,7 +64,14 @@ def compileShaders(self):
     constants = {'kill_fragments_early' : not self.threedee}
 
     if self.threedee:
+
+        if   self.opts.clipMode == 'intersection': clipMode = 1
+        elif self.opts.clipMode == 'union':        clipMode = 2
+        elif self.opts.clipMode == 'complement':   clipMode = 3
+        else:                                      clipMode = 0
+
         constants['numSteps']        = self.opts.numInnerSteps
+        constants['clipMode']        = clipMode
         constants['numClipPlanes']   = self.opts.numClipPlanes
         texes[    'startingTexture'] = 4
         texes[    'depthTexture']    = 5
@@ -121,9 +128,8 @@ def updateShaderState(self):
     changed |= shader.setFragParam('clipping',    clipping)
     changed |= shader.setFragParam('negCmap',     negCmap)
 
-
     if self.threedee:
-        clipPlanes  = np.zeros((10, 4), dtype=np.float32)
+        clipPlanes  = np.zeros((5, 4), dtype=np.float32)
         d2tmat      = opts.getTransform('display', 'texture')
 
         for i in range(opts.numClipPlanes):
@@ -185,13 +191,13 @@ def draw3D(self, xform=None, bbox=None):
     canvas  = self.canvas
     display = self.display
     shader  = self.shader
-    proj    = canvas.getProjectionMatrix()
+    proj    = canvas.projectionMatrix
     src     = self.renderTexture1
     dest    = self.renderTexture2
     w, h    = src.getSize()
 
     vertices, voxCoords, texCoords = self.generateVertices3D(bbox)
-    rayStep, ditherDir, texform    = opts.calculateRayCastSettings(xform, proj)
+    rayStep, texform               = opts.calculateRayCastSettings(xform, proj)
 
     if xform is not None:
         vertices = transform.transform(vertices, xform)
@@ -200,7 +206,6 @@ def draw3D(self, xform=None, bbox=None):
 
     outerLoop  = opts.getNumOuterSteps()
     screenSize = [1.0 / w, 1.0 / h, 0, 0]
-    ditherDir  = list(ditherDir) + [0]
     rayStep    = list(rayStep)   + [0]
     texform    = texform[2, :]
     settings   = [
@@ -213,7 +218,6 @@ def draw3D(self, xform=None, bbox=None):
 
     shader.setAtt(      'texCoord',        texCoords)
     shader.setFragParam('rayStep',         rayStep)
-    shader.setFragParam('ditherDir',       ditherDir)
     shader.setFragParam('screenSize',      screenSize)
     shader.setFragParam('tex2ScreenXform', texform)
 

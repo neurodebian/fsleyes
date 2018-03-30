@@ -44,10 +44,24 @@ This module provides the following functions:
    :nosignatures:
 
    parseArgs
+   applyMainArgs
    applySceneArgs
    applyOverlayArgs
    generateSceneArgs
    generateOverlayArgs
+
+
+-----
+Usage
+-----
+
+
+Call the :func:`parseArgs` function to parse all command line arguments.  Then
+create a :class:`.DisplayContext` and :class:`.OverlayList`, and pass them,
+along with the ``argparse.Namespace`` object, to the :func:`applyMainArgs`,
+:func:`applySceneArgs` and :func:`applyOverlayArgs`
+functions. :func:`applyMainArgs` should be called first, but the order of the
+latter two does not matter.
 
 
 --------------------------
@@ -94,8 +108,8 @@ Adding new command line options
 -------------------------------
 
 
-Most classes in *FSLeyes* derive from the :class:`.HasProperties` class of the
-:mod:`props` package. Therefore, with only a couple of excpetions, the
+Many classes in *FSLeyes* derive from the :class:`.HasProperties` class of the
+:mod:`props` package. Therefore, with only a couple of exceptions, the
 processing of nearly all *FSLeyes* command line arguments is completely
 automatic.
 
@@ -178,7 +192,8 @@ Adding special (non-property) options
 
 
 If you need to add an option which does not directly map to a
-:class:`SceneOpts` or :class:`DisplayOpts` property, you need to do some extra
+:class:`SceneOpts` or :class:`DisplayOpts` property, or if you need to perform
+some custom/extra processing for a property, you need to do some extra
 work. For example, let's say we wish to add a custom option ``clipAndDisplay``
 to modify both the ``clippingRange`` and ``displayRange`` properties of the
 :class:`.VolumeOpts` class.
@@ -217,6 +232,14 @@ to modify both the ``clippingRange`` and ``displayRange`` properties of the
            target       # The target instance (e.g. a VolumeOpts instance)
        )
 
+   Apply functions should typically return ``None`` or ``False``, which
+   indicates that the argument has been fully processed. However, if you
+   have a property for which you need to perform some pre-processing, but
+   you also want to be handled by :func:`fsleyes_props.applyArguments`,
+   you can have your apply function return ``True``, which indicates that
+   the arguemnt should be passed through to ``applyArguments``, in addition
+   to being handled by your apply function.
+
 4. Add a function which, given a ``target`` instance, will generate command
    line arguments that can reproduce the ``target`` state. This function must
    have the following signature::
@@ -227,6 +250,11 @@ to modify both the ``clippingRange`` and ``displayRange`` properties of the
            source,      # The source instance
            longArg      # String to use as the long form argument
        )
+
+   In a similar vein to the apply function, described above, a generate
+   function may return a value of ``False``, indicating that the argument
+   should be passed through to the :func:`fsleyes_props.generateArguments`
+   function.
 """
 
 
@@ -237,6 +265,7 @@ import itertools        as it
 import                     sys
 import                     types
 import                     logging
+import                     warnings
 import                     textwrap
 import                     argparse
 import                     collections
@@ -244,7 +273,7 @@ import six.moves.urllib as urllib
 import numpy            as np
 
 import fsl.data.image                     as fslimage
-import fsl.utils.async                    as async
+import fsl.utils.idle                     as idle
 import fsl.utils.transform                as transform
 from   fsl.utils.platform import platform as fslplatform
 
@@ -373,19 +402,22 @@ OPTIONS = td.TypeDict({
                        'verbose',
                        'version',
                        'skipfslcheck',
-                       'skipupdatecheck',
+                       'updatecheck',
                        'noisy',
                        'glversion',
                        'scene',
                        'voxelLoc',
                        'worldLoc',
+                       'selectedOverlay',
                        'autoDisplay',
                        'displaySpace',
                        'neuroOrientation',
                        'standard',
                        'standard1mm',
+                       'initialDisplayRange',
                        'bigmem',
-                       'bumMode'],
+                       'bumMode',
+                       'fontSize'],
 
     # From here on, all of the keys are
     # the names of HasProperties classes,
@@ -472,10 +504,14 @@ OPTIONS = td.TypeDict({
                         'resolution',
                         'dithering',
                         'numInnerSteps',
+                        'clipMode',
                         'clipPlane'],
     'MaskOpts'       : ['colour',
                         'invert',
-                        'threshold'],
+                        'threshold',
+                        'outline',
+                        'outlineWidth',
+                        'interpolation'],
     'VectorOpts'     : ['xColour',
                         'yColour',
                         'zColour',
@@ -497,6 +533,7 @@ OPTIONS = td.TypeDict({
     'RGBVectorOpts'  : ['interpolation'],
     'MeshOpts'       : ['vertexData',
                         'vertexDataIndex',
+                        'vertexSet',
                         'colour',
                         'outline',
                         'outlineWidth',
@@ -518,6 +555,7 @@ OPTIONS = td.TypeDict({
                         'invert',
                         'wireframe'],
     'GiftiOpts'      : [],
+    'FreesurferOpts' : [],
     'TensorOpts'     : ['lighting',
                         'orientFlip',
                         'tensorResolution',
@@ -556,6 +594,7 @@ GROUPNAMES = td.TypeDict({
     'RGBVectorOpts'  : 'RGB vector options',
     'MeshOpts'       : 'Mesh options',
     'GiftiOpts'      : 'GIFTI surface options',
+    'FreesurferOpts' : 'Freesurfer surface options',
     'LabelOpts'      : 'Label options',
     'TensorOpts'     : 'Tensor options',
     'SHOpts'         : 'SH options',
@@ -593,7 +632,6 @@ GROUPDESCS = td.TypeDict({
     'LineVectorOpts' : 'These options are applied to \'linevector\' overlays.',
     'RGBVectorOpts'  : 'These options are applied to \'rgbvector\' overlays.',
     'MeshOpts'       : 'These options are applied to \'mesh\' overlays.',
-    'GiftiOpts'      : 'These options are applied to \'giftimesh\' overlays.',
     'TensorOpts'     : 'These options are applied to \'tensor\' overlays.',
     'SHOpts'         : 'These options are applied to \'sh\' overlays.',
 })
@@ -603,9 +641,12 @@ GROUPDESCS = td.TypeDict({
 GROUPEPILOGS = td.TypeDict({
 
     'Display'    : 'Available overlay types: {}',
-    'LabelOpts'  : 'Available lookup tables: {}',
-    'VolumeOpts' : 'Available colour maps: {}',
-    'SHOpts'     : 'Available colour maps: {}'
+    'LabelOpts'  : 'Available lookup tables: {}. You can also specify a '
+                   'lookup table file.',
+    'VolumeOpts' : 'Available colour maps: {}. You can also specify any '
+                   'matplotlib colour map, or a colour map file. ',
+    'SHOpts'     : 'Available colour maps: {}. You can also specify any '
+                   'matplotlib colour map, or a colour map file. ',
 })
 """This dictionary contains epilogs for some types - information to be shown
 after the help for that type. Use the :func:`groupEpilog` function to access
@@ -643,24 +684,27 @@ def groupEpilog(target):
 # Short/long arguments for all of those options
 ARGUMENTS = td.TypeDict({
 
-    'Main.help'             : ('h',      'help',             False),
-    'Main.fullhelp'         : ('fh',     'fullhelp',         False),
-    'Main.verbose'          : ('v',      'verbose',          False),
-    'Main.version'          : ('V',      'version',          False),
-    'Main.skipfslcheck'     : ('S',      'skipfslcheck',     False),
-    'Main.skipupdatecheck'  : ('U',      'skipupdatecheck',  False),
-    'Main.noisy'            : ('n',      'noisy',            False),
-    'Main.glversion'        : ('gl',     'glversion',        True),
-    'Main.scene'            : ('s',      'scene',            True),
-    'Main.voxelLoc'         : ('vl',     'voxelLoc',         True),
-    'Main.worldLoc'         : ('wl',     'worldLoc',         True),
-    'Main.autoDisplay'      : ('ad',     'autoDisplay',      False),
-    'Main.displaySpace'     : ('ds',     'displaySpace',     True),
-    'Main.neuroOrientation' : ('no',     'neuroOrientation', False),
-    'Main.standard'         : ('std',    'standard',         False),
-    'Main.standard1mm'      : ('std1mm', 'standard1mm',      False),
-    'Main.bigmem'           : ('b',      'bigmem',           False),
-    'Main.bumMode'          : ('bums',   'bumMode',          False),
+    'Main.help'                : ('h',      'help',                False),
+    'Main.fullhelp'            : ('fh',     'fullhelp',            False),
+    'Main.verbose'             : ('v',      'verbose',             False),
+    'Main.version'             : ('V',      'version',             False),
+    'Main.skipfslcheck'        : ('S',      'skipfslcheck',        False),
+    'Main.updatecheck'         : ('U',      'updatecheck',         False),
+    'Main.noisy'               : ('n',      'noisy',               False),
+    'Main.glversion'           : ('gl',     'glversion',           True),
+    'Main.scene'               : ('s',      'scene',               True),
+    'Main.voxelLoc'            : ('vl',     'voxelLoc',            True),
+    'Main.worldLoc'            : ('wl',     'worldLoc',            True),
+    'Main.selectedOverlay'     : ('o',      'selectedOverlay',     True),
+    'Main.autoDisplay'         : ('ad',     'autoDisplay',         False),
+    'Main.displaySpace'        : ('ds',     'displaySpace',        True),
+    'Main.neuroOrientation'    : ('no',     'neuroOrientation',    False),
+    'Main.standard'            : ('std',    'standard',            False),
+    'Main.standard1mm'         : ('std1mm', 'standard1mm',         False),
+    'Main.initialDisplayRange' : ('idr',    'initialDisplayRange', True),
+    'Main.bigmem'              : ('b',      'bigmem',              False),
+    'Main.bumMode'             : ('bums',   'bumMode',             False),
+    'Main.fontSize'            : ('fs',     'fontSize',            True),
 
     'SceneOpts.showColourBar'      : ('cb',  'showColourBar',      False),
     'SceneOpts.bgColour'           : ('bg',  'bgColour',           True),
@@ -733,10 +777,14 @@ ARGUMENTS = td.TypeDict({
     'Volume3DOpts.dithering'     : ('dt',  'dithering',     True),
     'Volume3DOpts.numInnerSteps' : ('nis', 'numInnerSteps', True),
     'Volume3DOpts.clipPlane'     : ('cp',  'clipPlane',     True),
+    'Volume3DOpts.clipMode'      : ('m',   'clipMode',      True),
 
-    'MaskOpts.colour'    : ('mc', 'maskColour', False),
-    'MaskOpts.invert'    : ('i',  'maskInvert', False),
-    'MaskOpts.threshold' : ('t',  'threshold',  True),
+    'MaskOpts.colour'        : ('mc', 'maskColour',    False),
+    'MaskOpts.invert'        : ('i',  'maskInvert',    False),
+    'MaskOpts.threshold'     : ('t',  'threshold',     True),
+    'MaskOpts.outline'       : ('o',  'outline',       False),
+    'MaskOpts.outlineWidth'  : ('w',  'outlineWidth',  True),
+    'MaskOpts.interpolation' : ('in', 'interpolation', True),
 
     'VectorOpts.xColour'         : ('xc', 'xColour',       True),
     'VectorOpts.yColour'         : ('yc', 'yColour',       True),
@@ -771,6 +819,7 @@ ARGUMENTS = td.TypeDict({
     'MeshOpts.coordSpace'      : ('s',   'coordSpace',      True),
     'MeshOpts.vertexData'      : ('vd',  'vertexData',      True),
     'MeshOpts.vertexDataIndex' : ('vdi', 'vertexDataIndex', True),
+    'MeshOpts.vertexSet'       : ('vs',  'vertexSet',       True),
     'MeshOpts.useLut'          : ('ul',  'useLut',          False),
     'MeshOpts.lut'             : ('l',   'lut',             True),
     'MeshOpts.discardClipped'  : ('dc',  'discardClipped',  False),
@@ -822,7 +871,7 @@ HELP = td.TypeDict({
     'Main.verbose'         : 'Verbose output (can be used up to 3 times)',
     'Main.version'         : 'Print the current version and exit',
     'Main.skipfslcheck'    : 'Skip $FSLDIR check/warning',
-    'Main.skipupdatecheck' : 'Do not check for FSLeyes updates on startup',
+    'Main.updatecheck'     : 'Check for FSLeyes updates on startup',
     'Main.noisy'           : 'Make the specified module noisy',
     'Main.glversion'       : 'Desired (major, minor) OpenGL version',
     'Main.scene'           : 'Scene to show',
@@ -831,6 +880,7 @@ HELP = td.TypeDict({
                               'first overlay)',
     'Main.worldLoc'         : 'Location to show (world coordinates, takes '
                               'precedence over --voxelLoc)',
+    'Main.selectedOverlay'  : 'Selected overlay (index, starting from 0)',
     'Main.autoDisplay'      : 'Automatically configure overlay display '
                               'settings (unless any display settings are '
                               'specified)',
@@ -842,9 +892,16 @@ HELP = td.TypeDict({
                               'underlay (only if $FSLDIR is set).',
     'Main.standard1mm'      : 'Add the MNI152 1mm standard image as an '
                               'underlay (only if $FSLDIR is set).',
+
+    'Main.initialDisplayRange' :
+    'Initial display range to use for volume overlays, expressed as '
+    '(low, high) percentiles of the image data range (calculated on '
+    'all non-zero voxels).',
+
     'Main.bigmem'           : 'Load all images into memory, '
                               'regardless of size.',
     'Main.bumMode'          : 'Make the coronal icon look like a bum',
+    'Main.fontSize'         : 'Application font size',
 
     'SceneOpts.showCursor'         : 'Do not display the green cursor '
                                      'highlighting the current location',
@@ -903,7 +960,9 @@ HELP = td.TypeDict({
 
     'ColourMapOpts.displayRange'      : 'Display range. Setting this will '
                                         'override brightnes/contrast '
-                                        'settings.',
+                                        'settings. For volume overlays only: '
+                                        'append a "%%" to the high value to '
+                                        'set range by percentile.',
     'ColourMapOpts.clippingRange'     : 'Clipping range. Setting this will '
                                         'override the low display range '
                                         '(unless low ranges are unlinked).'
@@ -940,17 +999,22 @@ HELP = td.TypeDict({
     'Volume3DOpts.resolution' :
     '3D only. Resolution [1-100, default: 100]',
     'Volume3DOpts.dithering' :
-    '3D only. Dithering [0-0.05, default: 0.02]',
+    '3D only. Deprecated, has no effect.',
     'Volume3DOpts.numInnerSteps' :
-    '3D/GL14 only. Nmber of samples to run on GPU',
+    '3D/GL14 only. Number of samples to run on GPU',
     'Volume3DOpts.clipPlane' :
-    '3D only. Add a clipping plane. Requires three values: position [0-1], '
+    '3D only. Add a clipping plane. Requires three values: position [0-100], '
     'azimuth [-180, 180], inclination [-180, 180]. Can be used up to 10 '
     'times.',
+    'Volume3DOpts.clipMode' :
+    '3D only. How to apply the clipping plane(s).',
 
-    'MaskOpts.colour'    : 'Colour (0-1)',
-    'MaskOpts.invert'    : 'Invert',
-    'MaskOpts.threshold' : 'Threshold',
+    'MaskOpts.colour'       : 'Colour (0-1)',
+    'MaskOpts.invert'        : 'Invert',
+    'MaskOpts.threshold'     : 'Threshold',
+    'MaskOpts.outline'       : 'Show mask outline',
+    'MaskOpts.outlineWidth'  : 'Mask outline width (1-10, default: 2)',
+    'MaskOpts.interpolation' : 'Interpolation',
 
     'VectorOpts.xColour'         : 'X colour (0-1)',
     'VectorOpts.yColour'         : 'Y colour (0-1)',
@@ -991,13 +1055,15 @@ HELP = td.TypeDict({
     'MeshOpts.coordSpace'   : 'Mesh vertex coordinate space '
                               '(relative to reference image)',
     'MeshOpts.vertexData' :
-    'A file (GIFTI functional, shape, label, or time series file, or '
-    'a plain text file) containing one or more values for each vertex '
-    'in the mesh.',
+    'A file (e.g. Freesurfer .curv file, GIFTI functional, shape, label, '
+    'or time series file, or a plain text file) containing one or more values '
+    'for each vertex in the mesh.',
     'MeshOpts.vertexDataIndex' :
     'If the vertex data (-vd/--vertexData) file contains more than '
     'one value per vertex, specify the the index of the data to '
     'display.',
+    'MeshOpts.vertexSet' :
+    'A file containing an additional (compatible) mesh definition.',
     'MeshOpts.useLut' :
     'Use a lookup table instead of colour map(S) when colouring the mesh '
     'with vertex data.',
@@ -1064,11 +1130,11 @@ def getExtra(target, propName, default=None):
 
     # Settings for the LabelOpts/MeshOpts.lut property -
     # we don't want to pre-load all LUTs as it takes too
-    # long, so we're using the scanLookupTables function
-    # to grab the names of all existing LUTs, and then
-    # using them as the CLI options.
+    # long. And luts can be specified by name, or by file,
+    # soe we accept any string here, and then parse them
+    # witn an applySpecial function.
     lutSettings = {
-        'choices'       : colourmaps.scanLookupTables(),
+        'choices'       : None,
         'useAlts'       : False,
         'metavar'       : 'LUT',
         'default'       : 'random',
@@ -1076,7 +1142,7 @@ def getExtra(target, propName, default=None):
 
     # Similar procedure for the colour map properties
     cmapSettings = {
-        'choices'  : colourmaps.scanColourMaps(),
+        'choices'  : None,
         'metavar'  : 'CMAP',
         'parseStr' : True
     }
@@ -1095,21 +1161,28 @@ def getExtra(target, propName, default=None):
 
     # MeshOpts.vertexData is a Choice
     # property, but needs to accept
-    # any value on the command line
+    # any value on the command line,
+    # as the vertex data files need to
+    # be pre-loaded (by an applySpecial
+    # function).
     vertexDataSettings = {
         'metavar' : 'FILE',
         'choices' : None,
         'useAlts' : False,
+        'action'  : 'append',
     }
 
-    # VolumeOpts.clippingRange is manually
-    # parsed (see TRANSFORMS[VolumeOpts, 'clippingRange']),
+    # Same for MeshOpts.vertexSet
+    vertexSetSettings = dict(vertexDataSettings)
+
+    # VolumeOpts.clippingRange and displayRange are
+    # manually applied with special apply functions,
     # but if an invalid value is passed in, we want the
     # error to occur during argument parsing. So we define
     # a custom 'type' which validates the value, raises
     # an error if it is bad, but in the end returns the
     # argument unmodified.
-    def crType(val):
+    def rangeType(val):
 
         orig = val
 
@@ -1120,8 +1193,8 @@ def getExtra(target, propName, default=None):
 
         return orig
 
-    clippingRangeSettings = {
-        'atype' : crType
+    rangeSettings = {
+        'atype' : rangeType
     }
 
     allSettings = {
@@ -1129,14 +1202,18 @@ def getExtra(target, propName, default=None):
         (fsldisplay.LabelOpts,      'lut')           : lutSettings,
         (fsldisplay.MeshOpts,       'lut')           : lutSettings,
         (fsldisplay.GiftiOpts,      'lut')           : lutSettings,
+        (fsldisplay.FreesurferOpts, 'lut')           : lutSettings,
         (fsldisplay.ColourMapOpts,  'cmap')          : cmapSettings,
         (fsldisplay.ColourMapOpts,  'negativeCmap')  : cmapSettings,
         (fsldisplay.MeshOpts,       'cmap')          : cmapSettings,
         (fsldisplay.GiftiOpts,      'negativeCmap')  : cmapSettings,
         (fsldisplay.GiftiOpts,      'cmap')          : cmapSettings,
+        (fsldisplay.FreesurferOpts, 'negativeCmap')  : cmapSettings,
+        (fsldisplay.FreesurferOpts, 'cmap')          : cmapSettings,
         (fsldisplay.MeshOpts,       'negativeCmap')  : cmapSettings,
         (fsldisplay.VolumeOpts,     'cmap')          : cmapSettings,
-        (fsldisplay.VolumeOpts,     'clippingRange') : clippingRangeSettings,
+        (fsldisplay.VolumeOpts,     'clippingRange') : rangeSettings,
+        (fsldisplay.VolumeOpts,     'displayRange')  : rangeSettings,
         (fsldisplay.VolumeOpts,     'negativeCmap')  : cmapSettings,
         (fsldisplay.LineVectorOpts, 'cmap')          : cmapSettings,
         (fsldisplay.RGBVectorOpts,  'cmap')          : cmapSettings,
@@ -1161,8 +1238,13 @@ def getExtra(target, propName, default=None):
         (fsldisplay.SHOpts,         'zColour')       : colourSettings,
         (fsldisplay.MeshOpts,       'colour')        : colourSettings,
         (fsldisplay.GiftiOpts,      'colour')        : colourSettings,
+        (fsldisplay.FreesurferOpts, 'colour')        : colourSettings,
         (fsldisplay.MeshOpts,       'vertexData')    : vertexDataSettings,
         (fsldisplay.GiftiOpts,      'vertexData')    : vertexDataSettings,
+        (fsldisplay.FreesurferOpts, 'vertexData')    : vertexDataSettings,
+        (fsldisplay.MeshOpts,       'vertexSet')     : vertexSetSettings,
+        (fsldisplay.GiftiOpts,      'vertexSet')     : vertexSetSettings,
+        (fsldisplay.FreesurferOpts, 'vertexSet')     : vertexSetSettings,
     }
 
     # Add (str, propname) versions
@@ -1205,29 +1287,30 @@ been loaded, so we need to figure out what to do.
 # value, and the overlay to which the property
 # applies.
 #
-# TODO All of these functions are called both
-#      when parsing command line arguments, and
-#      when generating them from an in-memory
-#      object. If/when you have a need for more
-#      complicated property transformations (i.e.
-#      non-reversible ones), you'll need to have
-#      an inverse transforms dictionary.
+# Currently, the overlay-specific transform
+# functions can tell the transform direction
+# (either generating arguments or applying
+# arguments) by checking whether the gen
+# argument is True - if this is True, we are
+# generating arguments.
 #
-#      Currently, the overlay-specific transform
-#      functions can tell the direction by
-#      checking whether the gen argument is True -
-#      if this is True, we are generating arguments.
+# Transform functions for arguments which are
+# associated with an overlay (applied to
+# a Display or DisplayOpts instances) are also
+# passed the overlay and the target (the
+# Display or DisplayOpts instance) as keyword
+# arguments.
 #
-#      Transform functions for arguments which are
-#      associated with an overlay (applied to
-#      a Display or DisplayOpts instances) are also
-#      passed the overlay as a keyword argument.
+# So a transform function needs a signature
+# like so:
 #
+# def xform(value, gen=None, overlay=None, target=None):
+#     ...
 
 # When generating CLI arguments, turn Image
 # instances into their file names. And a few
 # other special cases.
-def _imageTrans(i, gen=None, overlay=None):
+def _imageTrans(i, **kwargs):
 
     stri = str(i).lower()
 
@@ -1236,52 +1319,15 @@ def _imageTrans(i, gen=None, overlay=None):
 
     # Special cases for Main.displaySpace
     elif stri == 'world':  return 'world'
-
     else:                  return i.dataSource
-
-
-# When generating CLI arguments, turn a
-# LookupTable instance into its name
-def _lutTrans(l, gen=None, overlay=None):
-    if isinstance(l, colourmaps.LookupTable): return l.key
-    else:                                     return l
-
-
-# VolumeOpts.clippingRange can be
-# specified as a percentile by
-# appending '%' to the high range
-# value.
-def _clippingRangeTrans(crange, gen=None, overlay=None):
-
-    if gen:
-        return crange
-
-    crange = list(crange)
-
-    if crange[1][-1] == '%':
-        crange[1] = crange[1][:-1]
-        crange    = [float(r) for r in crange]
-        crange    = np.nanpercentile(overlay[:], crange)
-    else:
-        crange = [float(r) for r in crange]
-
-    return crange
 
 
 # The command line interface
 # for some boolean properties
 # need the property value to be
 # inverted.
-def _boolTrans(b, gen=None, overlay=None):
+def _boolTrans(b, **kwargs):
     return not b
-
-
-# The --orientFlip command line argument
-# inverts the default behaviour of the
-# VectorOpts.orientFlip option
-def _orientFlipTrans(b, gen=None, overlay=None):
-    if gen: return b != overlay.isNeurological()
-    else:          return b
 
 
 # The props.addParserArguments function allows
@@ -1292,7 +1338,7 @@ def _orientFlipTrans(b, gen=None, overlay=None):
 # transform functions though, so we hackily
 # truncate any RGBA colours via these transform
 # functions.
-def _colourTrans(c, gen=None, overlay=None):
+def _colourTrans(c, **kwargs):
     return c[:3]
 
 
@@ -1309,11 +1355,6 @@ TRANSFORMS = td.TypeDict({
     'ColourMapOpts.linkLowRanges' : _boolTrans,
     'LineVectorOpts.unitLength'   : _boolTrans,
     'TensorOpts.lighting'         : _boolTrans,
-    'LabelOpts.lut'               : _lutTrans,
-    'MeshOpts.lut'                : _lutTrans,
-    # 'SHOpts.lighting'            : lambda b : not b,
-
-    'VolumeOpts.clippingRange'    : _clippingRangeTrans,
 
     'SceneOpts.bgColour'         : _colourTrans,
     'SceneOpts.fgColour'         : _colourTrans,
@@ -1323,8 +1364,6 @@ TRANSFORMS = td.TypeDict({
     'VectorOpts.xColour'         : _colourTrans,
     'VectorOpts.yColour'         : _colourTrans,
     'VectorOpts.zColour'         : _colourTrans,
-    'VectorOpts.orientFlip'      : _orientFlipTrans,
-
 })
 """This dictionary defines any transformations for command line options
 where the value passed on the command line cannot be directly converted
@@ -1418,7 +1457,8 @@ def _configParser(target, parser, propNames=None, shortHelp=False):
         if propExtra is not None:
             extra[propName] = propExtra
 
-        if not hasattr(target, propName):
+        if _isSpecialConfigOption(target, propName) or \
+           not hasattr(target, propName):
             propNames.remove(propName)
             special  .append(propName)
 
@@ -1457,9 +1497,9 @@ def _configMainParser(mainParser):
     mainParser.add_argument(*mainArgs['skipfslcheck'],
                             action='store_true',
                             help=mainHelp['skipfslcheck'])
-    mainParser.add_argument(*mainArgs['skipupdatecheck'],
+    mainParser.add_argument(*mainArgs['updatecheck'],
                             action='store_true',
-                            help=mainHelp['skipupdatecheck'])
+                            help=mainHelp['updatecheck'])
 
     # Debug messages are stripped from frozen
     # versions of FSLeyes, so there's no point
@@ -1490,6 +1530,10 @@ def _configMainParser(mainParser):
                             type=float,
                             nargs=3,
                             help=mainHelp['worldLoc'])
+    mainParser.add_argument(*mainArgs['selectedOverlay'],
+                            metavar='INDEX',
+                            type=int,
+                            help=mainHelp['selectedOverlay'])
     mainParser.add_argument(*mainArgs['autoDisplay'],
                             action='store_true',
                             help=mainHelp['autoDisplay'])
@@ -1507,12 +1551,21 @@ def _configMainParser(mainParser):
                             action='store_true',
                             help=mainHelp['standard1mm'])
 
+    mainParser.add_argument(*mainArgs['initialDisplayRange'],
+                            metavar=('LO', 'HI'),
+                            type=int,
+                            nargs=2,
+                            help=mainHelp['initialDisplayRange'])
+
     mainParser.add_argument(*mainArgs['bigmem'],
                             action='store_true',
                             help=mainHelp['bigmem'])
     mainParser.add_argument(*mainArgs['bumMode'],
                             action='store_true',
                             help=mainHelp['bumMode'])
+    mainParser.add_argument(*mainArgs['fontSize'],
+                            type=int,
+                            help=mainHelp['fontSize'])
 
 
 def _setupOverlayParsers(forHelp=False, shortHelp=False):
@@ -1554,14 +1607,16 @@ def _setupOverlayParsers(forHelp=False, shortHelp=False):
     MaskOpts       = fsldisplay.MaskOpts
     MeshOpts       = fsldisplay.MeshOpts
     GiftiOpts      = fsldisplay.GiftiOpts
+    FreesurferOpts = fsldisplay.FreesurferOpts
     LabelOpts      = fsldisplay.LabelOpts
     SHOpts         = fsldisplay.SHOpts
 
     # A parser is created and returned
     # for each one of these types.
     parserTypes = [VolumeOpts, MaskOpts, LabelOpts,
-                   MeshOpts, GiftiOpts, LineVectorOpts,
-                   RGBVectorOpts, TensorOpts, SHOpts]
+                   MeshOpts, GiftiOpts, FreesurferOpts,
+                   LineVectorOpts, RGBVectorOpts,
+                   TensorOpts, SHOpts]
 
     # Dictionary containing the Display parser,
     # and parsers for each overlay type. We use
@@ -1904,7 +1959,7 @@ def parseArgs(mainParser,
 
         # Now parse the Display/DisplayOpts
         # with the appropriate parser
-        optType   = fsldisplay.DISPLAY_OPTS_MAP[otArgs.overlayType]
+        optType   = fsldisplay.DISPLAY_OPTS_MAP[ovlType, otArgs.overlayType]
         optParser = optParsers[optType]
 
         try: optArgs = optParser.parse_args(remaining)
@@ -1941,6 +1996,15 @@ def parseArgs(mainParser,
         # objects, one for each overlay, to
         # the parent Namespace object.
         namespace.overlays.append(optArgs)
+
+    # if logging is disabled, the logging
+    # options were not added to the parser.
+    # So we fudge the Namespace attributes
+    # so none of the FSLeyes code needs to
+    # know.
+    if fsleyes.disableLogging:
+        namespace.verbose = 0
+        namespace.noisy   = []
 
     return namespace
 
@@ -2133,19 +2197,18 @@ def _applyArgs(args,
                target,
                propNames=None,
                **kwargs):
-    """Applies the given command line arguments to the given target object."""
+    """Applies the given command line arguments to the given target object.
+    The target object is added as a keyword argument to pass through to
+    any transform functions.
+    """
 
     if propNames is None:
         propNames = list(it.chain(*OPTIONS.get(target, allhits=True)))
 
     longArgs  = {name : ARGUMENTS[target, name][1] for name in propNames}
     xforms    = {}
-    special   = []
 
-    for name in list(propNames):
-        if not hasattr(target, name):
-            special  .append(name)
-            propNames.remove(name)
+    kwargs['target'] = target
 
     for name in propNames:
         xform = TRANSFORMS.get((target, name), None)
@@ -2156,15 +2219,19 @@ def _applyArgs(args,
         type(target).__name__,
         propNames))
 
-    props.applyArguments(target,
-                         args,
-                         propNames=propNames,
-                         xformFuncs=xforms,
-                         longArgs=longArgs,
-                         **kwargs)
+    for name in list(propNames):
+        applied = False
+        if _isSpecialApplyOption(target, name) or not hasattr(target, name):
+            applied = not _applySpecialOption(
+                args, overlayList, displayCtx, target, name)
 
-    for s in special:
-        _applySpecialOption(args, overlayList, displayCtx, target, s)
+        if not applied:
+            props.applyArguments(target,
+                                 args,
+                                 propNames=[name],
+                                 xformFuncs=xforms,
+                                 longArgs=longArgs,
+                                 **kwargs)
 
 
 def _generateArgs(overlayList, displayCtx, source, propNames=None):
@@ -2188,12 +2255,21 @@ def _generateArgs(overlayList, displayCtx, source, propNames=None):
 
     longArgs  = {name : ARGUMENTS[source, name][1] for name in propNames}
     xforms    = {}
-    special   = []
+    args      = []
 
     for name in list(propNames):
-        if not hasattr(source, name):
-            special  .append(name)
-            propNames.remove(name)
+        if _isSpecialGenerateOption(source, name) or \
+           not hasattr(source, name):
+
+            nargs = _generateSpecialOption(overlayList,
+                                           displayCtx,
+                                           source,
+                                           name,
+                                           longArgs[name])
+
+            if nargs is not False:
+                args += nargs
+                propNames.remove(name)
 
     for name in propNames:
         xform = TRANSFORMS.get((source, name), None)
@@ -2206,21 +2282,41 @@ def _generateArgs(overlayList, displayCtx, source, propNames=None):
 
     if isinstance(source, (fsldisplay.DisplayOpts, fsldisplay.Display)):
         extraArgs['overlay'] = source.overlay
+        extraArgs['target']  = source
 
-    args = props.generateArguments(source,
-                                   xformFuncs=xforms,
-                                   cliProps=propNames,
-                                   longArgs=longArgs,
-                                   **extraArgs)
-
-    for s in special:
-        args += _generateSpecialOption(overlayList,
-                                       displayCtx,
-                                       source,
-                                       s,
-                                       longArgs[s])
+    args += props.generateArguments(source,
+                                    xformFuncs=xforms,
+                                    cliProps=propNames,
+                                    longArgs=longArgs,
+                                    **extraArgs)
 
     return args
+
+
+def applyMainArgs(args, overlayList, displayCtx):
+    """Applies top-level arguments that are not specific to the scene or
+    any overlays. This should be called before either :func:`applySceneArgs`
+    or :func:`applyOverlayArgs`.
+
+    :arg args:        :class:`argparse.Namespace` object containing the parsed
+                      command line arguments.
+
+    :arg overlayList: A :class:`.OverlayList` instance.
+
+    :arg displayCtx:  A :class:`.DisplayContext` instance.
+    """
+
+    if args.initialDisplayRange is not None:
+        from fsleyes.displaycontext.volumeopts import VolumeOpts
+        VolumeOpts.setInitialDisplayRange(args.initialDisplayRange)
+
+    if args.bigmem is not None:
+        displayCtx.loadInMemory = args.bigmem
+
+    if args.neuroOrientation is not None:
+        displayCtx.radioOrientation = not args.neuroOrientation
+
+    displayCtx.autoDisplay = args.autoDisplay
 
 
 def applySceneArgs(args, overlayList, displayCtx, sceneOpts):
@@ -2229,7 +2325,7 @@ def applySceneArgs(args, overlayList, displayCtx, sceneOpts):
     line.
 
     .. note:: The scene arguments are applied asynchronously using
-              :func:`.async.idle`. This is done because the
+              :func:`.idle.idle`. This is done because the
               :func:`.applyOverlayArgs` function also applies its
               arguments asynchrnously, and we want the order of
               application to match the order in which these functions
@@ -2247,8 +2343,7 @@ def applySceneArgs(args, overlayList, displayCtx, sceneOpts):
 
     def apply():
 
-
-        # Load standard underlays first,
+        # Load standard underlays next,
         # as they will affect the display
         # space/location stuff below.
         fsldir = fslplatform.fsldir
@@ -2275,12 +2370,6 @@ def applySceneArgs(args, overlayList, displayCtx, sceneOpts):
         # First apply all command line options
         # related to the display context...
 
-        if args.bigmem is not None:
-            displayCtx.loadInMemory = args.bigmem
-
-        if args.neuroOrientation is not None:
-            displayCtx.radioOrientation = not args.neuroOrientation
-
         # Display space may be a string,
         # or a path to an image
         displaySpace = None
@@ -2300,9 +2389,6 @@ def applySceneArgs(args, overlayList, displayCtx, sceneOpts):
         if displaySpace is not None:
             displayCtx.displaySpace = displaySpace
 
-        # Auto display
-        displayCtx.autoDisplay = args.autoDisplay
-
         # voxel/world location
         if (args.worldLoc or args.voxelLoc) and \
            len(overlayList) > 0             and \
@@ -2319,7 +2405,7 @@ def applySceneArgs(args, overlayList, displayCtx, sceneOpts):
         # Now, apply arguments to the SceneOpts instance
         _applyArgs(args, overlayList, displayCtx, sceneOpts)
 
-    async.idle(apply)
+    idle.idle(apply)
 
 
 def generateSceneArgs(overlayList, displayCtx, sceneOpts, exclude=None):
@@ -2380,7 +2466,7 @@ def generateOverlayArgs(overlay, overlayList, displayCtx):
     :arg displayCtx:  A :class:`.DisplayContext` instance.
     """
     display = displayCtx.getDisplay(overlay)
-    opts    = display   .getDisplayOpts()
+    opts    = display   .opts
     args    = _generateArgs(overlayList, displayCtx, display) + \
               _generateArgs(overlayList, displayCtx, opts)
 
@@ -2392,7 +2478,7 @@ def applyOverlayArgs(args, overlayList, displayCtx, **kwargs):
     command line.
 
     .. warning:: This function uses the :func:`.loadoverlay.loadOverlays`
-                 function which in turn uses :func:`.async.idle` to load the
+                 function which in turn uses :func:`.idle.idle` to load the
                  overlays.  This means that the overlays are loaded and
                  configured asynchronously, meaning that they may not be
                  loaded by the time that this function returns. See the
@@ -2410,11 +2496,9 @@ def applyOverlayArgs(args, overlayList, displayCtx, **kwargs):
 
     :arg kwargs:      Passed through to the :func:`.loadoverlay.loadOverlays`
                       function.
-
     """
 
-    import fsleyes.actions.loadoverlay    as loadoverlay
-    import fsleyes.actions.loadvertexdata as loadvertexdata
+    import fsleyes.actions.loadoverlay as loadoverlay
 
     # The fsleyes.overlay.loadOverlay function
     # works asynchronously - this function will
@@ -2440,7 +2524,11 @@ def applyOverlayArgs(args, overlayList, displayCtx, **kwargs):
         overlayList.extend(overlays, overlayTypes=overlayTypes)
 
         # Select the last image in the list
-        displayCtx.selectedOverlay = len(overlayList) - 1
+        selovl = args.selectedOverlay
+        if selovl is None or selovl < 0 or selovl >= len(overlayList):
+            displayCtx.selectedOverlay = len(overlayList) - 1
+        else:
+            displayCtx.selectedOverlay = selovl
 
         for i, overlay in enumerate(overlays):
 
@@ -2475,7 +2563,7 @@ def applyOverlayArgs(args, overlayList, displayCtx, **kwargs):
             # type is set on the command line, the
             # DisplayOpts instance will have been
             # re-created
-            opts = display.getDisplayOpts()
+            opts = display.opts
 
             # All options in the FILE_OPTIONS dictionary
             # are Choice properties, where the valid
@@ -2488,64 +2576,38 @@ def applyOverlayArgs(args, overlayList, displayCtx, **kwargs):
 
             for fileOpt in fileOpts:
                 value = getattr(optArgs, fileOpt, None)
-                if value is not None:
+                if value is None:
+                    continue
 
-                    setattr(optArgs, fileOpt, None)
+                setattr(optArgs, fileOpt, None)
 
-                    try:
-                        image = _findOrLoad(overlayList,
-                                            value,
-                                            fslimage.Image,
-                                            overlay)
-                    except Exception as e:
-                        log.warning('{}: {}'.format(fileOpt, str(e)))
-                        continue
+                try:
+                    image = _findOrLoad(overlayList,
+                                        value,
+                                        fslimage.Image,
+                                        overlay)
+                except Exception as e:
+                    log.warning('{}: {}'.format(fileOpt, str(e)))
+                    continue
 
-                    # If the user specified both clipImage
-                    # arguments and linklow/high range
-                    # arguments, an error will be raised
-                    # when we try to set the link properties
-                    # on the VolumeOpts instance (because
-                    # they have been disabled). So we
-                    # clear themfrom the argparse namespace
-                    # to prevent this from occurring.
-                    if fileOpt == 'clipImage' and \
-                       isinstance(opts, fsldisplay.VolumeOpts):
+                # If the user specified both clipImage
+                # arguments and linklow/high range
+                # arguments, an error will be raised
+                # when we try to set the link properties
+                # on the VolumeOpts instance (because
+                # they have been disabled). So we
+                # clear themfrom the argparse namespace
+                # to prevent this from occurring.
+                if fileOpt == 'clipImage' and \
+                   isinstance(opts, fsldisplay.VolumeOpts):
 
-                        llr = ARGUMENTS['ColourMapOpts.linkLowRanges'][ 1]
-                        lhr = ARGUMENTS['ColourMapOpts.linkHighRanges'][1]
+                    llr = ARGUMENTS['ColourMapOpts.linkLowRanges'][ 1]
+                    lhr = ARGUMENTS['ColourMapOpts.linkHighRanges'][1]
 
-                        setattr(optArgs, llr, None)
-                        setattr(optArgs, lhr, None)
+                    setattr(optArgs, llr, None)
+                    setattr(optArgs, lhr, None)
 
-                    setattr(opts, fileOpt, image)
-
-            # If VolumeOpts.overrideDataRange has
-            # been provided, we implicitly enable it.
-            if isinstance(opts, fsldisplay.VolumeOpts) and \
-               optArgs.overrideDataRange is not None:
-                opts.enableOverrideDataRange = True
-
-            # If the VectorOpts.orientFlip argument is
-            # passed, we need to invert its value -
-            # apply the flip for radiologically stored
-            # images, but not for neurologically stored
-            # images.
-            if isinstance(opts, fsldisplay.VectorOpts):
-
-                orientFlip = getattr(optArgs, 'orientFlip', None)
-
-                if orientFlip is not None:
-                    opts.orientFlip = not opts.orientFlip
-                    setattr(optArgs, 'orientFlip', opts.orientFlip)
-
-            # Load vertex data files specified
-            # for mesh overlays
-            if isinstance(opts, fsldisplay.MeshOpts) and \
-               optArgs.vertexData is not None:
-                loadvertexdata.loadVertexData(overlay,
-                                              displayCtx,
-                                              optArgs.vertexData)
+                setattr(opts, fileOpt, image)
 
             # After handling the special cases
             # above, we can apply the CLI
@@ -2677,7 +2739,7 @@ def _applySpecialOption(args, overlayList, displayCtx, target, optName):
     log.debug('Applying special argument {} to {}'
               .format(optName, cls.__name__))
 
-    applyFunc(args, overlayList, displayCtx, target)
+    return applyFunc(args, overlayList, displayCtx, target)
 
 
 def _generateSpecialOption(overlayList, displayCtx, source, optName, longArg):
@@ -2707,10 +2769,37 @@ def _generateSpecialOption(overlayList, displayCtx, source, optName, longArg):
     return genFunc(overlayList, displayCtx, source, longArg)
 
 
+def _isSpecialConfigOption(target, optName):
+    """
+    Returns ``True`` if the given option has a special configuration function,
+    ``False`` otherwise.
+    """
+    return _getSpecialFunction(target, optName, '_configSpecial') is not None
+
+
+def _isSpecialApplyOption(target, optName):
+    """
+    Returns ``True`` if the given option has a special apply function,
+    ``False`` otherwise.
+    """
+    return _getSpecialFunction(target, optName, '_applySpecial') is not None
+
+
+def _isSpecialGenerateOption(target, optName):
+    """
+    Returns ``True`` if the given option has a special generation function,
+    ``False`` otherwise.
+    """
+    return _getSpecialFunction(target, optName, '_generateSpecial') is not None
+
+
 def _getSpecialFunction(target, optName, prefix):
     """Searches for a function in this module with the name
     ``_prefix_target_option``, searching the class hierarchy for ``target``.
     """
+
+    if not isinstance(target, type):
+        target = type(target)
 
     thismod = sys.modules[__name__]
     func    = getattr(thismod, '{}_{}_{}'.format(
@@ -2771,6 +2860,8 @@ def _applySpecial_OrthoOpts_zcentre(args, overlayList, displayCtx, target):
         args.zcentre, displayCtx, 0, 1, target.panel.getGLCanvases()[2])
 
 def _applySpecialOrthoOptsCentre(centre, displayCtx, xax, yax, canvas):
+    """Shared by the ``xcentre``, ``ycentre``, and ``zcentre`` functions.
+    """
 
     xlo  = displayCtx.bounds.getLo(xax)
     ylo  = displayCtx.bounds.getLo(yax)
@@ -2851,6 +2942,28 @@ def _applySpecial_Volume3DOpts_clipPlane(
     target.clipInclination[:ncp] = [cp[2] for cp in args.clipPlane]
 
 
+def _configSpecial_Volume3DOpts_dithering(
+        target, parser, shortArg, longArg, helpText):
+    """Handle the deprecated ``Volume3DOpts.dithering`` property. """
+    parser.add_argument(shortArg,
+                        longArg,
+                        type=float,
+                        help=helpText)
+
+
+def _applySpecial_Volume3DOpts_dithering(
+        args, overlayList, displayCtx, target):
+    """Handle the deprecated ``Volume3DOpts.dithering`` property. """
+    warnings.warn('dithering is deprecated - it is automatically calculated',
+                  DeprecationWarning)
+
+
+def _generateSpecial_Volume3DOpts_dithering(
+        overlayList, displayCtx, source, longArg):
+    """Handle the deprecated ``Volume3DOpts.dithering`` property. """
+    return []
+
+
 def _generateSpecial_Volume3DOpts_clipPlane(
         overlayList, displayCtx, source, longArg):
     """Generates arguemnts for the ``Volume3DOpts.clipPlane`` option. """
@@ -2907,3 +3020,275 @@ def _generateSpecial_Scene3DOpts_cameraRotation(
             '{: 0.2f}'.format(yaw),
             '{: 0.2f}'.format(pitch),
             '{: 0.2f}'.format(roll)]
+
+
+def _applySpecial_VectorOpts_orientFlip(
+        args, overlayList, displayCtx, target):
+    """Applies the ``VectorOpts.orientFlip`` option.
+
+    The :attr:`.VectorOpts.orientFlip` property is initialised to ``False``
+    for images with a radiological storage order, and ``True`` for images with
+    a neurological storage order. So if this argument is specified, we need to
+    invert its initial value - apply the flip for radiologically stored
+    images, but not for neurologically stored images.
+    """
+    target.orientFlip = not target.orientFlip
+
+
+def _generateSpecial_VectorOpts_orientFlip(
+        overlayList, displayCtx, source, longArg):
+    """Generates the ``VectorOpts.orientFlip`` option. """
+
+    flip = source.overlay.isNeurological() != source.orientFlip
+
+    if flip: return [longArg]
+    else:    return []
+
+
+def _applySpecial_MeshOpts_vertexData(
+        args, overlayList, displayCtx, target):
+    """Applies the :attr:`.MeshOpts.vertexData` option. """
+    import fsleyes.actions.loadvertexdata as loadvertexdata
+
+    # Vertex data files need to be pre-loaded
+    vertexData = list(args.vertexData)
+    for i, vd in enumerate(vertexData):
+        vertexData[i] = loadvertexdata.loadVertexData(
+            target.overlay, displayCtx, vd, select=False)
+    target.vertexData = vertexData[0]
+
+
+def _applySpecial_MeshOpts_vertexSet(
+        args, overlayList, displayCtx, target):
+    """Applies the :attr:`.MeshOpts.vertexSet` option. """
+    import fsleyes.actions.loadvertexdata as loadvertexdata
+    # Vertex set files need to be pre-
+    # loaded, similar to vertex data
+    for i, vd in enumerate(args.vertexSet):
+        loadvertexdata.loadVertices(
+            target.overlay, displayCtx, vd, select=False)
+
+
+def _applySpecial_VolumeOpts_overrideDataRange(
+        args, overlayList, displayCtx, target):
+    """Applies the :attr:`.VolumeOpts.overrideDataRange` option.
+
+    If the ``overrideDataRange`` command line argument has been provided,
+    we need to set the :attr:`.VolumeOpts.enableOverrideDataRange` property.
+    """
+    target.enableOverrideDataRange = True
+
+    # But we can let props handle
+    # the overrideDataRange parsing
+    return True
+
+
+def _generateSpecial_VolumeOpts_overrideDataRange(
+        overlayList, displayCtx, source, longArg):
+    """Generates the :attr:`.VolumeOpts.overrideDataRange` option.
+
+    If the :attr:`.VolumeOpts.enableOverrideDataRange` property is ``False``,
+    no arguments are generated.
+    """
+    if not source.enableOverrideDataRange:
+        return []
+
+    # otherwise we let props handle
+    # the argument generation
+    else:
+        return False
+
+
+def _applySpecial_VolumeOpts_clippingRange(
+        args, overlayList, displayCtx, target):
+    """Applies the :attr:`.VolumeOpts.clippingRange` option.
+
+    The ``VolumeOpts.clippingRange`` property can be specified on the command
+    line normally (as two numbers), or can be specified as a percentile by
+    appending a ``'%'`` character to the high range value.
+    """
+    target.clippingRange = _applyVolumeOptsRange(args.clippingRange, target)
+
+
+def _applySpecial_VolumeOpts_displayRange(
+        args, overlayList, displayCtx, target):
+    """Applies the :attr:`.VolumeOpts.displayRange` option.
+
+    The ``VolumeOpts.displayRange`` property can be specified on the command
+    line normally (as two numbers), or can be specified as a percentile by
+    appending a ``'%'`` character to the high range value.
+    """
+    target.displayRange = _applyVolumeOptsRange(args.displayRange, target)
+
+
+def _applyVolumeOptsRange(arange, target):
+    """This function is used to parse display/clipping range arguments. """
+
+    arange = list(arange)
+
+    if arange[1][-1] == '%':
+
+        arange[1] = arange[1][:-1]
+        arange    = [float(r) for r in arange]
+        arange    = np.nanpercentile(target.overlay[:], arange)
+
+    else:
+        arange = [float(r) for r in arange]
+
+    return arange
+
+
+def _applySpecial_ColourMapOpts_cmap(
+        args, overlayList, displayCtx, target):
+    """Handles the :attr:`.ColourMapOpts.cmap` option. See
+    :func:`_applyColourMap`.
+    """
+    args.cmap = _applyColourMap(args.cmap, overlayList, displayCtx)
+    return True
+
+
+def _applySpecial_ColourMapOpts_negativeCmap(
+        args, overlayList, displayCtx, target):
+    """Handles the :attr:`.ColourMapOpts.negativeCmap` option. See
+    :func:`_applyColourMap`.
+    """
+    args.negativeCmap = _applyColourMap(
+        args.negativeCmap, overlayList, displayCtx)
+    return True
+
+
+def _applySpecial_VectorOpts_cmap(
+        args, overlayList, displayCtx, target):
+    """Handles the :attr:`.VectorOpts.cmap` option. See
+    :func:`_applyColourMap`.
+    """
+    args.cmap = _applyColourMap(args.cmap, overlayList, displayCtx)
+    return True
+
+
+def _applyColourMap(cmap, overlayList, displayCtx):
+    """Handles a colour map argument.  If the specified colour map is a file,
+    it is loaded and registered with the :mod:`.colourmaps` module. Returns
+    a new value for the colour map argument.
+    """
+    if op.exists(cmap):
+        key = op.splitext(op.basename(cmap))[0]
+        colourmaps.registerColourMap(cmap, overlayList, displayCtx, key)
+        cmap = key
+    return cmap
+
+
+def _generateSpecial_ColourMapOpts_cmap(
+        overlayList, displayCtx, source, longArg):
+    """Generates arguments for the :attr:`.ColourMapOpts.cmap` argument. """
+    return _generateColourMap(longArg, source.cmap)
+
+
+def _generateSpecial_ColourMapOpts_negativeCmap(
+        overlayList, displayCtx, source, longArg):
+    """Generates arguments for the :attr:`.ColourMapOpts.negativeCmap`
+    argument.
+    """
+    return _generateColourMap(longArg, source.negativeCmap)
+
+
+def _generateSpecial_VectorOpts_cmap(
+        overlayList, displayCtx, source, longArg):
+    """Generates arguments for the :attr:`.VectorOpts.lut` argument. """
+    return _generateColourMap(longArg, source.cmap)
+
+
+def _generateColourMap(longArg, cmap):
+    """Generates a command line argument for the given colour map. This be
+    different depending on whether the colour map is installed as a FSLeyes
+    colour map, or has been manualy specified from a colour map file.
+    """
+
+    cmap = cmap.name
+
+    # if not registered with colourmaps module,
+    # then it's a built-in matplotlib colour map
+    if not colourmaps.isColourMapRegistered(cmap):
+        return [longArg, cmap]
+
+    # if installed, then it's a FSLeyes colour map
+    if colourmaps.isColourMapInstalled(cmap):
+        return [longArg, cmap]
+
+    # otherwise, it is likely to have been
+    # initially specified as a colour map file
+    cmap = colourmaps.getColourMapFile(cmap)
+
+    if cmap is not None:
+        return [longArg, op.abspath(cmap)]
+
+    # added by some other means (e.g. manually by
+    # user in python shell) - don't know what to do
+    else:
+        return []
+
+
+def _applySpecial_LabelOpts_lut(args, overlayList, displayCtx, target):
+    """Handles the :attr:`.LabelOpts.lut` option. See
+    :func:`_applyLookupTable`.
+    """
+    args.lut = _applyLookupTable(args.lut, overlayList, displayCtx)
+    return True
+
+
+def _applySpecial_MeshOpts_lut(args, overlayList, displayCtx, target):
+    """Handles the :attr:`.MeshOpts.lut` option. See
+    :func:`_applyLookupTable`.
+    """
+    args.lut = _applyLookupTable(args.lut, overlayList, displayCtx)
+    return True
+
+
+def _applyLookupTable(lut, overlayList, displayCtx):
+    """Handles a lookup table argument.  If the specified lookup table is a
+    file, it is loaded and registered with the :mod:`.colourmaps` module.
+    Returns a new value for the lookup table argument.
+    """
+    if op.exists(lut):
+        key = op.splitext(op.basename(lut))[0]
+        colourmaps.registerLookupTable(lut, overlayList, displayCtx, key)
+        lut = key
+    return lut
+
+
+def _generateSpecial_LabelOpts_lut(
+        overlayList, displayCtx, source, longArg):
+    """Generates arguments for the :attr:`.LabelOpts.lut` argument. """
+    return _generateLookupTable(longArg, source.lut)
+
+
+def _generateSpecial_MeshOpts_lut(
+        overlayList, displayCtx, source, longArg):
+    """Generates arguments for the :attr:`.MeshOpts.lut` argument. """
+    return _generateLookupTable(longArg, source.lut)
+
+
+def _generateLookupTable(longArg, lut):
+    """Generates a command line argument for the given lookup table. This will
+    be different depending on whether the lookup table is installed as a
+    FSLeyes lookup tablea, or has been manualy specified from a lookup table
+    file.
+    """
+
+    lut = lut.key
+
+    # the lut has been installed into FSLeyes
+    if colourmaps.isLookupTableInstalled(lut):
+        return [longArg, lut]
+
+    # otherwise the lut is likely to
+    # have been specified as a file
+    lut = colourmaps.getLookupTableFile(lut)
+
+    if lut is not None:
+        return [longArg, op.abspath(lut)]
+
+    # lut was registered in some other
+    # way - don't know what to do
+    else:
+        return []

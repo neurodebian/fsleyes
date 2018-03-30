@@ -15,8 +15,9 @@ import numpy as np
 
 import fsleyes_props       as props
 import fsl.utils.transform as transform
-import fsl.utils.async     as async
+import fsl.utils.idle      as idle
 import fsleyes.profiles    as profiles
+import fsleyes.actions     as actions
 
 
 log = logging.getLogger(__name__)
@@ -30,11 +31,13 @@ class Scene3DViewProfile(profiles.Profile):
     The following *modes* are defined (see the :class:`.Profile`
     documentation):
 
-    ========== =================================================
+    ========== ========================================================
     ``rotate`` Clicking and dragging the mouse rotates the scene
     ``zoom``   Moving the mouse wheel zooms in and out.
     ``pan``    Clicking and dragging the mouse pans the scene.
-    ========== =================================================
+    ``pick``   Clicking changes the :attr:`.DisplayContext.vertexIndex`
+               or :attr:`.DisplayContext.location`
+    ========== ========================================================
     """
 
     def __init__(self,
@@ -42,7 +45,7 @@ class Scene3DViewProfile(profiles.Profile):
                  overlayList,
                  displayCtx):
 
-        modes = ['rotate', 'zoom', 'pan']
+        modes = ['rotate', 'zoom', 'pan', 'pick']
 
         profiles.Profile.__init__(self,
                                   viewPanel,
@@ -62,6 +65,7 @@ class Scene3DViewProfile(profiles.Profile):
         return [self.__canvas]
 
 
+    @actions.action
     def resetDisplay(self):
         """Resets the :class:`.Scene3DCanvas` camera settings to their
         defaults.
@@ -144,7 +148,7 @@ class Scene3DViewProfile(profiles.Profile):
 
         # See comment in OrthoViewProfile._zoomModeMouseWheel
         # for the reason why we do this asynchronously.
-        async.idle(update, timeout=0.1)
+        idle.idle(update, timeout=0.1)
 
 
     def _panModeLeftMouseDown(self, ev, canvas, mousePos, canvasPos):
@@ -183,3 +187,73 @@ class Scene3DViewProfile(profiles.Profile):
         internal state used by the down and drag handlers.
         """
         self.__panMousePos  = None
+
+
+    def _pickModeLeftMouseDown(self, ev, canvas, mousePos, canvasPos):
+        """Called on mouse down events in ``pick`` mode.
+
+        Updates the :attr:`DisplayContext.vertexIndex` property if the
+        currently selected overlay is a :class:`.Mesh`, otherwise
+        updates the :attr:`DisplayContext.location` property.
+        """
+
+        from fsl.data.mesh import Mesh
+
+        displayCtx = self.displayCtx
+        ovl        = displayCtx.getSelectedOverlay()
+
+        if ovl is None:
+            return
+
+        # The canvasPos is located on the near clipping
+        # plane (see Scene3DCanvas.canvasToWorld).
+        # We also need the corresponding point on the
+        # far clipping plane.
+        farPos = canvas.canvasToWorld(mousePos[0], mousePos[1], near=False)
+
+        # For non-mesh overlays, we select a point which
+        # is in between the near/far clipping planes.
+        if not isinstance(ovl, Mesh):
+
+            posDir = farPos - canvasPos
+            dist   = transform.veclength(posDir)
+            posDir = transform.normalise(posDir)
+            midPos = canvasPos + 0.5 * dist * posDir
+
+            self.displayCtx.location.xyz = midPos
+
+        else:
+            opts      = self.displayCtx.getOpts(ovl)
+            rayOrigin = canvasPos
+            rayDir    = transform.normalise(farPos - canvasPos)
+
+            # transform location from display into model space
+            rayOrigin = opts.transformCoords(rayOrigin, 'display', 'mesh')
+            rayDir    = opts.transformCoords(rayDir,    'display', 'mesh',
+                                             vector=True)
+            loc, tri  = ovl.rayIntersection([rayOrigin],
+                                            [rayDir],
+                                            vertices=True)
+
+            if len(loc) == 0:
+                return
+
+            loc = loc[0]
+            tri = ovl.indices[int(tri[0]), :]
+
+            # The rayIntersection method gives us a
+            # point on one of the mesh triangles -
+            # we want the vertex on that triangle
+            # which is nearest to the intersection.
+            triVerts = ovl.vertices[tri, :]
+            triDists = transform.veclength(loc - triVerts)
+            vertIdx  = np.argsort(triDists)[0]
+
+            self.displayCtx.vertexIndex = tri[vertIdx]
+
+
+    def _pickModeLeftMouseDrag(self, ev, canvas, mousePos, canvasPos):
+        """Called on mouse drag events in ``pick`` mode. Forwards the
+        event to the :meth:`_pickModeLeftMouseDown` method.
+        """
+        self._pickModeLeftMouseDown(ev, canvas, mousePos, canvasPos)

@@ -24,6 +24,7 @@ import __future__          as futures
 import                        os
 import os.path             as op
 import                        logging
+import                        textwrap
 import                        collections
 
 import fsl.utils.settings  as fslsettings
@@ -180,13 +181,16 @@ def fsleyesScriptEnvironment(frame, overlayList, displayCtx):
     from   fsleyes.views.histogrampanel     import HistogramPanel
     from   fsleyes.views.powerspectrumpanel import PowerSpectrumPanel
     from   fsleyes.views.shellpanel         import ShellPanel
+    from   fsleyes.actions.screenshot       import screenshot
+    from   fsleyes.actions.moviegif         import makeGif
     import fsl.data.image                       as fslimage
     import fsl.data.featimage                   as featimage
     import fsl.data.melodicimage                as melimage
     import fsl.data.dtifit                      as dtifit
     import fsl.data.mesh                        as fslmesh
+    import fsl.data.vtk                         as fslvtk
     import fsl.data.gifti                       as fslgifti
-
+    import fsl.data.freesurfer                  as fslfs
 
     def load(filename):
         """Load the specified file into FSLeyes. """
@@ -235,6 +239,10 @@ def fsleyesScriptEnvironment(frame, overlayList, displayCtx):
         """Run the specified Python script. """
         runScript(frame, overlayList, displayCtx, script)
 
+    def help(obj):
+        """Print help on the given object. """
+        print(textwrap.dedent(obj.__doc__).strip())
+
 
     def setprop(substr, propName, value, testName=False):
         """Set the given property value for all overlays which have the
@@ -275,8 +283,10 @@ def fsleyesScriptEnvironment(frame, overlayList, displayCtx):
         ('FEATImage',          featimage.FEATImage),
         ('MelodicImage',       melimage.MelodicImage),
         ('DTIFitTensor',       dtifit.DTIFitTensor),
-        ('TriangleMesh',       fslmesh.TriangleMesh),
-        ('GiftiSurface',       fslgifti.GiftiSurface),
+        ('Mesh',               fslmesh.Mesh),
+        ('VTKMesh',            fslvtk.VTKMesh),
+        ('GiftiMesh',          fslgifti.GiftiMesh),
+        ('FreesurferMesh',     fslfs.FreesurferMesh),
         ('OrthoPanel',         OrthoPanel),
         ('LightBoxPanel',      LightBoxPanel),
         ('Scene3DPanel',       Scene3DPanel),
@@ -287,12 +297,15 @@ def fsleyesScriptEnvironment(frame, overlayList, displayCtx):
         ('overlayList',        overlayList),
         ('displayCtx',         displayCtx),
         ('frame',              frame),
+        ('screenshot',         screenshot),
+        ('makeGif',            makeGif),
         ('scaledVoxels',       scaledVoxels),
         ('trueScaledVoxels',   trueScaledVoxels),
         ('rawVoxels',          rawVoxels),
         ('setprop',            setprop),
         ('load',               load),
         ('run',                run),
+        ('help',               help),
     ))
 
     return globals(), _locals

@@ -11,6 +11,7 @@ documentation for more details.
 
 
 import logging
+import deprecation
 
 import                   wx
 import wx.lib.agw.aui as aui
@@ -24,7 +25,6 @@ import fsleyes.profiles       as profiles
 import fsleyes.displaycontext as fsldisplay
 import fsleyes.strings        as strings
 import fsleyes.actions        as actions
-
 
 
 log = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
     children. A ``ViewPanel`` has one central panel, which contains the
     primary view; and may have one or more secondary panels, which contain
     *controls* - see the :mod:`.controls` package. The centre panel can be set
-    via the :meth:`setCentrePanel` method, and secondary panels can be
+    via the :meth:`centrePanel` property, and secondary panels can be
     added/removed to/from with the :meth:`togglePanel` method. The current
     state of a secondary panel (i.e. whether one is open or not) can be
     queried with the :meth:`isPanelOpen` method, and existing secondary panels
@@ -86,7 +86,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
        getTools
        removeAllPanels
        getPanelInfo
-       getAuiManager
+       auiManager
     """
 
 
@@ -105,10 +105,10 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         self.__profileManager = profiles.ProfileManager(
             self, overlayList, displayCtx)
 
-        # The centrePanel attribute stores a reference
+        # The __centrePanel attribute stores a reference
         # to the main (centre) panel on this ViewPanel.
         # It is set by sub-class implementations via
-        # the setCentrePanel method.
+        # the centrePanel property.
         #
         # The panels dictionary stores a collection
         # of {type : instance} mappings of active
@@ -131,8 +131,8 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         self.__auiMgr.Bind(aui.EVT_AUI_PANE_CLOSE, self.__onPaneClose)
 
         # Use a different listener name so that subclasses
-        # can register on the same properties with self._name
-        lName = 'ViewPanel_{}'.format(self._name)
+        # can register on the same properties with self.name
+        lName = 'ViewPanel_{}'.format(self.name)
 
         self.addListener('profile', lName, self.__profileChanged)
 
@@ -178,11 +178,11 @@ class ViewPanel(fslpanel.FSLeyesPanel):
 
         # Remove listeners from the overlay
         # list and display context
-        lName = 'ViewPanel_{}'.format(self._name)
+        lName = 'ViewPanel_{}'.format(self.name)
 
-        self             .removeListener('profile',         lName)
-        self._overlayList.removeListener('overlays',        lName)
-        self._displayCtx .removeListener('selectedOverlay', lName)
+        self            .removeListener('profile',         lName)
+        self.overlayList.removeListener('overlays',        lName)
+        self.displayCtx .removeListener('selectedOverlay', lName)
 
         # Disable the  ProfileManager
         self.__profileManager.destroy()
@@ -217,7 +217,24 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         return self.__profileManager.getCurrentProfile()
 
 
-    def setCentrePanel(self, panel):
+    @property
+    def centrePanel(self):
+        """Returns the primary (centre) panel on this ``ViewPanel``.
+        """
+        return self.__centrePanel
+
+
+    @deprecation.deprecated(deprecated_in='0.16.0',
+                            removed_in='1.0.0',
+                            details='Use centrePanel instead')
+    def getCentrePanel(self):
+        """Returns the primary (centre) panel on this ``ViewPanel``.
+        """
+        return self.centrePanel
+
+
+    @centrePanel.setter
+    def centrePanel(self, panel):
         """Set the primary centre panel for this ``ViewPanel``. This method
         is only intended to be called by sub-classes.
         """
@@ -230,6 +247,16 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         self.__auiMgr.AddPane(panel, paneInfo)
         self.__auiMgrUpdate()
         self.__centrePanel = panel
+
+
+    @deprecation.deprecated(deprecated_in='0.16.0',
+                            removed_in='1.0.0',
+                            details='Use centrePanel instead')
+    def setCentrePanel(self, panel):
+        """Set the primary centre panel for this ``ViewPanel``. This method
+        is only intended to be called by sub-classes.
+        """
+        self.centrePanel = panel
 
 
     def togglePanel(self, panelType, *args, **kwargs):
@@ -303,9 +330,9 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         # this is used for saving and restoring perspectives.
         paneInfo  = aui.AuiPaneInfo().Name(panelType.__name__)
         window    = panelType(self,
-                              self.getOverlayList(),
-                              self.getDisplayContext(),
-                              self.getFrame(),
+                              self.overlayList,
+                              self.displayCtx,
+                              self.frame,
                               *args,
                               **kwargs)
         isToolbar = isinstance(window, fsltoolbar.FSLeyesToolBar)
@@ -382,10 +409,9 @@ class ViewPanel(fslpanel.FSLeyesPanel):
                     .CloseButton(closeable)  \
                     .FloatingPosition(panePos)
 
-
         self.__auiMgr.AddPane(window, paneInfo)
         self.__panels[panelType] = window
-        self.__auiMgrUpdate()
+        self.__auiMgrUpdate(newPanel=window)
 
 
     def isPanelOpen(self, panelType):
@@ -411,12 +437,6 @@ class ViewPanel(fslpanel.FSLeyesPanel):
             self.togglePanel(panelType)
 
 
-    def getCentrePanel(self):
-        """Returns the primary (centre) panel on this ``ViewPanel``.
-        """
-        return self.__centrePanel
-
-
     def getPanels(self):
         """Returns a list containing all control panels currently shown in this
         ``ViewPanel``.
@@ -431,6 +451,17 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         return self.__auiMgr.GetPane(panel)
 
 
+    @property
+    def auiManager(self):
+        """Returns the ``wx.lib.agw.aui.AuiManager`` object which manages the
+        layout of this ``ViewPanel``.
+        """
+        return self.__auiMgr
+
+
+    @deprecation.deprecated(deprecated_in='0.16.0',
+                            removed_in='1.0.0',
+                            details='Use auiManager instead')
     def getAuiManager(self):
         """Returns the ``wx.lib.agw.aui.AuiManager`` object which manages the
         layout of this ``ViewPanel``.
@@ -457,12 +488,12 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         user can only choose an ``edit`` profile on ``volume`` overlay types.
         """
 
-        lName   = 'ViewPanel_{}'.format(self._name)
-        overlay = self._displayCtx.getSelectedOverlay()
+        lName   = 'ViewPanel_{}'.format(self.name)
+        overlay = self.displayCtx.getSelectedOverlay()
 
         if self.__selectedOverlay not in (None, overlay):
             try:
-                d = self._displayCtx.getDisplay(self.__selectedOverlay)
+                d = self.displayCtx.getDisplay(self.__selectedOverlay)
 
                 d.removeListener('overlayType', lName)
 
@@ -479,7 +510,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         # register for overlay type changes, as
         # these will affect the profile property
         if isinstance(overlay, fslimage.Image):
-            display = self._displayCtx.getDisplay(overlay)
+            display = self.displayCtx.getDisplay(overlay)
             display.addListener('overlayType',
                                 lName,
                                 self.__configureProfile,
@@ -494,7 +525,7 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         """
 
         overlay     = self.__selectedOverlay
-        display     = self._displayCtx.getDisplay(overlay)
+        display     = self.displayCtx.getDisplay(overlay)
         profileProp = self.getProp('profile')
 
         # edit profile is not an option -
@@ -535,66 +566,103 @@ class ViewPanel(fslpanel.FSLeyesPanel):
         self.__profileManager.changeProfile(self.profile)
 
 
-    def __auiMgrUpdate(self, *a):
+    def __auiMgrUpdate(self, *args, **kwargs):
         """Called whenever a panel is added/removed to/from this ``ViewPanel``.
 
         Calls the ``Update`` method on the ``AuiManager`` instance that is
         managing this panel.
+
+        :arg newPanel: Must be passed as a keyword argument. When a new panel
+                       is added, it should be passed here.
         """
 
-        # When a panel is added/removed from the AuiManager,
-        # the position of floating panels seems to get reset
-        # to their original position, when they were created.
-        # Here, we explicitly set the position of each
-        # floating frame, so the AuiManager doesn't move our
-        # windows about the place.
+        newPanel = kwargs.pop('newPanel', None)
+
+        # This method makes sure that size hints
+        # for all existing and new panels are
+        # set on their AuiPaneInfo objects, and
+        # then calls AuiManager.Update.
+
+        # We first loop through all panels, and
+        # figure out their best sizes. Each entry
+        # in this list is a tuple containing:
         #
-        # We also explicitly tell the AuiManager what the
-        # current minimum and best sizes are for every panel
+        #    - Panel
+        #    - AuiPaneInfo instance
+        #    - Dock direction (None for floating panels)
+        #    - Layer number (None for floating panels)
+        #    - Minimum size
+        bestSizes = []
+
         for panel in self.__panels.values():
 
             if isinstance(panel, fsltoolbar.FSLeyesToolBar):
                 continue
 
-            paneInfo = self.__auiMgr.GetPane(panel)
-            parent   = panel.GetParent()
-            minSize  = panel.GetMinSize().Get()
+            pinfo = self.__auiMgr.GetPane(panel)
 
             # If the panel is floating, use its
             # current size as its 'best' size,
-            # as otherwise it will immediately
-            # resize the panel to its best size
-            if paneInfo.IsFloating():
+            # as otherwise the AuiManager will
+            # immediately resize the panel to
+            # its best size.
+            if pinfo.IsFloating():
+                dockDir  = None
+                layer    = None
                 bestSize = panel.GetSize().Get()
 
-                # Unless it's current size is less
-                # than its minimum size (which probably
-                # means that it has just been added)
-                if bestSize[0] < minSize[0] or \
-                   bestSize[1] < minSize[1]:
+                # Unless its current size is tiny
+                # (which probably means that it has
+                # just been added)
+                if bestSize[0] <= 20 or \
+                   bestSize[1] <= 20:
                     bestSize = panel.GetBestSize().Get()
 
             else:
+                dockDir  = pinfo.dock_direction
+                layer    = pinfo.dock_layer
                 bestSize = panel.GetBestSize().Get()
+
+            bestSizes.append((panel, pinfo, dockDir, layer, bestSize))
+
+        # Now we loop through one final time, and
+        # set all of the necessary size hints on
+        # the AuiPaneInfo instances.
+        for panel, pinfo, dockDir, layer, bestSize in bestSizes:
+
+            parent = panel.GetParent()
+
+            # When a panel is added/removed from the AuiManager,
+            # the position of floating panels seems to get reset
+            # to their original position, when they were created.
+            # Here, we explicitly set the position of each
+            # floating frame, so the AuiManager doesn't move our
+            # windows about the place.
+            if pinfo.IsFloating() and \
+               isinstance(parent, aui.AuiFloatingFrame):
+                pinfo.FloatingPosition(parent.GetScreenPosition())
 
             # See comments in __init__ about
             # this silly 'float offset' thing
             floatSize = (bestSize[0] + self.__floatOffset[0],
                          bestSize[1] + self.__floatOffset[1])
 
-            log.debug('New size for panel {} - min: {}, '
+            log.debug('New size for panel {} - '
                       'best: {}, float: {}'.format(
-                          type(panel).__name__, minSize, bestSize, floatSize))
+                          type(panel).__name__, bestSize, floatSize))
 
-            paneInfo.MinSize(     minSize)  \
-                    .BestSize(    bestSize) \
-                    .FloatingSize(floatSize)
+            pinfo.MinSize(     (1, 1))  \
+                 .BestSize(    bestSize) \
+                 .FloatingSize(floatSize)
 
-            # Re-position floating panes, otherwise
-            # the AuiManager will reset their position
-            if paneInfo.IsFloating() and \
-               isinstance(parent, aui.AuiFloatingFrame):
-                paneInfo.FloatingPosition(parent.GetScreenPosition())
+            # This is a terrible hack which forces
+            # the AuiManager to grow a dock when a
+            # new panel is added, which is bigger
+            # than the existing dock contents.
+            if panel is newPanel and not pinfo.IsFloating():
+                docks = aui.FindDocks(self.__auiMgr._docks, dockDir, layer)
+                for d in docks:
+                    d.size = 0
 
         self.__auiMgr.Update()
 
@@ -697,6 +765,7 @@ def AuiFloatingFrame__init__(*args, **kwargs):
     kwargs['style'] = style
 
     return AuiFloatingFrame__real__init__(*args, **kwargs)
+
 
 # Store a reference to the real constructor, and
 # Patch my constructor in to the class definition.

@@ -10,7 +10,8 @@ of the currently selected overlay.
 """
 
 
-import logging
+import            logging
+import os.path as op
 
 import wx
 
@@ -60,6 +61,7 @@ class OverlayDisplayToolBar(fsltoolbar.FSLeyesToolBar):
        _OverlayDisplayToolBar__makeLineVectorOptsTools
        _OverlayDisplayToolBar__makeMeshOptsTools
        _OverlayDisplayToolBar__makeGiftiOptsTools
+       _OverlayDisplayToolBar__makeFreesurferOptsTools
        _OverlayDisplayToolBar__makeTensorOptsTools
        _OverlayDisplayToolBar__makeSHOptsTools
     """
@@ -90,13 +92,13 @@ class OverlayDisplayToolBar(fsltoolbar.FSLeyesToolBar):
         self.__viewPanel      = viewPanel
         self.__currentOverlay = None
 
-        self._displayCtx.addListener(
+        self.displayCtx.addListener(
             'selectedOverlay',
-            self._name,
+            self.name,
             self.__selectedOverlayChanged)
-        self._overlayList.addListener(
+        self.overlayList.addListener(
             'overlays',
-            self._name,
+            self.name,
             self.__selectedOverlayChanged)
 
         self.__selectedOverlayChanged()
@@ -108,15 +110,15 @@ class OverlayDisplayToolBar(fsltoolbar.FSLeyesToolBar):
         :meth:`.FSLeyesToolBar.destroy` method.
         """
 
-        self._overlayList.removeListener('overlays',        self._name)
-        self._displayCtx .removeListener('selectedOverlay', self._name)
+        self.overlayList.removeListener('overlays',        self.name)
+        self.displayCtx .removeListener('selectedOverlay', self.name)
 
         if self.__currentOverlay is not None and \
-           self.__currentOverlay in self._overlayList:
+           self.__currentOverlay in self.overlayList:
 
-            display = self._displayCtx.getDisplay(self.__currentOverlay)
-            display.removeListener('overlayType', self._name)
-            display.removeListener('enabled',     self._name)
+            display = self.displayCtx.getDisplay(self.__currentOverlay)
+            display.removeListener('overlayType', self.name)
+            display.removeListener('enabled',     self.name)
 
         self.__currentOverlay = None
         self.__viewPanel      = None
@@ -143,8 +145,8 @@ class OverlayDisplayToolBar(fsltoolbar.FSLeyesToolBar):
 
         log.debug('Showing tools for {}'.format(overlay))
 
-        display   = self._displayCtx.getDisplay(overlay)
-        opts      = display.getDisplayOpts()
+        display   = self.displayCtx.getDisplay(overlay)
+        opts      = display.opts
         tools     = []
         nav       = []
 
@@ -185,7 +187,7 @@ class OverlayDisplayToolBar(fsltoolbar.FSLeyesToolBar):
         selected overlay changes. Enables/disables this
         ``OverlayDisplayToolBar`` accordingly.
         """
-        display = self._displayCtx.getDisplay(self.__currentOverlay)
+        display = self.displayCtx.getDisplay(self.__currentOverlay)
         self.Enable(display.enabled)
 
 
@@ -196,12 +198,12 @@ class OverlayDisplayToolBar(fsltoolbar.FSLeyesToolBar):
         """
 
         if self.__currentOverlay is not None and \
-           self.__currentOverlay in self._overlayList:
-            display = self._displayCtx.getDisplay(self.__currentOverlay)
-            display.removeListener('overlayType', self._name)
-            display.removeListener('enabled',     self._name)
+           self.__currentOverlay in self.overlayList:
+            display = self.displayCtx.getDisplay(self.__currentOverlay)
+            display.removeListener('overlayType', self.name)
+            display.removeListener('enabled',     self.name)
 
-        overlay = self._displayCtx.getSelectedOverlay()
+        overlay = self.displayCtx.getSelectedOverlay()
 
         self.__currentOverlay = overlay
 
@@ -209,13 +211,13 @@ class OverlayDisplayToolBar(fsltoolbar.FSLeyesToolBar):
             self.ClearTools(destroy=True)
             return
 
-        display = self._displayCtx.getDisplay(overlay)
+        display = self.displayCtx.getDisplay(overlay)
 
         display.addListener('enabled',
-                            self._name,
+                            self.name,
                             self.__overlayEnableChanged)
         display.addListener('overlayType',
-                            self._name,
+                            self.name,
                             self.__selectedOverlayChanged)
 
         self.__showTools(overlay)
@@ -471,7 +473,31 @@ class OverlayDisplayToolBar(fsltoolbar.FSLeyesToolBar):
         """Creates and returns a collection of controls for editing properties
         of the given :class:`.GiftiOpts` instance.
         """
-        return self.__makeMeshOptsTools(opts)
+        tools, nav = self.__makeMeshOptsTools(opts)
+
+        vertWidget  = _TOOLBAR_PROPS[opts, 'vertexSet']
+        vdataWidget = _TOOLBAR_PROPS[opts, 'vertexData']
+
+        panel       = wx.Panel(self)
+        sizer       = wx.BoxSizer(wx.VERTICAL)
+        vertWidget  = props.buildGUI(panel, opts, vertWidget)
+        vdataWidget = props.buildGUI(panel, opts, vdataWidget)
+
+        sizer.Add(vertWidget,  flag=wx.EXPAND)
+        sizer.Add(vdataWidget, flag=wx.EXPAND)
+        panel.SetSizer(sizer)
+
+        tools += [panel]
+        nav   += [vertWidget, vdataWidget]
+
+        return tools, nav
+
+
+    def __makeFreesurferOptsTools(self, opts):
+        """Creates and returns a collection of controls for editing properties
+        of the given :class:`.FreesurferOpts` instance.
+        """
+        return self.__makeGiftiOptsTools(opts)
 
 
     def __makeTensorOptsTools(self, opts):
@@ -529,6 +555,12 @@ def _imageLabel(img):
     else:           return img.name
 
 
+
+def _pathLabel(p):
+    if p is None: return 'None'
+    else:         return op.basename(p)
+
+
 _TOOLTIPS = td.TypeDict({
 
     'Display.name'        : fsltooltips.properties['Display.name'],
@@ -568,6 +600,8 @@ _TOOLTIPS = td.TypeDict({
     'MeshOpts.outline'      : fsltooltips.properties['MeshOpts.outline'],
     'MeshOpts.outlineWidth' : fsltooltips.properties['MeshOpts.'
                                                      'outlineWidth'],
+    'MeshOpts.vertexSet'    : fsltooltips.properties['MeshOpts.vertexSet'],
+    'MeshOpts.vertexData'   : fsltooltips.properties['MeshOpts.vertexData'],
 
     'TensorOpts.lighting' : fsltooltips.properties['TensorOpts.'
                                                    'lighting'],
@@ -683,6 +717,16 @@ _TOOLBAR_PROPS = td.TypeDict({
         spin=False,
         tooltip=_TOOLTIPS['MeshOpts.outlineWidth'],
         enabledWhen=lambda i: i.outline),
+    'MeshOpts.vertexSet' : props.Widget(
+        'vertexSet',
+        labels=_pathLabel,
+        tooltip=_TOOLTIPS['MeshOpts.vertexSet']
+    ),
+    'MeshOpts.vertexData' : props.Widget(
+        'vertexData',
+        labels=_pathLabel,
+        tooltip=_TOOLTIPS['MeshOpts.vertexData']
+    ),
 
     'VectorOpts.modulateImage' : props.Widget(
         'modulateImage',

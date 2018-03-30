@@ -9,9 +9,13 @@ for displaying :class:`.Image` overlays as label images., such as anatomical
 atlas images, tissue segmentation images, and so on.
 """
 
-import fsleyes_props      as props
-import fsleyes.colourmaps as colourmaps
-from . import                volumeopts
+
+import copy
+
+import fsleyes_props                      as props
+from   fsl.utils.platform import platform as fslplatform
+import fsleyes.colourmaps                 as colourmaps
+from . import                                volumeopts
 
 
 class LabelOpts(volumeopts.NiftiOpts):
@@ -30,10 +34,9 @@ class LabelOpts(volumeopts.NiftiOpts):
     """
 
 
-    outlineWidth = props.Real(minval=0, maxval=1, default=0.25, clamped=True)
+    outlineWidth = props.Int(minval=0, maxval=10, default=1, clamped=True)
     """Width of labelled region outlines, if :attr:``outline` is ``True``.
-    This value is in terms of the image voxels - a value of 1 will result in
-    an outline that is one voxel wide.
+    This value is in terms of pixels.
     """
 
 
@@ -58,13 +61,22 @@ class LabelOpts(volumeopts.NiftiOpts):
         # existing values).
         aux_file = overlay.strval('aux_file').lower()
 
-        if aux_file == '':
-            aux_file = 'random'
-
         if aux_file.startswith('mgh'):
-            aux_file = 'mgh-cma-freesurfer'
+            aux_file = 'freesurfercolorlut'
 
-        if colourmaps.isLookupTableRegistered(aux_file):
-            self.lut = aux_file
+        # Check to see if any registered lookup table
+        # has an ID that starts with the aux_file value.
+        # Default to random lut if aux_file is empty,
+        # or does not correspond to a registered lut.
+        lut = 'random'
+
+        if aux_file != '':
+            luts = colourmaps.getLookupTables()
+            luts = [l.key for l in luts if l.key.startswith(aux_file)]
+
+            if len(luts) == 1:
+                lut = luts[0]
+
+        self.lut = lut
 
         volumeopts.NiftiOpts.__init__(self, overlay, *args, **kwargs)

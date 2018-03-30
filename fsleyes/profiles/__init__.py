@@ -44,6 +44,8 @@ defines global *FSLeyes* keyboard shortcuts.
 
 import logging
 import inspect
+import collections
+import deprecation
 
 import wx
 
@@ -172,8 +174,11 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
     The ``Profile`` class currently only supports :class:`.CanvasPanel` and
     :class:`.PlotPanel` views. ``Profile`` instances use a
     :class:`.CanvasPanelEventManager` instance to manage GUI events on
-    :class:`.CanvasPanel` instances, or a:class:`.PlotPanelEventMAnager`
+    :class:`.CanvasPanel` instances, or a:class:`.PlotPanelEventManager`
     to manage GUI events on ``matplotlib Canvas`` objects.
+
+
+    **Receiving events**
 
 
     In order to receive mouse or keyboard events, subclasses simply need to
@@ -225,10 +230,69 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
     ``nav`` mode, this method will be called on left mouse clicks.
 
 
-    These methods should return ``True`` to indicate that the event was
-    handled, or ``False``  if the event was not handled. This is particularly
+    **Handler methods**
+
+
+    The parameters that are passed to these methods differs slightly depending
+    on the type of event:
+
+     - All mouse events, with the exception of ``MouseWheel`` must have
+       the following signature::
+
+        def _[modeName]Mode[eventName](ev, canvas, mouseLoc, canvasLoc)
+
+       where:
+
+         - ``ev`` is the ``wx.Event`` object
+         - ``canvas`` is the source canvas,
+         - ``mouseLoc`` is the ``(x, y)`` mouse coordinates,
+         - ``canvasLoc`` is the coordinates in the display/data coordinate
+           system.
+
+     - The ``MouseWheel`` handler must have the following signature::
+
+        def _[modeName]ModeMouseWheel(ev, canvas, wheel, mouseLoc, canvasLoc)
+
+       where ``wheel`` is a positive or negative number indicating how much
+       the mouse wheel was moved.
+
+     - ``Char`` events must have the following signature::
+
+        def _[modeName]ModeChar(ev, canvas, key)
+
+       where ``key`` is the key code of the key that was pressed.
+
+     - Pick event handlers (only on :class:`.PlotPanel` views) must have
+       the following signature::
+
+        def _[modeName]Mode[eventType](ev, canvas, artist, mouseLoc, canvasLoc)
+
+       where ``artist`` is the ``matplotlib`` artist that was picked.
+
+    All handler methods should return ``True`` to indicate that the event was
+    handled, or ``False`` if the event was not handled. This is particularly
     important for ``Char`` event handlers - we don't want ``Profile``
-    sub-classes to be eating global keyboard shortcuts.
+    sub-classes to be eating global keyboard shortcuts. A return value of
+    ``None`` is interpreted as ``True``. If a handler returns ``False``, and
+    a fallback handler is defined (see below), then that fallback handler will
+    be called.
+
+
+    **Extra handlers**
+
+
+    Additional handlers can be registered for any event type via the
+    :meth:`registerHandler` method. These handlers do not have to be methods
+    of the ``Profile`` sub-class, and will be called for every occurrence of
+    the event, regardless of the current mode. These handlers will be called
+    after the standard handler method.
+
+
+    When an extra handler is no longer needed, it must be removed via the
+    :meth:`deregisterHandler` method.
+
+
+    **Pre- and post- methods**
 
 
     A couple of other methods may be defined which, if they are present, will
@@ -239,24 +303,41 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
 
     The ``_preEvent`` method will get called just before an event is passed
     to the handler. Likewise, the ``_postEvent`` method will get called
-    just after the handler has been called. If a handler for a particular
-    event is not defined, neither of these methods will be called.
+    just after the handler has been called. If no handlers for a particular
+    event are defined, neither of these methods will be called.
 
 
-    The :mod:`.profilemap` module contains a ``tempModeMap`` which, for each
-    profile and each mode, defines a keyboard modifier which may be used to
-    temporarily redirect mouse/keyboard events to the handlers for a different
-    mode. For example, if while in ``nav`` mode, you would like the user to be
-    able to switch to ``zoom`` mode with the control key, you can add a
-    temporary mode map in the ``tempModeMap``.
+    **Temporary, alternate and fallback handlers**
 
 
-    The :mod:`.profilemap` module contains another dictionary, called the
-    ``altHandlerMap``. This dictionary allows you to re-use event handlers
-    that have been defined for one mode in another mode. For example, if you
-    would like right clicks in ``zoom`` mode to behave like left clicks in
-    ``nav`` mode, you can set up such a mapping using the
-    ``altHandlerMap`` dictionary.
+    The :mod:`.profilemap` module contains a set of dictionaries which define
+    temporary, alternate, and fallback handlers.
+
+
+    The :attr:`.profilemap.tempModeMap` defines, for each profile and each
+    mod, a keyboard modifier which may be used to temporarily redirect
+    mouse/keyboard events to the handlers for a different mode. For example,
+    if while in ``nav`` mode, you would like the user to be able to switch to
+    ``zoom`` mode with the control key, you can add a temporary mode map in
+    the ``tempModeMap``. Additional temporary modes can be added via the
+    :meth:`addTempMode` method.
+
+
+    The :attr:`.profilemap.altHandlerMap`. dictionary allows you to re-use
+    event handlers that have been defined for one mode in another mode. For
+    example, if you would like right clicks in ``zoom`` mode to behave like
+    left clicks in ``nav`` mode, you can set up such a mapping using the
+    ``altHandlerMap`` dictionary. Additional alternate handlers can be added
+    via the :meth:`addAltHandler` method.
+
+    The :attr:`.profilemap.fallbackHandlerMap` dictionary allows you to
+    define fallback handlers - if the default handler for a specific mode/event
+    type returns a value of ``False``, the event will be forwarded to
+    the fallback handler instead. Additional fallback handlers can be added
+    via the :meth:`addFallbackHandler` method.
+
+
+    **Actions and attributes**
 
 
     As the ``Profile`` class derives from the :class:`.ActionProvider`
@@ -268,12 +349,12 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
     The following instance attributes are present on a ``Profile`` instance,
     intended to be accessed by sub-classes:
 
-    ================ =======================================================
-    ``_viewPanel``   The :class:`ViewPanel` which is using this ``Profile``.
-    ``_overlayList`` A :class:`.OverlayList` instance.
-    ``_displayCtx``  A :class:`.DisplayContext` instance.
-    ``_name``        A unique name for this ``Profile`` instance.
-    ================ =======================================================
+    =============== =======================================================
+    ``viewPanel``   The :class:`ViewPanel` which is using this ``Profile``.
+    ``overlayList`` A :class:`.OverlayList` instance.
+    ``displayCtx``  A :class:`.DisplayContext` instance.
+    ``name``        A unique name for this ``Profile`` instance.
+    =============== =======================================================
     """
 
 
@@ -308,10 +389,10 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
         actions.ActionProvider     .__init__(self)
         props.SyncableHasProperties.__init__(self)
 
-        self._viewPanel   = viewPanel
-        self._overlayList = overlayList
-        self._displayCtx  = displayCtx
-        self._name        = '{}_{}'.format(self.__class__.__name__, id(self))
+        self.__viewPanel   = viewPanel
+        self.__overlayList = overlayList
+        self.__displayCtx  = displayCtx
+        self.__name        = '{}_{}'.format(self.__class__.__name__, id(self))
 
         import fsleyes.views.canvaspanel as canvaspanel
         import fsleyes.views.plotpanel   as plotpanel
@@ -326,14 +407,23 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
             raise ValueError('Unrecognised view panel type: {}'.format(
                 type(viewPanel).__name__))
 
-        # Maps which define temporarymodes/alternate
-        # handlers when keyboard modifiers are used,
-        # or when a handler for a particular event
-        # is not defined
-        self.__tempModeMap   = {}
-        self.__altHandlerMap = {}
+        # Maps which define temporary modes and
+        # alternate/fallback handlers when keyboard
+        # modifiers are used, when a handler for
+        # a particular event is not defined, or
+        # when a handler indicates that the event
+        # has not been handled.
+        self.__tempModeMap        = {}
+        self.__altHandlerMap      = {}
+        self.__fallbackHandlerMap = {}
 
-        # some attributes to keep track
+        # Extra handlers - for each event type,
+        # a dictionary of { name : handler }
+        # mappings which will be called after
+        # the profile handler has been called
+        # for a given event.
+        self.__extraHandlers = collections.defaultdict(collections.OrderedDict)
+
         # of mouse/canvas event locations
         self.__lastCanvas       = None
         self.__lastMousePos     = None
@@ -393,14 +483,18 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
         # class take precedence.
         for cls in reversed(inspect.getmro(self.__class__)):
 
-            tempModes   = profilemap.tempModeMap  .get(cls, {})
-            altHandlers = profilemap.altHandlerMap.get(cls, {})
+            tempModes   = profilemap.tempModeMap       .get(cls, {})
+            altHandlers = profilemap.altHandlerMap     .get(cls, {})
+            fbHandlers  = profilemap.fallbackHandlerMap.get(cls, {})
 
             for (mode, keymod), tempMode in tempModes.items():
                 self.addTempMode(mode, keymod, tempMode)
 
             for (mode, handler), (altMode, altHandler) in altHandlers.items():
                 self.addAltHandler(mode, handler, altMode, altHandler)
+
+            for (mode, handler), (fbMode, fbHandler) in fbHandlers.items():
+                self.addFallbackHandler(mode, handler, fbMode, fbHandler)
 
         # The __onEvent method delegates all
         # events based on this dictionary
@@ -435,10 +529,70 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
         list, and calls :meth:`.ActionProvider.destroy`.
         """
         actions.ActionProvider.destroy(self)
-        self.__lastCanvas = None
-        self._viewPanel   = None
-        self._overlayList = None
-        self._displayCtx  = None
+        self.__lastCanvas    = None
+        self.__viewPanel     = None
+        self.__overlayList   = None
+        self.__displayCtx    = None
+        self.__extraHandlers = None
+
+
+    @property
+    def name(self):
+        """Returns the name of this ``Profile``. """
+        return self.__name
+
+
+    @property
+    def viewPanel(self):
+        """Returns the :class:`.ViewPanel` associated with this ``Profile``.
+        """
+        return self.__viewPanel
+
+
+    @property
+    def overlayList(self):
+        """Returns the :class:`.OverlayList`. """
+        return self.__overlayList
+
+
+    @property
+    def displayCtx(self):
+        """Returns the :class:`.DisplayContext` associated with this
+        ``Profile``.
+        """
+        return self.__displayCtx
+
+
+    @property
+    @deprecation.deprecated(deprecated_in='0.16.0',
+                            removed_in='1.0.0',
+                            details='Use viewPanel instead')
+    def _viewPanel(self):
+        return self.__viewPanel
+
+
+    @property
+    @deprecation.deprecated(deprecated_in='0.16.0',
+                            removed_in='1.0.0',
+                            details='Use name instead')
+    def _name(self):
+        return self.__name
+
+
+    @property
+    @deprecation.deprecated(deprecated_in='0.16.0',
+                            removed_in='1.0.0',
+                            details='Use displayCtx instead')
+    def _displayCtx(self):
+        return self.__displayCtx
+
+
+    @property
+    @deprecation.deprecated(deprecated_in='0.16.0',
+                            removed_in='1.0.0',
+                            details='Use overlayList instead')
+    def _overlayList(self):
+        return self.__overlayList
 
 
     def getEventTargets(self):
@@ -544,6 +698,22 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
         self.__altHandlerMap[mode, event] = (altMode, altEvent)
 
 
+    def addFallbackHandler(self, mode, event, fbMode, fbEvent):
+        """Add a fallback handler to this ``Profile``, in addition to
+        those already defined in the :attr:`.profilemap.fallbackHandleMap`
+        dictionary.
+
+        :arg mode:    The source mode.
+
+        :arg event:   Name of the event to handle (e.g. ``LeftMouseDown``).
+
+        :arg fbMode:  The mode for which the handler is defined.
+
+        :arg fbEvent: The event name for which the handler is defined.
+        """
+        self.__fallbackHandlerMap[mode, event] = (fbMode, fbEvent)
+
+
     def register(self):
         """This method must be called to register this ``Profile``
         instance as the target for mouse/keyboard events. This method
@@ -560,10 +730,46 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
         receiving mouse/keybouard events. This method is called by the
         :class:`ProfileManager`.
 
+
         Subclasses may override this method to performa any initialisation,
         but must make sure to call this implementation.
         """
         self.__evtManager.deregister()
+
+
+    def registerHandler(self, event, name, handler):
+        """Add an extra handler for the specified event.
+
+        When the event occurs, The ``handler`` function will be called after
+        the default handler, provided by the  ``Profie`` sub-class, is called.
+
+        :arg event:   The event type (e.g. ``LeftMouseDown``).
+
+        :arg name:    A unique name for the handler. A ``KeyError`` will be
+                      raised if a handler with ``name`` is already registered.
+
+        :arg handler: Function to call when the event occurs. See the class
+                      documentation for details on the required signature.
+        """
+
+        if name in self.__extraHandlers[event]:
+            raise KeyError('A handler with name "{}" is '
+                           'already registered'.format(name))
+
+        self.__extraHandlers[event][name] = handler
+
+
+    def deregisterHandler(self, event, name):
+        """Remove an extra handler from the specified event, that was previously
+        added via :meth:`registerHandler`
+
+        :arg event:   The event type (e.g. ``LeftMouseDown``).
+
+        :arg name:    A unique name for the handler. A ``KeyError`` will be
+                      raised if a handler with ``name`` is already registered.
+        """
+        if self.__extraHandlers is not None:
+            self.__extraHandlers[event].pop(name)
 
 
     def handleEvent(self, ev):
@@ -666,66 +872,139 @@ class Profile(props.SyncableHasProperties, actions.ActionProvider):
         else:                return tempMode
 
 
-    def __getHandler(self, ev, evType, mode=None):
-        """Returns a reference to a method of this ``Profile`` instance
-        (defined on the sub-class) which can handle the given
-        :class:`wx.MouseEvent` or :class:`wx.KeyEvent` (the ``ev`` argument).
+    def __getHandler(self,
+                     ev,
+                     evType,
+                     mode=None,
+                     origEvType=None,
+                     direct=False):
+        """Returns a function which will handle the given
+        :class:`wx.MouseEvent` or :class:`wx.KeyEvent` (the ``ev`` argument),
+        or ``None`` if no handlers are found.
 
-        The ``mode`` and ``evType`` arguments may be used to force the lookup
-        of a handler for the specified mode (see the :attr:`mode` property)
-        or event type.
+        If an alternate handler for the mode/event has been specified, it is
+        returned.
 
-        If a handler is not found, the :attr:`__altHandlerMap` map is checked
-        to see if an alternate handler for the mode/event type has been
-        specified.
+        :arg ev:         The event object
+
+        :arg evType:     The event type (e.g. ``'LeftMouseDown'``)
+
+        :arg mode:       Override the default mode with this one. If not
+                         provided, the handler for the current mode (or
+                         temporary mode, if one is active) will be used.
+
+        :arg origEvType: If the ``evType`` is not the actual event that
+                         occurred (e.g. this method has been called to look
+                         up an alternate or fallback handler), the original
+                         event type must be passed in here.
+
+        :arg direct:     If ``False`` (the default), the returned function will
+                         call the standard event handler (a method of the
+                         ``Profile`` sub-class), its fallback handler if it
+                         returns ``False`` and a fallback has been specfiied,
+                         any extra handlers that have been registered for the
+                         event type, and will also call the pre- and post-
+                         event methods. Otherwise, the returned function will
+                         just be the sub-class handler method for the
+                         specified for ``evType/ ``mode``.
         """
+
+        if origEvType is None:
+            origEvType = evType
 
         if mode is None:
             mode = self.__getMode(ev)
 
+        # Lookup any alternate/fallback
+        # handlers for the event
+        alt      = self.__altHandlerMap     .get((mode, evType), None)
+        fallback = self.__fallbackHandlerMap.get((mode, evType), None)
+
         # Is an alternate handler active?
         # Alternate handlers take precedence
         # over default handlers.
-        alt = self.__altHandlerMap.get((mode, evType), None)
-
-        # An alternate handler has
-        # been specified for this
-        # event - look it up.
         if alt is not None:
             altMode, altEvType = alt
-            return self.__getHandler(ev, altEvType, altMode)
+            return self.__getHandler(ev,
+                                     altEvType,
+                                     mode=altMode,
+                                     origEvType=evType)
 
-        # Otherwise search for a default
-        # method which can handle the
-        # specified mode/evtype.
+        # A fallback handler has
+        # been specified for this
+        # event - get a direct ref
+        # to the fallback function
+        if fallback is not None:
+            fbMode, fbEvType = fallback
+            fallback = self.__getHandler(ev,
+                                         fbEvType,
+                                         mode=fbMode,
+                                         origEvType=evType,
+                                         direct=True)
+
+        # Search for a default method
+        # which can handle the specified
+        # mode/evtype.
         if mode is not None:
             handlerName = '_{}Mode{}'.format(mode, evType)
         else:
-            handlerName = '_{}{}'.format(evType[0].lower(),
-                                         evType[1:])
+            handlerName = '_{}{}'.format(evType[0].lower(), evType[1:])
 
-        handler = getattr(self, handlerName, None)
+        defHandler = getattr(self, handlerName, None)
+
+        # If direct=True, we just
+        # return the handler method,
+        # even it there isn't one
+        # defined.
+        if direct:
+            return defHandler
+
+        # Otherwise we return a wrapper
+        # which calls the pre- and post-
+        # methods, and any extra handlers
+        # that have been registered,
+        handlers = []
+
+        # Insert a placeholder for the
+        # default handler, because we
+        # need to check its return value.
+        if defHandler is not None:
+            handlers.append('defHandler')
+
+        handlers.extend(self.__extraHandlers[origEvType].values())
 
         def handlerWrapper(*args, **kwargs):
 
-            # We want current handlers to be
-            # able to access the last event
-            # which occurred. So we call the
-            # current handler, then update
-            # the lastHandler attribute.
+            retval = None
+
             if self.__preEventHandler is not None:
                 self.__preEventHandler(mode, evType)
 
-            handler(*args, **kwargs)
+            for handler in handlers:
+                # Get the return value of the
+                # default handler, and call its
+                # fallback if necessary.
+                if handler == 'defHandler':
+                    retval = defHandler(*args, **kwargs)
+
+                    if retval is False and fallback is not None:
+                        retval = fallback(*args, **kwargs)
+
+                else:
+                    handler(*args, **kwargs)
 
             if self.__postEventHandler is not None:
                 self.__postEventHandler(mode, evType)
 
+            # Store the last event
+            # that was processed
             self.__lastHandler = (mode, evType)
 
-        if handler is not None:
-            log.debug('Handler found for mode {}, event {}'.format(
-                mode, evType))
+            return retval
+
+        if len(handlers) > 0:
+            log.debug('{} Handler(s) found for mode {}, event {}'.format(
+                len(handlers), mode, evType))
             return handlerWrapper
 
         return None
