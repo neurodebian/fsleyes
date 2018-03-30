@@ -16,7 +16,7 @@ import numpy               as np
 import OpenGL.GL           as gl
 
 import fsl.data.image      as fslimage
-import fsl.utils.async     as async
+import fsl.utils.idle      as idle
 import fsl.utils.transform as transform
 import fsleyes.colourmaps  as fslcm
 from . import resources    as glresources
@@ -86,6 +86,7 @@ class GLVectorBase(glimageobject.GLImageObject):
 
     def __init__(self,
                  overlay,
+                 overlayList,
                  displayCtx,
                  canvas,
                  threedee,
@@ -103,27 +104,30 @@ class GLVectorBase(glimageobject.GLImageObject):
             instances, so the textures and geometry can be updated when
             necessary.
 
-        :arg overlay:        A :class:`.Nifti` object.
+        :arg overlay:     A :class:`.Nifti` object.
 
-        :arg displayCtx:     A :class:`.DisplayContext` object which describes
-                             how the overlay is to be displayed.
+        :arg overlayList: The :class:`.OverlayList`
 
-        :arg canvas:         The canvas doing the drawing.
+        :arg displayCtx:  A :class:`.DisplayContext` object which describes
+                          how the overlay is to be displayed.
 
-        :arg threedee:       2D or 3D rendering.
+        :arg canvas:      The canvas doing the drawing.
 
-        :arg init:           An optional function to be called when all of the
-                             :class:`.ImageTexture` instances associated with
-                             this ``GLVectorBase`` have been initialised.
+        :arg threedee:    2D or 3D rendering.
 
-        :arg preinit:        An optional functiono be called after this
-                             ``GLVectorBase`` has configured itself, but
-                             *before* ``init`` is called. Used by
-                             :class:`GLVector`.
+        :arg init:        An optional function to be called when all of the
+                          :class:`.ImageTexture` instances associated with
+                          this ``GLVectorBase`` have been initialised.
+
+        :arg preinit:     An optional functiono be called after this
+                          ``GLVectorBase`` has configured itself, but
+                          *before* ``init`` is called. Used by
+                          :class:`GLVector`.
         """
 
         glimageobject.GLImageObject.__init__(self,
                                              overlay,
+                                             overlayList,
                                              displayCtx,
                                              canvas,
                                              threedee)
@@ -166,7 +170,7 @@ class GLVectorBase(glimageobject.GLImageObject):
         if preinit is not None:
             preinit()
 
-        async.idleWhen(initWrapper, self.texturesReady)
+        idle.idleWhen(initWrapper, self.texturesReady)
 
 
     def destroy(self):
@@ -299,7 +303,7 @@ class GLVectorBase(glimageobject.GLImageObject):
 
     def asyncUpdateShaderState(self, *args, **kwargs):
         """Calls :meth:`updateShaderState` and then :meth:`.Notifier.notify`, using
-        :func:`.async.idleWhen` function to make sure that it is only called
+        :func:`.idle.idleWhen` function to make sure that it is only called
         when :meth:`ready` returns ``True``.
         """
 
@@ -309,10 +313,10 @@ class GLVectorBase(glimageobject.GLImageObject):
             if self.updateShaderState() or alwaysNotify:
                 self.notify()
 
-        async.idleWhen(func,
-                       self.ready,
-                       name=self.name,
-                       skipIfQueued=True)
+        idle.idleWhen(func,
+                      self.ready,
+                      name=self.name,
+                      skipIfQueued=True)
 
 
     def registerAuxImage(self, which):
@@ -625,7 +629,7 @@ class GLVectorBase(glimageobject.GLImageObject):
             self.asyncUpdateShaderState(alwaysNotify=True)
 
         self.refreshAuxTexture('colour')
-        async.idleWhen(onRefresh, self.texturesReady)
+        idle.idleWhen(onRefresh, self.texturesReady)
 
 
     def __modImageChanged(self, *a):

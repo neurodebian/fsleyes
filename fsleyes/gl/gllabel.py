@@ -9,14 +9,15 @@ functionality to render an :class:`.Image` overlay as a label/atlas image.
 """
 
 
-import numpy            as np
-import OpenGL.GL        as gl
+import OpenGL.GL                 as gl
 
-import fsleyes.gl       as fslgl
-import fsl.utils.async  as async
-from . import resources as glresources
-from . import              glimageobject
-from . import              textures
+import fsleyes.gl                as fslgl
+import fsleyes.gl.routines       as glroutines
+import fsleyes.gl.shaders.filter as glfilter
+import fsl.utils.idle            as idle
+from . import resources          as glresources
+from . import                       glimageobject
+from . import                       textures
 
 
 class GLLabel(glimageobject.GLImageObject):
@@ -44,28 +45,34 @@ class GLLabel(glimageobject.GLImageObject):
     """
 
 
-    def __init__(self, image, displayCtx, canvas, threedee):
+    def __init__(self, image, overlayList, displayCtx, canvas, threedee):
         """Create a ``GLLabel``.
 
-        :arg image:      The :class:`.Image` instance.
-        :arg displayCtx: The :class:`.DisplayContext` managing the scene.
-        :arg canvas:     The canvas doing the drawing.
-        :arg threedee:   2D or 3D rendering
+        :arg image:       The :class:`.Image` instance.
+        :arg overlayList: The :class:`.OverlayList`
+        :arg displayCtx:  The :class:`.DisplayContext` managing the scene.
+        :arg canvas:      The canvas doing the drawing.
+        :arg threedee:    2D or 3D rendering
         """
 
         glimageobject.GLImageObject.__init__(self,
                                              image,
+                                             overlayList,
                                              displayCtx,
                                              canvas,
                                              threedee)
 
-        lutTexName        = '{}_lut'.format(self.name)
-        self.lutTexture   = textures.LookupTableTexture(lutTexName)
-        self.imageTexture = None
-
         # The shader attribute will be created
-        # by the gllabel_funcs module
+        # by the gllabel_funcs module, and the
+        # imageTexture by the refreshTexture
+        # method
         self.shader       = None
+        self.imageTexture = None
+        self.lutTexture   = textures.LookupTableTexture(
+            '{}_lut'.format(self.name))
+        self.edgeFilter   = glfilter.Filter('edge', texture=2)
+        self.renderTexture = textures.RenderTexture(
+            self.name, gl.GL_LINEAR, rttype='c')
 
         self.__lut = self.opts.lut
 
@@ -78,7 +85,7 @@ class GLLabel(glimageobject.GLImageObject):
             fslgl.gllabel_funcs.init(self)
             self.notify()
 
-        async.idleWhen(init, self.textureReady)
+        idle.idleWhen(init, self.textureReady)
 
 
     def destroy(self):
@@ -86,6 +93,8 @@ class GLLabel(glimageobject.GLImageObject):
         the :class:`.ImageTexture` and :class:`.LookupTableTexture`.
         """
 
+        self.edgeFilter.destroy()
+        self.renderTexture.destroy()
         self.imageTexture.deregister(self.name)
         glresources.delete(self.imageTexture.getTextureName())
         self.lutTexture.destroy()
@@ -112,7 +121,7 @@ class GLLabel(glimageobject.GLImageObject):
     def updateShaderState(self, *args, **kwargs):
         """Calls :func:`.gl14.gllabel_funcs.updateShaderState` or
         :func:`.gl21.gllabel_funcs.updateShaderState`, and
-        :meth:`.Notifier.notify`. Uses :func:`.async.idleWhen` to ensure that
+        :meth:`.Notifier.notify`. Uses :func:`.idle.idleWhen` to ensure that
         they don't get called until :meth:`ready` returns ``True``.
         """
         alwaysNotify = kwargs.pop('alwaysNotify', None)
@@ -121,10 +130,10 @@ class GLLabel(glimageobject.GLImageObject):
             if fslgl.gllabel_funcs.updateShaderState(self) or alwaysNotify:
                 self.notify()
 
-        async.idleWhen(func,
-                       self.ready,
-                       name=self.name,
-                       skipIfQueued=True)
+        idle.idleWhen(func,
+                      self.ready,
+                      name=self.name,
+                      skipIfQueued=True)
 
 
     def addListeners(self):
@@ -140,7 +149,7 @@ class GLLabel(glimageobject.GLImageObject):
         display.addListener('alpha',        name, self.__colourPropChanged)
         display.addListener('brightness',   name, self.__colourPropChanged)
         display.addListener('contrast',     name, self.__colourPropChanged)
-        opts   .addListener('outline',      name, self.updateShaderState)
+        opts   .addListener('outline',      name, self.notify)
         opts   .addListener('outlineWidth', name, self.notify)
         opts   .addListener('lut',          name, self.__lutChanged)
         opts   .addListener('volume',       name, self.__imagePropChanged)
@@ -244,14 +253,43 @@ class GLLabel(glimageobject.GLImageObject):
         and calls the version-dependent ``preDraw`` function.
         """
 
+        w, h = self.canvas.GetSize()
+        rtex = self.renderTexture
+
+        rtex.setSize(w, h)
+        with rtex.bound():
+            gl.glClearColor(0, 0, 0, 0)
+            gl.glClear(gl.GL_COLOR_BUFFER_BIT)
+
         self.imageTexture.bindTexture(gl.GL_TEXTURE0)
         self.lutTexture  .bindTexture(gl.GL_TEXTURE1)
-        fslgl.gllabel_funcs.preDraw(self, xform, bbox)
 
 
-    def draw2D(self, *args, **kwargs):
+    def draw2D(self, zpos, axes, xform=None, bbox=None):
         """Calls the version-dependent ``draw2D`` function. """
-        fslgl.gllabel_funcs.draw2D(self, *args, **kwargs)
+
+        opts       = self.opts
+        outline    = opts.outline
+        owidth     = float(opts.outlineWidth)
+        rtex       = self.renderTexture
+        w, h       = self.canvas.GetSize()
+        lo, hi     = self.canvas.getViewport()
+        xax        = axes[0]
+        yax        = axes[1]
+        xmin, xmax = lo[xax], hi[xax]
+        ymin, ymax = lo[yax], hi[yax]
+        offsets    = [owidth / w, owidth / h]
+
+        # draw the label to the offscreen texture
+        with glroutines.disabled(gl.GL_BLEND), rtex.bound(xax, yax, lo, hi):
+            fslgl.gllabel_funcs.draw2D(self, zpos, axes, xform, bbox)
+
+        # run it through the edge filter
+        self.edgeFilter.set(offsets=offsets, outline=outline)
+        self.edgeFilter.apply(
+            self.renderTexture,
+            zpos, xmin, xmax, ymin, ymax, xax, yax,
+            textureUnit=gl.GL_TEXTURE2)
 
 
     def draw3D(self, *args, **kwargs):
@@ -259,9 +297,31 @@ class GLLabel(glimageobject.GLImageObject):
         fslgl.gllabel_funcs.draw3D(self, *args, **kwargs)
 
 
-    def drawAll(self, *args, **kwargs):
+    def drawAll(self, axes, zposes, xforms):
         """Calls the version-dependent ``drawAll`` function. """
-        fslgl.gllabel_funcs.drawAll(self, *args, **kwargs)
+
+        opts       = self.opts
+        outline    = opts.outline
+        owidth     = float(opts.outlineWidth)
+        rtex       = self.renderTexture
+        w, h       = self.canvas.GetSize()
+        lo, hi     = self.canvas.getViewport()
+        xax        = axes[0]
+        yax        = axes[1]
+        xmin, xmax = lo[xax], hi[xax]
+        ymin, ymax = lo[yax], hi[yax]
+        offsets    = [owidth / w, owidth / h]
+
+        # draw all slices to the offscreen texture
+        with glroutines.disabled(gl.GL_BLEND), rtex.bound(xax, yax, lo, hi):
+            fslgl.gllabel_funcs.drawAll(self, axes, zposes, xforms)
+
+        # run it through the edge filter
+        self.edgeFilter.set(offsets=offsets, outline=outline)
+        self.edgeFilter.apply(
+            self.renderTexture,
+            max(zposes), xmin, xmax, ymin, ymax, xax, yax,
+            textureUnit=gl.GL_TEXTURE2)
 
 
     def postDraw(self, xform=None, bbox=None):
@@ -270,36 +330,6 @@ class GLLabel(glimageobject.GLImageObject):
         """
         self.imageTexture.unbindTexture()
         self.lutTexture  .unbindTexture()
-        fslgl.gllabel_funcs.postDraw(self, xform, bbox)
-
-
-    def calculateOutlineOffsets(self, axes):
-        """Calculates offsets that are used by the label fragment shader
-        programs to calculate whether a position in the image is on a label
-        boundary. If the image is being shown on a 2D canvas orthogonal
-        to the display coordinate system, we can ignore the depth axis and
-        calculate boundaries in 2D. Otherwise we have to calculate boundaries
-        in 3D.
-        """
-
-        zax            = axes[2]
-        opts           = self.opts
-        imageShape     = np.array(self.image.shape[:3])
-        outlineOffsets = opts.outlineWidth / imageShape
-
-        # If we are not orthogonal to the
-        # display coordinate system, we use
-        # the same outline offset along all
-        # axes.
-        if opts.transform in ('custom', 'affine'):
-            minOffset      = outlineOffsets.min()
-            outlineOffsets = np.array([minOffset] * 3)
-
-        # Otherwise we can ignore the depth axis
-        else:
-            outlineOffsets[zax] = -1
-
-        return outlineOffsets
 
 
     def __lutChanged(self, *a):

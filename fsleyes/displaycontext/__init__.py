@@ -74,13 +74,14 @@ new one accordingly.  The following ``DisplayOpts`` sub-classes exist:
 
    ~fsleyes.displaycontext.volumeopts.NiftiOpts
    ~fsleyes.displaycontext.volumeopts.VolumeOpts
-   ~fsleyes.displaycontext.volumeopts.Volume3DOpts
+   ~fsleyes.displaycontext.volume3dopts.Volume3DOpts
    ~fsleyes.displaycontext.maskopts.MaskOpts
    ~fsleyes.displaycontext.vectoropts.VectorOpts
    ~fsleyes.displaycontext.vectoropts.RGBVectorOpts
    ~fsleyes.displaycontext.vectoropts.LineVectorOpts
    ~fsleyes.displaycontext.meshopts.MeshOpts
    ~fsleyes.displaycontext.giftiopts.GiftiOpts
+   ~fsleyes.displaycontext.freesurfer.FreesurferOpts
    ~fsleyes.displaycontext.labelopts.LabelOpts
    ~fsleyes.displaycontext.tensoropts.TensorOpts
    ~fsleyes.displaycontext.shopts.SHOpts
@@ -119,7 +120,7 @@ define *scene* options:
    ~fsleyes.displaycontext.sceneopts.SceneOpts
    ~fsleyes.displaycontext.orthoopts.OrthoOpts
    ~fsleyes.displaycontext.lightboxopts.LightBoxOpts
-   ~fsleyes.displaycontext.orthoopts.Scene3DOpts
+   ~fsleyes.displaycontext.scene3dopts.Scene3DOpts
 
 
 .. note:: Aside from an increase in code modularity and cleanliness, another
@@ -163,6 +164,7 @@ from .vectoropts     import RGBVectorOpts
 from .vectoropts     import LineVectorOpts
 from .meshopts       import MeshOpts
 from .giftiopts      import GiftiOpts
+from .freesurferopts import FreesurferOpts
 from .labelopts      import LabelOpts
 from .tensoropts     import TensorOpts
 from .shopts         import SHOpts
@@ -172,11 +174,10 @@ from .displaycontext import InvalidOverlayError
 
 OVERLAY_TYPES = td.TypeDict({
 
-    'Image'        : ['volume',     'mask',  'rgbvector',
-                      'linevector', 'label', 'sh', 'tensor'],
-    'TriangleMesh' : ['mesh'],
-    'GiftiSurface' : ['giftimesh'],
-    'DTIFitTensor' : ['tensor', 'rgbvector', 'linevector'],
+    'Image'          : ['volume',     'mask',  'rgbvector',
+                        'linevector', 'label', 'sh', 'tensor'],
+    'Mesh'           : ['mesh'],
+    'DTIFitTensor'   : ['tensor', 'rgbvector', 'linevector'],
 })
 """This dictionary provides a mapping between all overlay classes,
 and the possible values that the :attr:`Display.overlayType` property
@@ -194,20 +195,22 @@ dictionary for more details.
 """
 
 
-DISPLAY_OPTS_MAP = {
-    'volume'     : VolumeOpts,
-    'rgbvector'  : RGBVectorOpts,
-    'linevector' : LineVectorOpts,
-    'mask'       : MaskOpts,
-    'mesh'       : MeshOpts,
-    'giftimesh'  : GiftiOpts,
-    'label'      : LabelOpts,
-    'tensor'     : TensorOpts,
-    'sh'         : SHOpts,
-}
-"""This dictionary provides a mapping between each overlay type, and
-the :class:`DisplayOpts` subclass which contains overlay type-specific
-display options.
+DISPLAY_OPTS_MAP = td.TypeDict({
+    'Nifti.volume'        : VolumeOpts,
+    'Nifti.rgbvector'     : RGBVectorOpts,
+    'Nifti.linevector'    : LineVectorOpts,
+    'Nifti.mask'          : MaskOpts,
+    'Nifti.label'         : LabelOpts,
+    'Nifti.tensor'        : TensorOpts,
+    'Nifti.sh'            : SHOpts,
+    'Mesh.mesh'           : MeshOpts,
+    'VTKMesh.mesh'        : MeshOpts,
+    'GiftiMesh.mesh'      : GiftiOpts,
+    'FreesurferMesh.mesh' : FreesurferOpts,
+})
+"""This dictionary provides a mapping between each (overlay type,
+:attr:`.Display.overlayType`) pair, and the :class:`DisplayOpts` subclass
+which contains overlay type-specific display options.
 """
 
 

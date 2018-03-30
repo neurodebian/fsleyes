@@ -75,11 +75,10 @@ class PlotProfile(profiles.Profile):
 
         self.__toolbar.Destroy()
 
-        self.__canvas          = None
-        self.__axis            = None
-        self.__toolbar.canvas  = None
-        self.__toolbar._parent = None
-        self.__toolbar         = None
+        self.__canvas  = None
+        self.__axis    = None
+        self.__toolbar = None
+
         profiles.Profile.destroy(self)
 
 
@@ -99,9 +98,9 @@ class PlotProfile(profiles.Profile):
         xlims = list(self.__axis.get_xlim())
         ylims = list(self.__axis.get_ylim())
 
-        with props.suppress(self._viewPanel, 'limits'):
-            self._viewPanel.limits.x = xlims
-            self._viewPanel.limits.y = ylims
+        with props.suppress(self.viewPanel, 'limits'):
+            self.viewPanel.limits.x = xlims
+            self.viewPanel.limits.y = ylims
 
 
     def _panzoomModeLeftMouseDown(self, ev, canvas, mousePos, canvasPos):

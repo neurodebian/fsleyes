@@ -64,31 +64,24 @@ class OverlayGroup(props.HasProperties):
 
     _groupBindings = td.TypeDict({
         'Display'        : [],
-        'NiftiOpts'      : ['volume'],
+        'NiftiOpts'      : ['volume',
+                            'volumeDim'],
         'VolumeOpts'     : ['interpolation'],
-        'Volume3DOpts'   : ['dithering',
-                            'numSteps',
+        'Volume3DOpts'   : ['numSteps',
                             'numInnerSteps',
                             'resolution',
                             'numClipPlanes',
                             'clipPosition',
                             'clipAzimuth',
                             'clipInclination'],
-        'LabelOpts'      : ['outline',
-                            'outlineWidth'],
-        'MeshOpts'       : ['outline',
-                            'outlineWidth',
-                            'refImage',
+        'LabelOpts'      : [],
+        'MeshOpts'       : ['refImage',
                             'coordSpace'],
         'VectorOpts'     : ['suppressX',
                             'suppressY',
                             'suppressZ',
-                            'suppressMode',
-                            'orientFlip'],
-        'LineVectorOpts' : ['lineWidth',
-                            'unitLength',
-                            'lengthScale',
-                            'directed'],
+                            'suppressMode'],
+        'LineVectorOpts' : [],
         'RGBVectorOpts'  : ['interpolation'],
         'TensorOpts'     : ['lighting',
                             'tensorResolution'],
@@ -118,18 +111,18 @@ class OverlayGroup(props.HasProperties):
 
         # Import all of the Display/DisplayOpts
         # classes into the local namespace
-        from fsleyes.displaycontext import \
-            Display,        \
-            NiftiOpts,      \
-            VolumeOpts,     \
-            Volume3DOpts,   \
-            MaskOpts,       \
-            VectorOpts,     \
-            RGBVectorOpts,  \
-            LineVectorOpts, \
-            MeshOpts,       \
-            LabelOpts,      \
-            TensorOpts
+        from fsleyes.displaycontext import (  # noqa
+            Display,
+            NiftiOpts,
+            VolumeOpts,
+            Volume3DOpts,
+            MaskOpts,
+            VectorOpts,
+            RGBVectorOpts,
+            LineVectorOpts,
+            MeshOpts,
+            LabelOpts,
+            TensorOpts)
 
         # Add all of the properties listed
         # in the _groupBindings dict as
@@ -181,7 +174,7 @@ class OverlayGroup(props.HasProperties):
         self.overlays.append(overlay)
 
         display = self.__displayCtx.getDisplay(overlay)
-        opts    = display.getDisplayOpts()
+        opts    = display.opts
 
         log.debug('Adding overlay {} to group {}'.format(
             overlay.name, self.__name))
@@ -200,7 +193,7 @@ class OverlayGroup(props.HasProperties):
         self.overlays.remove(overlay)
 
         display = self.__displayCtx.getDisplay(overlay)
-        opts    = display.getDisplayOpts()
+        opts    = display.opts
 
         log.debug('Removing overlay {} from group {}'.format(
             overlay.name, self.__name))
@@ -276,5 +269,5 @@ class OverlayGroup(props.HasProperties):
         It makes sure that the display properties of the new
         :class:`.DisplayOpts` instance are bound to the group properties.
         """
-        opts = display.getDisplayOpts()
+        opts = display.opts
         self.__bindDisplayOpts(opts)

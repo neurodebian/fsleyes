@@ -53,9 +53,11 @@ Currently (``fsleyes`` version |version|) the only overlay types in existence
    ~fsl.data.image.Image
    ~fsl.data.featimage.FEATImage
    ~fsl.data.melodicimage.MelodicImage
+   ~fsl.data.mghimage.MGHImage
    ~fsl.data.dtifit.DTIFitTensor
-   ~fsl.data.mesh.TriangleMesh
-   ~fsl.data.gifti.GiftiSurface
+   ~fsl.data.vtk.VTKMesh
+   ~fsl.data.gifti.GiftiMesh
+   ~fsl.data.freesurfer.FreesurferMesh
 
 
 This module also provides a few convenience classes and functions:
@@ -65,16 +67,17 @@ This module also provides a few convenience classes and functions:
    :nosignatures:
 
    ProxyImage
-   PropCache
    guessDataSourceType
    findFEATImage
 """
 
 
-import logging
-import weakref
 import os.path as op
+import            logging
+import            weakref
+import            deprecation
 
+import fsl.utils.path as fslpath
 import fsl.data.image as fslimage
 import fsleyes_props  as props
 
@@ -86,8 +89,8 @@ class OverlayList(props.HasProperties):
     """Class representing a collection of overlays to be displayed together.
 
     Contains a :class:`props.properties_types.List` property called
-    :attr:`overlays`, containing overlay objects (e.g. :class:`.Image`
-    or :class:`.TriangleMesh`objects). Listeners can be registered on the
+    :attr:`overlays`, containing overlay objects (e.g. :class:`.Image` or
+    :class:`.Mesh` objects). Listeners can be registered on the
     ``overlays`` property, so they are notified when the overlay list changes.
 
     An :class:`OverlayList` object has a few wrapper methods around the
@@ -341,7 +344,9 @@ class ProxyImage(fslimage.Image):
 
 
 class PropCache(object):
-    """A little convenience class which can be used to track and cache
+    """Deprecated - use :class:`fsleyes_props.PropCache` instead.
+
+    A little convenience class which can be used to track and cache
     property values, related to each overlay in the :class:`.OverlayList`,
     on some :class:`.HasProperties` object.
 
@@ -353,6 +358,9 @@ class PropCache(object):
     """
 
 
+    @deprecation.deprecated(deprecated_in='0.22.0',
+                            removed_in='1.0.0',
+                            details='Use fsleyes_props.PropCache instead')
     def __init__(self, overlayList, displayCtx, target, propNames):
         """Create a ``PropCache``.
 
@@ -471,8 +479,10 @@ def guessDataSourceType(path):
     is unrecognised, the first tuple value will be ``None``.
     """
 
-    import fsl.data.mesh            as fslmesh
+    import fsl.data.vtk             as fslvtk
     import fsl.data.gifti           as fslgifti
+    import fsl.data.freesurfer      as fslfs
+    import fsl.data.mghimage        as fslmgh
     import fsl.data.featimage       as featimage
     import fsl.data.melodicimage    as melimage
     import fsl.data.dtifit          as dtifit
@@ -485,36 +495,45 @@ def guessDataSourceType(path):
 
     path = op.abspath(path)
 
-    # VTK files are easy
-    if path.endswith('.vtk'):
-        return fslmesh.TriangleMesh, path
+    if op.isfile(path):
 
-    # So are GIFTIS
-    if path.endswith('.gii'):
-        return fslgifti.GiftiSurface, path
+        # Some types are easy - just check the extensions
+        if fslpath.hasExt(path, fslvtk.ALLOWED_EXTENSIONS):
+            return fslvtk.VTKMesh, path
+        elif fslpath.hasExt(path, fslgifti.ALLOWED_EXTENSIONS):
+            return fslgifti.GiftiMesh, path
+        elif fslfs.isGeometryFile(path):
+            return fslfs.FreesurferMesh, path
+        elif fslpath.hasExt(path, fslmgh.ALLOWED_EXTENSIONS):
+            return fslmgh.MGHImage, path
+
+        # Other specialised image types
+        elif melanalysis .isMelodicImage(path):
+            return melimage.MelodicImage, path
+        elif featanalysis.isFEATImage(   path):
+            return featimage.FEATImage,   path
+        elif fslimage.looksLikeImage(path):
+            return fslimage.Image, path
 
     # Analysis directory?
-    if op.isdir(path):
+    elif op.isdir(path):
         if melanalysis.isMelodicDir(path):
             return melimage.MelodicImage, path
-
         elif featanalysis.isFEATDir(path):
             return featimage.FEATImage, path
-
         elif dtifit.isDTIFitPath(path):
             return dtifit.DTIFitTensor, path
 
-    # Assume it's a NIFTI image
-    try:                       path = fslimage.addExt(path, mustExist=True)
-    except fslimage.PathError: return None, path
-
-    if   melanalysis .isMelodicImage(path): return melimage.MelodicImage, path
-    elif featanalysis.isFEATImage(   path): return featimage.FEATImage,   path
-    else:                                   return fslimage.Image,        path
+    # Last-ditch effort - is it an
+    # incomplete path to an image?
+    try:
+        path = fslimage.addExt(path, mustExist=True)
+        return fslimage.Image, path
 
     # Otherwise, I don't
     # know what to do
-    return None, path
+    except fslimage.PathError:
+        return None, path
 
 
 def findFEATImage(overlayList, overlay):
@@ -543,14 +562,19 @@ def findFEATImage(overlayList, overlay):
 
 def findMeshReferenceImage(overlayList, overlay):
     """Searches the :class:`.OverlayList` and tries to identify a reference
-    image for the given :class:`.TriangleMesh` overlay. Returns the identified
+    image for the given :class:`.Mesh` overlay. Returns the identified
     overlay, or ``None`` if one can't be found.
     """
 
-    import fsl.data.mesh as fslmesh
+    import fsl.data.vtk as fslvtk
+
+    # TODO support for gifti/freesurfer
+
+    if not isinstance(overlay, fslvtk.VTKMesh):
+        return None
 
     try:
-        prefix = fslmesh.getFIRSTPrefix(overlay.dataSource)
+        prefix = fslvtk.getFIRSTPrefix(overlay.dataSource)
 
         for ovl in overlayList:
             if prefix.startswith(ovl.name):

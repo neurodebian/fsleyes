@@ -123,6 +123,11 @@ def updateShaderState(self):
         clipPlanes  = np.zeros((opts.numClipPlanes, 4), dtype=np.float32)
         d2tmat      = opts.getTransform('display', 'texture')
 
+        if   opts.clipMode == 'intersection': clipMode = 1
+        elif opts.clipMode == 'union':        clipMode = 2
+        elif opts.clipMode == 'complement':   clipMode = 3
+        else:                                 clipMode = 0
+
         for i in range(opts.numClipPlanes):
             origin, normal   = self.get3DClipPlane(i)
             origin           = transform.transform(origin, d2tmat)
@@ -130,6 +135,7 @@ def updateShaderState(self):
             clipPlanes[i, :] = glroutines.planeEquation2(origin, normal)
 
         changed |= shader.set('numClipPlanes', opts.numClipPlanes)
+        changed |= shader.set('clipMode',      clipMode)
         changed |= shader.set('clipPlanes',    clipPlanes, opts.numClipPlanes)
         changed |= shader.set('blendFactor',   blendFactor)
         changed |= shader.set('stepLength',    1.0 / opts.getNumSteps())
@@ -171,7 +177,7 @@ def draw2D(self, zpos, axes, xform=None, bbox=None):
         zpos, axes, bbox=bbox)
 
     if xform is not None:
-        vertices = transform.transform(vertices)
+        vertices = transform.transform(vertices, xform)
 
     self.shader.setAtt('vertex',   vertices)
     self.shader.setAtt('voxCoord', voxCoords)
@@ -196,16 +202,15 @@ def draw3D(self, xform=None, bbox=None):
 
     opts                           = self.opts
     tex                            = self.renderTexture1
-    proj                           = self.canvas.getProjectionMatrix()
+    proj                           = self.canvas.projectionMatrix
     vertices, voxCoords, texCoords = self.generateVertices3D(bbox)
-    rayStep , ditherDir, texform   = opts.calculateRayCastSettings(xform, proj)
+    rayStep , texform              = opts.calculateRayCastSettings(xform, proj)
 
     if xform is not None:
         vertices = transform.transform(vertices, xform)
 
     self.shader.set(   'tex2ScreenXform', texform)
     self.shader.set(   'rayStep',         rayStep)
-    self.shader.set(   'ditherDir',       ditherDir)
     self.shader.setAtt('vertex',          vertices)
     self.shader.setAtt('texCoord',        texCoords)
 

@@ -86,7 +86,7 @@ class GLSH(glvector.GLVectorBase):
     """
 
 
-    def __init__(self, image, displayCtx, canvas, threedee):
+    def __init__(self, image, overlayList, displayCtx, canvas, threedee):
         """Create a ``GLSH`` object.
 
 
@@ -95,19 +95,24 @@ class GLSH(glvector.GLVectorBase):
         instances, and sets up shaders.
 
 
-        :arg image:      The :class:`.Image` instance
-        :arg displayCtx: The :class:`.DisplayContext` managing the scene.
-        :arg canvas:     The canvas doing the drawing.
-        :arg threedee:   Set up for 2D or 3D rendering.
+        :arg image:       The :class:`.Image` instance
+        :arg overlayList: The :class:`.OverlayList`
+        :arg displayCtx:  The :class:`.DisplayContext` managing the scene.
+        :arg canvas:      The canvas doing the drawing.
+        :arg threedee:    Set up for 2D or 3D rendering.
         """
 
         self.shader     = None
         self.radTexture = None
 
+        # These are updated in the
+        # __shStateChanged method.
+        self.__shParams = None
+
         # This texture gets updated on
         # draw calls, so we want it to
         # run on the main thread.
-        self.radTexture = textures.Texture3D('{}_radTexture'.format('fuck'),
+        self.radTexture = textures.Texture3D('{}_radTexture'.format(id(self)),
                                              threaded=False)
 
         # Usin preinit here (see GLVectorBase)
@@ -118,6 +123,7 @@ class GLSH(glvector.GLVectorBase):
         glvector.GLVectorBase.__init__(
             self,
             image,
+            overlayList,
             displayCtx,
             canvas,
             threedee,
@@ -140,6 +146,14 @@ class GLSH(glvector.GLVectorBase):
         self.radTexture = None
 
         glvector.GLVectorBase.destroy(self)
+
+
+    def ready(self):
+        """Overrides :class:`.GLVectorBase.ready`. Returns ``True`` when this
+        ``GLSH`` is ready to be drawn.
+        """
+        return self.__shParams is not None \
+            and glvector.GLVectorBase.ready(self)
 
 
     def addListeners(self):
@@ -336,10 +350,8 @@ class GLSH(glvector.GLVectorBase):
                   (x >= shape[0]) | \
                   (y >= shape[1]) | \
                   (z >= shape[2])
-
-        x = np.array(x[~out], dtype=np.int32)
-        y = np.array(y[~out], dtype=np.int32)
-        z = np.array(z[~out], dtype=np.int32)
+        voxels  = np.asarray(voxels[~out, :], dtype=np.uint32)
+        x, y, z = voxels.T
 
         # The dot product of the SH parameters with
         # the SH coefficients for a single voxel gives
@@ -351,13 +363,13 @@ class GLSH(glvector.GLVectorBase):
         params = self.__shParams
         vols   = self.__coefVolumeMask()
         coefs  = self.image.nibImage.get_data()[x, y, z, vols]
-        radii  = np.dot(params, coefs.T)
+        radii  = np.dot(coefs, params.T)
 
         # Remove sub-threshold voxels/radii
         if opts.radiusThreshold > 0:
-            aboveThres = np.any(radii >= opts.radiusThreshold, axis=0)
-            radii      = np.array(radii[:, aboveThres])
-            voxels     = np.array(voxels[aboveThres, :])
+            aboveThres = np.any(radii >= opts.radiusThreshold, axis=1)
+            radii      = radii[ aboveThres, :]
+            voxels     = voxels[aboveThres, :]
 
         # No voxels - nothing to do
         if voxels.shape[0] == 0:
@@ -376,7 +388,7 @@ class GLSH(glvector.GLVectorBase):
         # So here we are calculating a suitable
         # 3D shape in which the radius values can
         # be stored. The shape may end up being
-        # larger than necessary, if the number of
+
         # voxels cannot easily be divided/dispersed
         # across the other dimensions.
         radTexShape = np.array([radii.size, 1, 1])
@@ -408,12 +420,26 @@ class GLSH(glvector.GLVectorBase):
             radTexShape[imax] /= divisor
             radTexShape[imin] *= divisor
 
-        # Resize and reshape the
-        # radius array as needed
+        # Resize and reshape the radius array as needed.
+        # Radii starts off as a (voxels, vertices) array.
+        # We flatten it to 1D (by voxels, i.e. with
+        # vertices the fastest changing)
+        radii      = radii.reshape(-1)
         radTexSize = np.prod(radTexShape)
-        if radTexSize != radii.size:
-            radii.resize(radTexSize)
 
+        # if the texture size needs to be bigger,
+        # create a new array, and copy the radii
+        # data into it
+        if radTexSize != radii.size:
+            tmp = np.zeros(radTexSize, dtype=radii.dtype)
+            tmp[:radii.size] = radii
+            radii = tmp
+
+        # reshape to the texture size, making
+        # sure that the first dimension is the
+        # fastest changing (as this is what
+        # OpenGL requires). This ensures that
+        # the data remains contiguous in memory
         radii = radii.reshape(radTexShape, order='F')
 
         # Copy the data to the texture

@@ -33,8 +33,9 @@ import wx
 
 from fsl.utils.platform import platform as fslplatform
 
-import                   fsleyes
-import fsleyes.splash as fslsplash
+import                       fsleyes
+import fsleyes.splash     as fslsplash
+import fsleyes.colourmaps as colourmaps
 
 
 log = logging.getLogger(__name__)
@@ -143,27 +144,64 @@ def main(args=None):
         render.main(args[1:])
         sys.exit(0)
 
-    # Implement various hacks and workarounds
-    hacksAndWorkarounds()
-
-    # Then, first thing's first. Create a wx.App,
-    # and initialise the FSLeyes package.
-    app = FSLeyesApp()
+    # the fsleyes.initialise function figures
+    # out the path to asset files (e.g. cmaps)
     fsleyes.initialise()
 
-    # Show the splash screen as soon as
-    # possible, unless it looks like the
-    # user is asking for the software
-    # version or command line help.
-    splash = fslsplash.FSLeyesSplash(None)
+    # initialise colour maps - this must be
+    # done before parsing arguments, as if
+    # the user asks for help, available
+    # colourmaps/luts will be listed.
+    colourmaps.init()
 
+    # Function to bootstrap the GUI - keep
+    # reading below.
+    def initgui():
+
+        # First thing's first. Create a wx.App,
+        # and initialise the FSLeyes package.
+        app = FSLeyesApp()
+
+        # Create a splash screen frame
+        splash = fslsplash.FSLeyesSplash(None)
+        return app, splash
+
+    # If it looks like the user is asking for
+    # help, then we parse command line arguments
+    # before creating a wx.App and showing the
+    # splash screen. This means that FSLeyes
+    # help/version information can be retrieved
+    # without a display, and hopefully fairly
+    # quickly.
+    #
+    # Otherwise we create the app and splash
+    # screen first, so the splash screen gets
+    # shown as soon as possible. Arguments
+    # will get parsed in the init function below.
+    #
+    # The argparse.Namespace object is kept in a
+    # list so it can be shared between the sub-
+    # functions below
+    #
+    # If argument parsing bombs out, we put the
+    # exit code here and return it at the bottom.
+    namespace = [None]
+    exitCode  = [0]
+
+    # user asking for help - parse args first
     if (len(args) > 0) and (args[0] in ('-V',
                                         '-h',
                                         '-fh',
                                         '--version',
                                         '--help',
                                         '--fullhelp')):
-        splash.Hide()
+        namespace   = [parseArgs(args)]
+        app, splash = initgui()
+
+    # otherwise parse arguments on wx.MainLoop
+    # below
+    else:
+        app, splash = initgui()
 
     # We are going do all processing on the
     # wx.MainLoop, so the GUI can be shown
@@ -180,31 +218,22 @@ def main(args=None):
     # via ugly callbacks, but which are
     # ultimately scheduled and executed on the
     # wx main loop.
-
-    # This is a container, shared amongst
-    # the callbacks, which contains the
-    # parsed argparse.Namespace object.
-    namespace = [None]
-
-    # If argument parsing bombs out,
-    # we put the exit code here and
-    # return it at the bottom.
-    exitCode = [0]
-
     def init(splash):
 
-        # Parse command line arguments. If the
-        # user has asked for help (see above),
-        # the parseargs module will raise
-        # SystemExit. Hence we make sure the
-        # splash screen is shown only after
-        # arguments have been parsed.
+        # See FSLeyesSplash.Show
+        # for horribleness.
+        splash.Show()
+
+        # Parse command line arguments if necessary.
+        # If arguments are invalid, the parseargs
+        # module will raise SystemExit.
         try:
-            namespace[0] = parseArgs(args)
+            if namespace[0] is None:
+                namespace[0] = parseArgs(args)
 
         # But the wx.App.MainLoop eats SystemExit
         # exceptions for unknown reasons, and
-        # and causes the application to exit
+        # causes the application to exit
         # immediately. This makes testing FSLeyes
         # (e.g. code coverage) impossible. So I'm
         # catching SystemExit here, and then
@@ -214,14 +243,10 @@ def main(args=None):
             exitCode[0] = e.code
             return
 
-        # See FSLeyesSplash.Show
-        # for horribleness.
-        splash.Show()
-
         # Configure logging (this has to be done
         # after cli arguments have been parsed,
         # but before initialise is called).
-        fsleyes.configLogging(namespace[0])
+        fsleyes.configLogging(namespace[0].verbose, namespace[0].noisy)
 
         # Initialise sub-modules/packages. The
         # buildGui function is passed through
@@ -249,12 +274,12 @@ def main(args=None):
         # Check for updates. Ignore point
         # releases, otherwise users might
         # get swamped with update notifications.
-        if not namespace[0].skipupdatecheck:
+        if namespace[0].updatecheck:
             import fsleyes.actions.updatecheck as updatecheck
             wx.CallAfter(updatecheck.UpdateCheckAction(),
                          showUpToDateMessage=False,
                          showErrorMessage=False,
-                         ignorePoint=True)
+                         ignorePoint=False)
 
     # Note: If no wx.Frame is created, the
     # wx.MainLoop call will exit immediately,
@@ -266,49 +291,6 @@ def main(args=None):
     app.MainLoop()
     shutdown()
     return exitCode[0]
-
-
-def hacksAndWorkarounds():
-    """Called by :func:`main`. Implements hacks and workarounds for
-    various things.
-    """
-
-    # Under wxPython/Phoenix, the
-    # wx.html package must be imported
-    # before a wx.App has been created
-    import wx.html
-
-    # PyInstaller 3.2.1 forces matplotlib to use a
-    # temporary directory for its settings and font
-    # cache, and then deletes the directory on exit.
-    # This is silly, because the font cache can take
-    # a long time to create.  Clearing the environment
-    # variable should cause matplotlib to use
-    # $HOME/.matplotlib (or, failing that, a temporary
-    # directory).
-    #
-    # https://matplotlib.org/faq/environment_variables_faq.html#\
-    #   envvar-MPLCONFIGDIR
-    #
-    # https://github.com/pyinstaller/pyinstaller/blob/v3.2.1/\
-    #   PyInstaller/loader/rthooks/pyi_rth_mplconfig.py
-    #
-    # n.b. This will cause issues if building FSLeyes
-    #      with the pyinstaller '--onefile' option, as
-    #      discussed in the above pyinstaller file.
-    if fslplatform.frozen:
-        os.environ.pop('MPLCONFIGDIR', None)
-
-    # OSX sometimes sets the local environment
-    # variables to non-standard values, which
-    # breaks the python locale module.
-    #
-    # http://bugs.python.org/issue18378
-    try:
-        import locale
-        locale.getdefaultlocale()
-    except:
-        os.environ['LC_ALL'] = 'C.UTF-8'
 
 
 def initialise(splash, namespace, callback):
@@ -329,11 +311,8 @@ def initialise(splash, namespace, callback):
     import fsl.utils.settings as fslsettings
     import fsleyes_props      as props
     import fsleyes.gl         as fslgl
-    import fsleyes.colourmaps as colourmaps
 
     props.initGUI()
-
-    colourmaps.init()
 
     # The save/load directory defaults
     # to the current working directory.
@@ -355,7 +334,7 @@ def initialise(splash, namespace, callback):
         #   [install_dir]/FSLeyes.app/Contents/MacOS/fsleyes/),
         #
         # Because the cwd will default to:
-        #   [install_dir/
+        #   [install_dir]/
 
         if fslplatform.os == 'Darwin':
 
@@ -502,29 +481,12 @@ def makeDisplayContext(namespace, splash):
     overlayList = fsloverlay.OverlayList()
     displayCtx  = displaycontext.DisplayContext(overlayList)
 
-    # While the DisplayContext may refer to
-    # multiple overlay groups, we are currently
-    # using just one, allowing the user to specify
-    # a set of overlays for which their display
-    # properties are 'locked'.
-    lockGroup   = displaycontext.OverlayGroup(displayCtx, overlayList)
-    displayCtx.overlayGroups.append(lockGroup)
-
     log.debug('Created overlay list and master DisplayContext ({})'.format(
         id(displayCtx)))
 
     # Load the images - the splash screen status will
     # be updated with the currently loading overlay name.
-    #
-    # The applyOverlayArgs function gets called before
-    # the applySceneArgs function, so we'll manually
-    # apply some important settings to the DC here so
-    # they get used when any overlays are loaded.
-    if namespace.bigmem is not None:
-        displayCtx.loadInMemory = namespace.bigmem
-    if namespace.autoDisplay is not None:
-        displayCtx.autoDisplay = namespace.autoDisplay
-
+    parseargs.applyMainArgs(   namespace, overlayList, displayCtx)
     parseargs.applyOverlayArgs(namespace, overlayList, displayCtx)
 
     return overlayList, displayCtx
@@ -557,7 +519,7 @@ def makeFrame(namespace, displayCtx, overlayList, splash):
     :returns: the :class:`.FSLeyesFrame` that was created.
     """
 
-    import fsl.utils.async              as async
+    import fsl.utils.idle               as idle
     import fsleyes_widgets.utils.status as status
     import fsleyes.parseargs            as parseargs
 
@@ -566,12 +528,11 @@ def makeFrame(namespace, displayCtx, overlayList, splash):
     # FSLeyesFrame class, so it must be
     # imported immediately after fsleyes.frame.
     import fsleyes.frame                as fsleyesframe
-    import fsleyes.actions.frameactions as frameactions
+    import fsleyes.actions.frameactions as frameactions  # noqa
 
     import fsleyes.displaycontext       as fsldisplay
     import fsleyes.perspectives         as perspectives
     import fsleyes.views.canvaspanel    as canvaspanel
-    import fsleyes.views.orthopanel     as orthopanel
 
     # Set up the frame scene (a.k.a. layout, perspective)
     # The scene argument can be:
@@ -593,7 +554,12 @@ def makeFrame(namespace, displayCtx, overlayList, splash):
     status.update('Creating FSLeyes interface...')
 
     frame = fsleyesframe.FSLeyesFrame(
-        None, overlayList, displayCtx, restore, True)
+        None,
+        overlayList,
+        displayCtx,
+        restore,
+        True,
+        fontSize=namespace.fontSize)
 
     # Make sure the new frame is shown
     # before destroying the splash screen
@@ -632,14 +598,14 @@ def makeFrame(namespace, displayCtx, overlayList, splash):
         perspectives.loadPerspective(frame, namespace.scene)
 
     # Apply any view-panel specific arguments
-    viewPanels = frame.getViewPanels()
+    viewPanels = frame.viewPanels
     for viewPanel in viewPanels:
 
         if not isinstance(viewPanel, canvaspanel.CanvasPanel):
             continue
 
-        displayCtx = viewPanel.getDisplayContext()
-        viewOpts   = viewPanel.getSceneOptions()
+        displayCtx = viewPanel.displayCtx
+        viewOpts   = viewPanel.sceneOpts
 
         parseargs.applySceneArgs(
             namespace, overlayList, displayCtx, viewOpts)
@@ -653,7 +619,7 @@ def makeFrame(namespace, displayCtx, overlayList, splash):
     # script can assume that all overlays have
     # already been loaded.
     if script is not None:
-        async.idle(frame.runScript, script)
+        idle.idle(frame.runScript, script)
 
     return frame
 

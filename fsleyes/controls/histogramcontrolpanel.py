@@ -9,11 +9,12 @@ control* panel which allows a :class:`.HistogramPanel` to be configured.
 """
 
 
-import fsleyes_props    as props
+import fsleyes_props                     as props
 
-import fsleyes.tooltips as fsltooltips
-import fsleyes.strings  as strings
-from . import              plotcontrolpanel
+import fsleyes.tooltips                  as fsltooltips
+import fsleyes.strings                   as strings
+import fsleyes.plotting.histogramseries  as hseries
+from . import                               plotcontrolpanel
 
 
 class HistogramControlPanel(plotcontrolpanel.PlotControlPanel):
@@ -44,14 +45,13 @@ class HistogramControlPanel(plotcontrolpanel.PlotControlPanel):
         hsPanel    = self.getPlotPanel()
         widgetList = self.getWidgetList()
         allWidgets = []
-        histProps  = ['histType']
+        histProps  = ['histType', 'plotType']
 
         for prop in histProps:
 
             kwargs = {}
 
-            if prop == 'histType':
-                kwargs['labels'] = strings.choices[hsPanel, 'histType']
+            kwargs['labels'] = strings.choices[hsPanel, prop]
 
             widget = props.makeWidget(widgetList, hsPanel, prop, **kwargs)
             allWidgets.append(widget)
@@ -70,9 +70,7 @@ class HistogramControlPanel(plotcontrolpanel.PlotControlPanel):
         :class:`.HistogramSeries`.
         """
 
-        def is4D(h):
-            return len(h.overlay.shape) == 4 and h.overlay.shape[3] > 1
-
+        isimage    = isinstance(hs, hseries.ImageHistogramSeries)
         widgetList = self.getWidgetList()
 
         autoBin    = props.Widget('autoBin')
@@ -89,17 +87,23 @@ class HistogramControlPanel(plotcontrolpanel.PlotControlPanel):
             showLimits=False)
 
         ignoreZeros     = props.makeWidget(widgetList, hs, 'ignoreZeros')
-        showOverlay     = props.makeWidget(widgetList, hs, 'showOverlay')
         includeOutliers = props.makeWidget(widgetList, hs, 'includeOutliers')
+
+        if isimage:
+            showOverlay = props.makeWidget(widgetList, hs, 'showOverlay')
 
         widgetList.AddWidget(ignoreZeros,
                              groupName=groupName,
                              displayName=strings.properties[hs, 'ignoreZeros'],
                              tooltip=fsltooltips.properties[hs, 'ignoreZeros'])
-        widgetList.AddWidget(showOverlay,
-                             groupName=groupName,
-                             displayName=strings.properties[hs, 'showOverlay'],
-                             tooltip=fsltooltips.properties[hs, 'showOverlay'])
+
+        if isimage:
+            widgetList.AddWidget(
+                showOverlay,
+                groupName=groupName,
+                displayName=strings.properties[hs, 'showOverlay'],
+                tooltip=fsltooltips.properties[hs, 'showOverlay'])
+
         widgetList.AddWidget(includeOutliers,
                              groupName=groupName,
                              displayName=strings.properties[hs,
@@ -119,9 +123,16 @@ class HistogramControlPanel(plotcontrolpanel.PlotControlPanel):
                              displayName=strings.properties[hs, 'dataRange'],
                              tooltip=fsltooltips.properties[hs, 'dataRange'])
 
-        return [ignoreZeros,
-                showOverlay,
-                includeOutliers,
-                autoBin,
-                nbins,
-                dataRange]
+        if isimage:
+            return [ignoreZeros,
+                    showOverlay,
+                    includeOutliers,
+                    autoBin,
+                    nbins,
+                    dataRange]
+        else:
+            return [ignoreZeros,
+                    includeOutliers,
+                    autoBin,
+                    nbins,
+                    dataRange]

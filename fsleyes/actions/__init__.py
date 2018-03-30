@@ -17,6 +17,11 @@ perform one or more actions.  As the :class:`.FSLeyesPanel` class derives from
 :class:`ActionProvider`.
 
 
+Many of the modules in this package also contain standalone functions for doing
+various things, such as the :func:`.screenshot.screenshot` function, and the
+:func:`.loadoverlay.loadImage` function.
+
+
 The :func:`action` and :func:`toggleAction` functions are intended to be used
 as decorators upon the methods of a class which derives from
 :class:`ActionProvider`. For example::
@@ -95,6 +100,7 @@ created for, and bound to an ``Action`` or ``ToggleAction`` (through the
 import logging
 import types
 import inspect
+import warnings
 import functools
 
 import fsleyes_props   as props
@@ -202,9 +208,11 @@ class ActionProvider(object):
 
         acts = []
 
-        for name, attr in inspect.getmembers(self):
-            if isinstance(attr, Action):
-                acts.append((name, attr))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            for name, attr in inspect.getmembers(self):
+                if isinstance(attr, Action):
+                    acts.append((name, attr))
 
         return acts
 

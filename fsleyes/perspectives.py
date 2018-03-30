@@ -85,7 +85,7 @@ def loadPerspective(frame, name, **kwargs):
     if persp is None:
         raise ValueError('No perspective named "{}" exists'.format(name))
 
-    log.debug('Serialised perspective:\n{}'.format(persp))
+    log.debug('Applying perspective:\n{}'.format(persp))
     applyPerspective(frame, name, persp, **kwargs)
 
 
@@ -128,11 +128,11 @@ def applyPerspective(frame, name, perspective, message=None):
         frame.addViewPanel(vp)
 
     # Apply the layout to those view panels
-    frame.getAuiManager().LoadPerspective(frameLayout)
+    frame.auiManager.LoadPerspective(frameLayout)
 
     # For each view panel, add all of the
     # control panels, and lay them out
-    viewPanels = frame.getViewPanels()
+    viewPanels = frame.viewPanels
     for i in range(len(viewPanels)):
 
         vp         = viewPanels[  i]
@@ -146,7 +146,7 @@ def applyPerspective(frame, name, perspective, message=None):
                 child.__name__, type(vp).__name__))
             _addControlPanel(vp, child)
 
-        vp.getAuiManager().LoadPerspective(layout)
+        vp.auiManager.LoadPerspective(layout)
 
         # Apply saved property values
         # to the view panel.
@@ -158,7 +158,7 @@ def applyPerspective(frame, name, perspective, message=None):
         # And, if it is a CanvasPanel,
         # to its SceneOpts instance.
         if isinstance(vp, canvaspanel.CanvasPanel):
-            opts = vp.getSceneOptions()
+            opts = vp.sceneOpts
             for name, val in sceneProps.items():
                 log.debug('Setting {}.{} = {}'.format(
                     type(opts).__name__, name, val))
@@ -343,8 +343,8 @@ def serialisePerspective(frame):
 
     # Now we can start extracting the layout information.
     # We start with the FSLeyesFrame layout.
-    auiMgr     = frame.getAuiManager()
-    viewPanels = frame.getViewPanels()
+    auiMgr     = frame.auiManager
+    viewPanels = frame.viewPanels
 
     # Generate the frame layout string, and a
     # list of the children of the frame
@@ -367,9 +367,9 @@ def serialisePerspective(frame):
         # string needs to contain layout information for
         # all of these panels, but we only care about the
         # control panels.
-        vpAuiMgr    = vp.getAuiManager()
+        vpAuiMgr    = vp.auiManager
         ctrlPanels  = vp.getPanels()
-        centrePanel = vp.getCentrePanel()
+        centrePanel = vp.centrePanel
 
         # As above for the frame, generate a layout
         # string and a list of control panels - the
@@ -469,6 +469,7 @@ def deserialisePerspective(persp):
         PowerSpectrumControlPanel
     from fsleyes.controls.powerspectrumtoolbar       import \
         PowerSpectrumToolBar
+    from fsleyes.controls.scene3dtoolbar             import Scene3DToolBar
     from fsleyes.controls.timeseriescontrolpanel     import \
         TimeSeriesControlPanel
     from fsleyes.controls.timeseriestoolbar          import TimeSeriesToolBar
@@ -504,6 +505,7 @@ def deserialisePerspective(persp):
         'PlotToolBar'                : PlotToolBar,
         'PowerSpectrumControlPanel'  : PowerSpectrumControlPanel,
         'PowerSpectrumToolBar'       : PowerSpectrumToolBar,
+        'Scene3DToolBar'             : Scene3DToolBar,
         'TimeSeriesControlPanel'     : TimeSeriesControlPanel,
         'TimeSeriesToolBar'          : TimeSeriesToolBar,
     }
@@ -611,18 +613,21 @@ def _addControlPanel(viewPanel, panelType):
     :arg viewPanel: A :class:`.ViewPanel` instance.
     :arg panelType: A control panel type.
     """
-    import fsleyes.views.plotpanel as plotpanel
 
+    from fsleyes.views.plotpanel                     import OverlayPlotPanel
+    from fsleyes.views.orthopanel                    import OrthoPanel
     from fsleyes.controls.canvassettingspanel        import CanvasSettingsPanel
     from fsleyes.controls.histogramcontrolpanel      import \
         HistogramControlPanel
     from fsleyes.controls.histogramtoolbar           import HistogramToolBar
+    from fsleyes.controls.locationpanel              import LocationPanel
     from fsleyes.controls.lightboxtoolbar            import LightBoxToolBar
     from fsleyes.controls.melodicclassificationpanel import \
         MelodicClassificationPanel
     from fsleyes.controls.orthoeditactiontoolbar     import \
         OrthoEditActionToolBar
     from fsleyes.controls.orthoedittoolbar           import OrthoEditToolBar
+
     from fsleyes.controls.orthotoolbar               import OrthoToolBar
     from fsleyes.controls.overlaydisplaytoolbar      import \
         OverlayDisplayToolBar
@@ -633,6 +638,7 @@ def _addControlPanel(viewPanel, panelType):
         PowerSpectrumControlPanel
     from fsleyes.controls.powerspectrumtoolbar       import \
         PowerSpectrumToolBar
+    from fsleyes.controls.scene3dtoolbar             import Scene3DToolBar
     from fsleyes.controls.timeseriescontrolpanel     import \
         TimeSeriesControlPanel
     from fsleyes.controls.timeseriestoolbar          import TimeSeriesToolBar
@@ -651,21 +657,23 @@ def _addControlPanel(viewPanel, panelType):
         PlotToolBar                : {'plotPanel'   : viewPanel},
         PowerSpectrumControlPanel  : {'plotPanel'   : viewPanel},
         PowerSpectrumToolBar       : {'psPanel'     : viewPanel},
+        Scene3DToolBar             : {'panel'       : viewPanel},
         TimeSeriesControlPanel     : {'plotPanel'   : viewPanel},
         TimeSeriesToolBar          : {'tsPanel'     : viewPanel},
     }
 
     args = args.get(panelType, {})
 
-    # Slightly hacky ... the PlotPanel customises
-    # its OverlayListPanel quite a bit, so we
-    # call its toggleOverlayList method directly.
-    # No other control panels (to date) are
-    # customised in any way, so I'm accepting
-    # this hack for the time being.
-    if isinstance(viewPanel, plotpanel.OverlayPlotPanel) and \
-       panelType == OverlayListPanel:
+    # Slightly hacky ... some views
+    # customies certain controls a
+    # bit, so we call specific
+    # methods to add them.
+    if   isinstance(viewPanel, OverlayPlotPanel) and \
+         panelType == OverlayListPanel:
         viewPanel.toggleOverlayList()
+    elif isinstance(viewPanel, OrthoPanel) and \
+         panelType == LocationPanel:
+        viewPanel.toggleLocationPanel()
     else:
         viewPanel.togglePanel(panelType, **args)
 
@@ -684,7 +692,7 @@ def _getPanelProps(panel):
         return {}, {}
 
     panelType = type(panel).__name__
-    opts      = panel.getSceneOptions()
+    opts      = panel.sceneOpts
 
     panelProps, sceneProps = VIEWPANEL_PROPS[panelType]
 
@@ -751,8 +759,8 @@ BUILT_IN_PERSPECTIVES = collections.OrderedDict((
      textwrap.dedent("""
                      OrthoPanel
                      layout2|name=OrthoPanel 1;caption=Ortho View 1;state=67376064;dir=5;layer=0;row=0;pos=0;prop=100000;bestw=20;besth=20;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1;notebookid=-1;transparent=255|dock_size(5,0,0)=22|
-                     OverlayDisplayToolBar,OrthoToolBar,LocationPanel,OverlayListPanel;syncLocation=True,syncOverlayOrder=True,syncOverlayDisplay=True;layout=horizontal,showLabels=True,bgColour=#000000ff,fgColour=#ffffffff,showCursor=True,showZCanvas=True,cursorColour=#00ff00ff,showColourBar=False,showYCanvas=True,showXCanvas=True,colourBarLocation=top
-                     layout2|name=Panel;caption=;state=768;dir=5;layer=0;row=0;pos=0;prop=100000;bestw=20;besth=20;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1;notebookid=-1;transparent=255|name=OverlayDisplayToolBar;caption=Display toolbar;state=67382012;dir=1;layer=11;row=0;pos=0;prop=100000;bestw=855;besth=49;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1;notebookid=-1;transparent=255|name=OrthoToolBar;caption=Ortho view toolbar;state=67382012;dir=1;layer=10;row=0;pos=0;prop=100000;bestw=748;besth=34;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1;notebookid=-1;transparent=255|name=LocationPanel;caption=Location;state=67373052;dir=3;layer=0;row=0;pos=1;prop=100000;bestw=440;besth=111;minw=440;minh=109;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=440;floath=127;notebookid=-1;transparent=255|name=OverlayListPanel;caption=Overlay list;state=67373052;dir=3;layer=0;row=0;pos=0;prop=100000;bestw=204;besth=80;minw=197;minh=80;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=204;floath=96;notebookid=-1;transparent=255|dock_size(5,0,0)=22|dock_size(3,0,0)=130|dock_size(1,10,0)=36|dock_size(1,11,0)=51|
+                     OrthoToolBar,OverlayDisplayToolBar,OverlayListPanel,LocationPanel;syncOverlayOrder=True,syncLocation=True,syncOverlayDisplay=True,movieRate=400;colourBarLocation=top,showCursor=True,bgColour=#000000ff,layout=horizontal,colourBarLabelSide=top-left,cursorGap=False,fgColour=#ffffffff,cursorColour=#00ff00ff,showXCanvas=True,showYCanvas=True,showColourBar=False,showZCanvas=True,showLabels=True
+                     layout2|name=Panel;caption=;state=768;dir=5;layer=0;row=0;pos=0;prop=100000;bestw=20;besth=20;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1;notebookid=-1;transparent=255|name=OrthoToolBar;caption=Ortho view toolbar;state=67382012;dir=1;layer=10;row=0;pos=0;prop=100000;bestw=676;besth=47;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1;notebookid=-1;transparent=255|name=OverlayDisplayToolBar;caption=Display toolbar;state=67382012;dir=1;layer=11;row=0;pos=0;prop=100000;bestw=944;besth=65;minw=-1;minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1;notebookid=-1;transparent=255|name=OverlayListPanel;caption=Overlay list;state=67373052;dir=3;layer=0;row=0;pos=0;prop=100000;bestw=251;besth=132;minw=1;minh=1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=259;floath=156;notebookid=-1;transparent=255|name=LocationPanel;caption=Location;state=67373052;dir=3;layer=0;row=0;pos=1;prop=100000;bestw=438;besth=153;minw=1;minh=1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=446;floath=177;notebookid=-1;transparent=255|dock_size(5,0,0)=22|dock_size(3,0,0)=176|dock_size(1,10,0)=49|dock_size(1,11,0)=67|
                      """)),
 
     ('melodic',

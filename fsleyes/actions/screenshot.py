@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image  as mplimg
 
 from   fsl.utils.platform import platform as fslplatform
-import fsl.utils.async                    as async
+import fsl.utils.idle                     as idle
 import fsleyes_widgets.utils.status       as status
 import fsl.utils.settings                 as fslsettings
 import fsleyes.views.canvaspanel          as canvaspanel
@@ -117,7 +117,7 @@ class ScreenshotAction(base.Action):
         # We do the screenshot asynchronously,
         # to make sure it is performed on
         # the main thread, during idle time
-        async.idle(doScreenshot, self.__panel, filename)
+        idle.idle(doScreenshot, self.__panel, filename)
 
         status.update(strings.messages[self, 'pleaseWait'].format(filename))
 
@@ -154,8 +154,8 @@ def canvasPanelScreenshot(panel, filename):
     # one that we want to take a screenshot
     # of.
     cpanel = panel
-    opts   = panel.getSceneOptions()
-    panel  = panel.getContainerPanel()
+    opts   = panel.sceneOpts
+    panel  = panel.containerPanel
 
     # Make a H*W*4 bitmap array (h*w because
     # that's how matplotlib want it). We
@@ -210,7 +210,10 @@ def canvasPanelScreenshot(panel, filename):
 
     data[:, :,  3] = 255
 
-    mplimg.imsave(filename, data)
+    try:              fmt = op.splitext(filename)[1][1:]
+    except Exception: fmt = None
+
+    mplimg.imsave(filename, data, format=fmt)
 
 
 def _patchInCanvases(canvasPanel, containerPanel, data, bgColour):
@@ -232,7 +235,7 @@ def _patchInCanvases(canvasPanel, containerPanel, data, bgColour):
     # which are displayed in the panel,
     # including the colour bar canvas
     glCanvases = cpanel.getGLCanvases()
-    glCanvases.append(cpanel.getColourBarCanvas())
+    glCanvases.append(cpanel.colourBarCanvas)
 
     totalWidth, totalHeight = panel.GetClientSize().Get()
     absPosx,    absPosy     = panel.GetScreenPosition()

@@ -5,7 +5,7 @@
 # Author: Paul McCarthy <pauldmccarthy@gmail.com>
 #
 """This module provides the :class:`GiftiOpts` class, which contains settings
-for displaying a :class:`.GiftiSurface` overlay.
+for displaying a :class:`.GiftiMesh` overlay.
 """
 
 
@@ -15,7 +15,7 @@ from . import            meshopts
 
 class GiftiOpts(meshopts.MeshOpts):
     """The :class:`GiftiOpts` class, which contains settings for displaying
-    a :class:`.GiftiSurface` overlay.
+    a :class:`.GiftiMesh` overlay.
 
     Currently (as of FSLeyes |version|), the ``GiftiOpts`` class is identical
     to the :class:`.MeshOpts` class (from which it derives), with the exception
@@ -34,7 +34,17 @@ class GiftiOpts(meshopts.MeshOpts):
         self.getProp('coordSpace').setAttribute(self, 'default', 'affine')
         self.coordSpace = 'affine'
 
+        # Find surface files that
+        # contain other vertex sets
+        vertFiles  = [overlay.dataSource] + \
+                     fslgifti.relatedFiles(overlay.dataSource,
+                                           fslgifti.ALLOWED_EXTENSIONS)
+
+        # Find files that contain
+        # vertex data sets
         vdataFiles = [None] + fslgifti.relatedFiles(overlay.dataSource)
+
+        self.getProp('vertexSet') .setChoices(vertFiles,  instance=self)
         self.getProp('vertexData').setChoices(vdataFiles, instance=self)
 
         meshopts.MeshOpts.__init__(self, overlay, *args, **kwargs)

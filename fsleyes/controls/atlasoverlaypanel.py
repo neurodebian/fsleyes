@@ -14,7 +14,7 @@ import logging
 import wx
 
 import fsl.data.atlases                     as atlases
-import fsl.utils.async                      as async
+import fsl.utils.idle                       as idle
 from   fsl.utils.platform import platform   as fslplatform
 
 import fsleyes_widgets.elistbox             as elistbox
@@ -131,9 +131,9 @@ class AtlasOverlayPanel(fslpanel.FSLeyesPanel):
         self.__atlasList.Bind(elistbox.EVT_ELB_SELECT_EVENT,
                               self.__onAtlasSelect)
 
-        fslplatform.register(     self._name, self.__fslDirChanged)
-        atlases.registry.register(self._name, self.__atlasAdded,   'add')
-        atlases.registry.register(self._name, self.__atlasRemoved, 'remove')
+        fslplatform.register(     self.name, self.__fslDirChanged)
+        atlases.registry.register(self.name, self.__atlasAdded,   'add')
+        atlases.registry.register(self.name, self.__atlasRemoved, 'remove')
 
         self.__buildAtlasList()
 
@@ -149,7 +149,7 @@ class AtlasOverlayPanel(fslpanel.FSLeyesPanel):
 
     def destroy(self):
         """Performs some clean up operations. """
-        fslplatform.deregister(self._name)
+        fslplatform.deregister(self.name)
         fslpanel.FSLeyesPanel.destroy(self)
 
 
@@ -321,7 +321,7 @@ class AtlasOverlayPanel(fslpanel.FSLeyesPanel):
         If a region list (a list of :class:`OverlayListWidget` items for every
         region in the atlas, to be displayed in the region list) has not yet
         been created, it is created - this is done asynchronously (via the
-        :func:`async.idle` function), as it can take quite a long time for
+        :func:`idle.idle` function), as it can take quite a long time for
         some of the atlases (e.g. the Talairach and Juelich).
 
         Then the region list is updated to show the regions for the newly
@@ -415,8 +415,8 @@ class AtlasOverlayPanel(fslpanel.FSLeyesPanel):
                                                    label.index)
                         regionList.Append(label.name, extraWidget=widget)
 
-                    if i < nlabels - 1: async.idle(addToRegionList, i + 1)
-                    else:               async.idle(changeAtlasList)
+                    if i < nlabels - 1: idle.idle(addToRegionList, i + 1)
+                    else:               idle.idle(changeAtlasList)
 
                 except wx.PyDeadObjectError:
                     pass
@@ -440,9 +440,9 @@ class AtlasOverlayPanel(fslpanel.FSLeyesPanel):
             atlasPanelDisabled = True
 
             self.__atlasPanel.enableAtlasPanel(False)
-            async.idle(addToRegionList, 0)
+            idle.idle(addToRegionList, 0)
         else:
-            async.idle(changeAtlasList)
+            idle.idle(changeAtlasList)
 
 
     def selectAtlas(self, atlasDesc):

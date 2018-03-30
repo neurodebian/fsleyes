@@ -10,19 +10,12 @@
 
 import logging
 
-import wx
-
 import numpy                        as np
 
-
 import fsl.data.image               as fslimage
-import fsl.utils.async              as async
+import fsl.utils.idle               as idle
 import fsleyes_props                as props
-import fsleyes_widgets.dialog       as fsldlg
-import fsleyes_widgets.utils.status as status
-import fsleyes.overlay              as fsloverlay
 import fsleyes.displaycontext       as fsldisplay
-import fsleyes.strings              as strings
 import fsleyes.actions              as actions
 import fsleyes.actions.copyoverlay  as copyoverlay
 import fsleyes.editor.editor        as fsleditor
@@ -32,16 +25,6 @@ from . import                          orthoviewprofile
 
 
 log = logging.getLogger(__name__)
-
-
-_suppressOverlayChangeWarning = False
-"""Whenever an :class:`OrthoEditProfile` is active, and the
-:attr:`.DisplayContext.selectedOverlay` changes, the ``OrthoEditProfile``
-changes the :attr:`.DisplayContext.displaySpace` to the newly selected
-overlay. If this boolean flag is ``True``, a warning message is shown
-to the user. The message dialog has a checkbox which updates this attribute,
-and thus allows the user to suppress the warning in the future.
-"""
 
 
 class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
@@ -97,6 +80,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
        redo
        clearSelection
        fillSelection
+       invertSelection
        eraseSelection
        copySelection
        pasteSelection
@@ -122,9 +106,9 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
 
     The ``OrthoEditProfile`` class has been written in a way which requires
     the :class:`.Image` instance that is being edited to be displayed in
-    *scaled voxel* (a.k.a. ``pixdim``) space.  Therefore, when an ``Image``
-    overlay is selected, the ``OrthoEditProfile`` instance sets that ``Image``
-    as the current :attr:`.DisplayContext.displaySpace` reference image.
+    *scaled voxel* (a.k.a. ``pixdim``) space.  The :class:`.OrthoEditToolBar`
+    uses a :class:`.DisplaySpaceWarning` widget to warn the user if the
+    :attr:`.DisplayContext.displaySpace` is not set appropriately.
     """
 
 
@@ -305,21 +289,22 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         # If the view panel performance is not
         # set to maximum, set the initial
         # locationFollowsMouse value to False
-        perf = viewPanel.getSceneOptions().performance
+        perf = viewPanel.sceneOpts.performance
         self.locationFollowsMouse = perf == 3
 
         # These property values are cached
         # on a per-overlay basis. When an
         # overlay is re-selected, its values
         # are restored from the cache.
-        self.__cache = fsloverlay.PropCache(
-            overlayList,
-            displayCtx,
+        self.__cache = props.PropCache(
             self,
             ['targetImage',
              'intensityThres',
              'intensityThresLimit',
-             'searchRadius'])
+             'searchRadius'],
+            self.currentOverlay,
+            [(overlayList, 'overlays'),
+             (displayCtx,  'selectedOverlay')])
 
         orthoviewprofile.OrthoViewProfile.__init__(
             self,
@@ -331,41 +316,41 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         self.mode = 'nav'
 
         displayCtx .addListener('selectedOverlay',
-                                self._name,
+                                self.name,
                                 self.__selectedOverlayChanged)
         overlayList.addListener('overlays',
-                                self._name,
+                                self.name,
                                 self.__selectedOverlayChanged)
 
         self.addListener('targetImage',
-                         self._name,
+                         self.name,
                          self.__targetImageChanged)
         self.addListener('drawMode',
-                         self._name,
+                         self.name,
                          self.__drawModeChanged)
         self.addListener('selectionOverlayColour',
-                         self._name,
+                         self.name,
                          self.__selectionColoursChanged)
         self.addListener('selectionCursorColour',
-                         self._name,
+                         self.name,
                          self.__selectionColoursChanged)
         self.addListener('showSelection',
-                         self._name,
+                         self.name,
                          self.__showSelectionChanged)
         self.addListener('intensityThresLimit',
-                         self._name,
+                         self.name,
                          self.__selintThresLimitChanged)
         self.addListener('intensityThres',
-                         self._name,
+                         self.name,
                          self.__selintPropertyChanged)
         self.addListener('searchRadius',
-                         self._name,
+                         self.name,
                          self.__selintPropertyChanged)
         self.addListener('localFill',
-                         self._name,
+                         self.name,
                          self.__selintPropertyChanged)
         self.addListener('limitToRadius',
-                         self._name,
+                         self.name,
                          self.__selintPropertyChanged)
 
         self.__selectedOverlayChanged()
@@ -377,14 +362,13 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         instances, and calls :meth:`.OrthoViewProfile.destroy`.
         """
 
-        self._displayCtx .removeListener('selectedOverlay', self._name)
-        self._overlayList.removeListener('overlays',        self._name)
+        self.displayCtx .removeListener('selectedOverlay', self.name)
+        self.overlayList.removeListener('overlays',        self.name)
 
         for editor in self.__editors.values():
             editor.destroy()
 
         self.__destroyAnnotations()
-        self.__cache.destroy()
 
         self.__editors         = None
         self.__xcanvas         = None
@@ -442,6 +426,13 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         self.__zcurAnnotation = None
 
 
+    def currentOverlay(self):
+        """Returns the overlay that is currently registered with this
+        ``OrthoEditProfile``.
+        """
+        return self.__currentOverlay
+
+
     @actions.action
     def createMask(self):
         """Create a 3D mask which has the same size as the currently selected
@@ -452,13 +443,13 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
 
         overlay = self.__currentOverlay
         editor  = self.__editors[overlay]
-        display = self._displayCtx.getDisplay(overlay)
+        display = self.displayCtx.getDisplay(overlay)
         name    = '{}_mask'.format(display.name)
         data    = editor.getSelection().getSelection()
         data    = np.array(data, dtype=overlay.dtype)
 
-        copyoverlay.copyImage(self._overlayList,
-                              self._displayCtx,
+        copyoverlay.copyImage(self.overlayList,
+                              self.displayCtx,
                               self.__currentOverlay,
                               createMask=True,
                               copy4D=False,
@@ -500,6 +491,23 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         editor.startChangeGroup()
         editor.fillSelection(self.fillValue)
         editor.clearSelection()
+        editor.endChangeGroup()
+
+
+    @actions.action
+    def invertSelection(self):
+        """Inverts the current selection. See :meth:`.Editor.invertSelection`.
+        """
+        if self.__currentOverlay is None:
+            return
+
+        editor = self.__editors[self.__currentOverlay]
+
+        if self.targetImage is not None:
+            editor = self.__getTargetImageEditor(editor)
+
+        editor.startChangeGroup()
+        editor.invertSelection()
         editor.endChangeGroup()
 
 
@@ -628,7 +636,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         # will raise if overlay is
         # None, or has been removed
         try:
-            display = self._displayCtx.getDisplay(overlay)
+            display = self.displayCtx.getDisplay(overlay)
         except (ValueError, fsldisplay.InvalidOverlayError) as e:
             display = None
 
@@ -653,11 +661,12 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         if self.drawMode: self.getProp('mode').disableChoice('selint', self)
         else:             self.getProp('mode').enableChoice( 'selint', self)
 
-        self.clearSelection.enabled = not self.drawMode
-        self.fillSelection .enabled = not self.drawMode
-        self.eraseSelection.enabled = not self.drawMode
+        self.clearSelection .enabled = not self.drawMode
+        self.fillSelection  .enabled = not self.drawMode
+        self.eraseSelection .enabled = not self.drawMode
+        self.invertSelection.enabled = not self.drawMode
 
-        with props.skip(self, 'showSelection', self._name):
+        with props.skip(self, 'showSelection', self.name):
             self.showSelection = True
 
         self.__updateTargetImage()
@@ -732,7 +741,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
 
         compatibleOverlays = [None]
         if not self.drawMode:
-            for ovl in self._overlayList:
+            for ovl in self.overlayList:
 
                 if all((ovl is not overlay,
                         self.isEditable(ovl),
@@ -776,8 +785,8 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
 
         if editor is None:
             editor = fsleditor.Editor(image,
-                                      self._overlayList,
-                                      self._displayCtx)
+                                      self.overlayList,
+                                      self.displayCtx)
             self.__editors[image] = editor
 
 
@@ -835,15 +844,15 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
 
         # Initialise property values, or
         # restore them from the cache.
-        with props.skip(self, 'searchRadius', self._name):
+        with props.skip(self, 'searchRadius', self.name):
             self.setAttribute('searchRadius', 'maxval', radiusLimit)
             self.searchRadius = radius
 
-        with props.skip(self, 'intensityThres', self._name):
+        with props.skip(self, 'intensityThres', self.name):
             self.setAttribute('intensityThres', 'maxval', limit)
             self.intensityThres = thres
 
-        with props.skip(self, 'intensityThresLimit', self._name):
+        with props.skip(self, 'intensityThresLimit', self.name):
             self.intensityThresLimit = limit
 
 
@@ -875,7 +884,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         # Here we go....
 
         oldOverlay = self.__currentOverlay
-        overlay    = self._displayCtx.getSelectedOverlay()
+        overlay    = self.displayCtx.getSelectedOverlay()
 
         # If the selected overlay hasn't changed,
         # we don't need to do anything
@@ -919,40 +928,6 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         self.__setPropertyLimits()
         self.__setCopyPasteState()
 
-        # Change the display space so that the newly
-        # selected image is the reference image -
-        # display a message to the user, as this may
-        # otherwise be confusing
-        if self._displayCtx.displaySpace != overlay:
-
-            msg   = strings.messages[self, 'imageChange']
-            hint  = strings.messages[self, 'imageChangeHint']
-            msg   = msg.format(overlay.name)
-            hint  = hint.format(overlay.name)
-
-            global _suppressOverlayChangeWarning
-            if not _suppressOverlayChangeWarning:
-
-                cbMsg = strings.messages[self, 'imageChange.suppress']
-                title = strings.titles[  self, 'imageChange']
-
-                dlg   = fsldlg.CheckBoxMessageDialog(
-                    self._viewPanel,
-                    title=title,
-                    message=msg,
-                    cbMessages=[cbMsg],
-                    cbStates=[_suppressOverlayChangeWarning],
-                    hintText=hint,
-                    focus='yes',
-                    icon=wx.ICON_INFORMATION)
-
-                dlg.ShowModal()
-
-                _suppressOverlayChangeWarning  = dlg.CheckBoxState()
-
-            status.update(msg)
-            self._displayCtx.displaySpace = overlay
-
         # Load the editor for the overlay (create
         # one if necessary), and add listeners to
         # some editor/selection properties
@@ -960,8 +935,8 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
 
         if editor is None:
             editor = fsleditor.Editor(overlay,
-                                      self._overlayList,
-                                      self._displayCtx)
+                                      self.overlayList,
+                                      self.displayCtx)
             self.__editors[overlay] = editor
 
         # Transfer or clear the selection
@@ -987,10 +962,10 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         # Restore the targetImage for this
         # overlay, if there is a cached value
         targetImage = self.__cache.get(overlay, 'targetImage', None)
-        if targetImage not in self._overlayList:
+        if targetImage not in self.overlayList:
             targetImage = None
 
-        with props.skip(self, 'targetImage', self._name):
+        with props.skip(self, 'targetImage', self.name):
             self.targetImage = targetImage
 
         # Register property listeners with the
@@ -1012,7 +987,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
                         'expiry'  : 0.5,
                         'enabled' : False}
 
-        opts = self._displayCtx.getOpts(overlay)
+        opts = self.displayCtx.getOpts(overlay)
 
         for c in [self.__xcanvas, self.__ycanvas, self.__zcanvas]:
 
@@ -1060,7 +1035,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         if self.__currentOverlay is None:
             return None
 
-        opts = self._displayCtx.getOpts(self.__currentOverlay)
+        opts = self.displayCtx.getOpts(self.__currentOverlay)
         return opts.getVoxel(canvasPos)
 
 
@@ -1092,7 +1067,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         """
 
         overlay  = self.__currentOverlay
-        dopts    = self._displayCtx.getOpts(overlay)
+        dopts    = self.displayCtx.getOpts(overlay)
         canvases = [self.__xcanvas,
                     self.__ycanvas,
                     self.__zcanvas]
@@ -1207,7 +1182,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         # we will force the refresh instead.
         forceRefresh = (
             canvasPos is not None and
-            np.all(np.isclose(canvasPos, self._displayCtx.location.xyz)))
+            np.all(np.isclose(canvasPos, self.displayCtx.location.xyz)))
 
         # If locationFollowsMouse==True, we make
         # the canvas location track the edit cursor
@@ -1593,7 +1568,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
             self.__drawCursorAnnotation(canvas, voxel)
             self.__dynamicRefreshCanvases(ev, canvas)
 
-        async.idle(update, timeout=0.1)
+        idle.idle(update, timeout=0.1)
 
         return True
 
@@ -1633,7 +1608,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
             # so we don't queue loads of redundant jobs while
             # the user is e.g. dragging the intensityThres
             # slider real fast.
-            async.idle(update, timeout=0.1)
+            idle.idle(update, timeout=0.1)
 
 
     def __selintThresLimitChanged(self, *a):
@@ -1832,7 +1807,7 @@ class OrthoEditProfile(orthoviewprofile.OrthoViewProfile):
         the mouse wheel direction. If the mouse button is down,
         select-by-intensity is re-run at the current mouse location.
         """
-        overlay   = self._displayCtx.getSelectedOverlay()
+        overlay   = self.displayCtx.getSelectedOverlay()
         dataRange = overlay.dataRange[1] - overlay.dataRange[0]
         step      = 0.01 * dataRange
 

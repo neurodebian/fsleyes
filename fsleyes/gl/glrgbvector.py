@@ -53,7 +53,7 @@ class GLRGBVector(glvector.GLVector):
     ``preDraw(GLRGBVector, xform, bbox)``      Prepare the GL state for
                                                drawing.
     ``draw2D(GLRGBVector, zpos, xform, bbox)`` Draw the slice specified by
-                                             ``zpos``.
+                                               ``zpos``.
     ``draw3D(GLRGBVector, zpos, xform)``       Draw the volume in 3D
     ``drawAll(GLRGBVector, zposes, xforms)``   Draw all slices specified by
                                                ``zposes``.
@@ -63,13 +63,15 @@ class GLRGBVector(glvector.GLVector):
     """
 
 
-    def __init__(self, image, displayCtx, canvas, threedee):
+    def __init__(self, image, overlayList, displayCtx, canvas, threedee):
         """Create a ``GLRGBVector``.
 
-        :arg image:      An :class:`.Image` or :class:`.DTIFitTensor` instance.
-        :arg displayCtx: The :class:`.DisplayContext` managing the scene.
-        :arg canvas:     The canvas doing the drawing.
-        :arg threedee:   2D or 3D rendering
+        :arg image:       An :class:`.Image` or :class:`.DTIFitTensor`
+                          instance.
+        :arg overlayList: The :class:`.OverlayList`
+        :arg displayCtx:  The :class:`.DisplayContext` managing the scene.
+        :arg canvas:      The canvas doing the drawing.
+        :arg threedee:    2D or 3D rendering
         """
 
         # If the overlay is a DTIFitTensor, use the
@@ -85,6 +87,7 @@ class GLRGBVector(glvector.GLVector):
 
         glvector.GLVector.__init__(self,
                                    image,
+                                   overlayList,
                                    displayCtx,
                                    canvas,
                                    threedee,

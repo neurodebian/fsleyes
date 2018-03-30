@@ -15,8 +15,6 @@ defined in the :mod:`.gl14.glvolume_funcs` are re-used by this module.
 """
 
 
-import numpy              as np
-
 import fsleyes.gl.shaders as shaders
 from . import                glvolume_funcs
 
@@ -80,20 +78,23 @@ def updateShaderState(self):
     return True
 
 
-def draw2D(self, zpos, axes, *args, **kwargs):
+def draw2D(self, *args, **kwargs):
     """Draws the label overlay in 2D. See :meth:`.GLObject.draw2D`. """
-
-    offsets = self.calculateOutlineOffsets(axes)
-
-    if self.opts.outline: offsets = [1] + list(offsets)
-    else:                 offsets = [0] + list(offsets)
-
-    self.shader.setFragParam('outline', offsets)
-
-    glvolume_funcs.draw2D(self, zpos, axes, *args, **kwargs)
+    self.shader.load()
+    self.shader.loadAtts()
+    glvolume_funcs.draw2D(self, *args, **kwargs)
+    self.shader.unloadAtts()
+    self.shader.unload()
 
 
-preDraw  = glvolume_funcs.preDraw
-draw3D   = glvolume_funcs.draw3D
-drawAll  = glvolume_funcs.drawAll
-postDraw = glvolume_funcs.postDraw
+def drawAll(self, *args, **kwargs):
+    """Draws the label overlay in 2D. See :meth:`.GLObject.draw2D`. """
+    self.shader.load()
+    self.shader.loadAtts()
+    glvolume_funcs.drawAll(self, *args, **kwargs)
+    self.shader.unloadAtts()
+    self.shader.unload()
+
+
+def draw3D(self, *args, **kwargs):
+    pass
