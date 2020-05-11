@@ -1,33 +1,33 @@
 Source: fsleyes
 Maintainer: NeuroDebian Team <team@neuro.debian.net>
-Uploaders: Michael Hanke <mih@debian.org>
+Uploaders: Michael Hanke <mih@debian.org>, Yaroslav Halchenko <debian@onerussian.com>
 Section: python
 Priority: optional
-Build-Depends: debhelper (>= 9),
-               dh-python,
-               python-all,
-               python-setuptools,
-               python-six (>= 1.0~),
-               python-mock,
-               python-sphinx,
-               python-sphinx-rtd-theme,
+Build-Depends: debhelper (>= 11),
+               dh-python3,
+               python3-all,
+               python3-setuptools,
+               python3-six (>= 1.0~),
+               python3-mock,
+               python3-sphinx,
+               python3-sphinx-rtd-theme,
 Standards-Version: 3.9.8
 X-Python-Version: >= 2.7
 
 Package: fsleyes
 Architecture: all
 Section: science
-Depends: python-fsl,
-         python-fsleyes-props,
-         python-fsleyes-widgets,
-         python-wxgtk3.0,
-         python-six,
-         python-jinja2,
-         python-scipy,
-         python-matplotlib,
-         python-numpy,
-         python-opengl (>= 3.1~),
-         python-six (>= 1.0~),
+Depends: python3-fsl,
+         python3-fsleyes-props,
+         python3-fsleyes-widgets,
+         python3-wxgtk3.0,
+         python3-six,
+         python3-jinja2,
+         python3-scipy,
+         python3-matplotlib,
+         python3-numpy,
+         python3-opengl (>= 3.1~),
+         python3-six (>= 1.0~),
          ${misc:Depends},
          ${python:Depends},
 Provides: ${python:Provides}
